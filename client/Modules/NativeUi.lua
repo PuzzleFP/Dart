@@ -447,4 +447,106 @@ function NativeUi.makeResizable(resizeHandle, target, options)
 	end)
 end
 
+function NativeUi.bindResizeHandle(handle, target, options)
+	options = options or {}
+
+	local edge = options.Edge or "right"
+	local resizing = false
+	local dragStart
+	local sizeStart
+	local positionStart
+	local minSize = options.MinSize or Vector2.new(720, 480)
+	local maxSize = options.MaxSize
+
+	local function clamp(width, height)
+		local clampedWidth = math.max(minSize.X, width)
+		local clampedHeight = math.max(minSize.Y, height)
+
+		if maxSize ~= nil then
+			clampedWidth = math.min(clampedWidth, maxSize.X)
+			clampedHeight = math.min(clampedHeight, maxSize.Y)
+		end
+
+		return clampedWidth, clampedHeight
+	end
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		local width = sizeStart.X
+		local height = sizeStart.Y
+		local posX = positionStart.X.Offset
+		local posY = positionStart.Y.Offset
+
+		if string.find(string.lower(edge), "right", 1, true) ~= nil then
+			width = width + delta.X
+		end
+
+		if string.find(string.lower(edge), "left", 1, true) ~= nil then
+			width = width - delta.X
+		end
+
+		if string.find(string.lower(edge), "bottom", 1, true) ~= nil then
+			height = height + delta.Y
+		end
+
+		if string.find(string.lower(edge), "top", 1, true) ~= nil then
+			height = height - delta.Y
+		end
+
+		local clampedWidth, clampedHeight = clamp(width, height)
+		local widthDelta = sizeStart.X - clampedWidth
+		local heightDelta = sizeStart.Y - clampedHeight
+
+		if string.find(string.lower(edge), "left", 1, true) ~= nil then
+			posX = positionStart.X.Offset + widthDelta
+		end
+
+		if string.find(string.lower(edge), "top", 1, true) ~= nil then
+			posY = positionStart.Y.Offset + heightDelta
+		end
+
+		target.Position = UDim2.new(
+			positionStart.X.Scale,
+			posX,
+			positionStart.Y.Scale,
+			posY
+		)
+		target.Size = UDim2.new(
+			target.Size.X.Scale,
+			clampedWidth,
+			target.Size.Y.Scale,
+			clampedHeight
+		)
+	end
+
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		resizing = true
+		dragStart = input.Position
+		sizeStart = Vector2.new(target.AbsoluteSize.X, target.AbsoluteSize.Y)
+		positionStart = target.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				resizing = false
+			end
+		end)
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not resizing then
+			return
+		end
+
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		update(input)
+	end)
+end
+
 return NativeUi
