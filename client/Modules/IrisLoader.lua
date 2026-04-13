@@ -13,10 +13,6 @@ local function ensureInitialized(irisModule)
 		return nil, "Iris module did not return a table"
 	end
 
-	if irisModule.Internal ~= nil then
-		return irisModule
-	end
-
 	if type(irisModule.Init) == "function" then
 		local ok, initialized = pcall(function()
 			return irisModule.Init(nil, nil, true)

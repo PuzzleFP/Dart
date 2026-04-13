@@ -356,7 +356,7 @@ local function renderScriptBrowserNode(Iris, node, selectedPath, onOpen)
 		do
 			if node.isScript then
 				local buttonText = selectedPath == node.path and "Viewing" or "Open"
-				if Iris.SmallButton({ buttonText }).clicked() then
+				if Iris.Button({ buttonText }).clicked() then
 					onOpen(node.path)
 				end
 			end
@@ -370,7 +370,7 @@ local function renderScriptBrowserNode(Iris, node, selectedPath, onOpen)
 	end
 
 	local buttonText = selectedPath == node.path and "Viewing" or "Open"
-	if Iris.SmallButton({ buttonText }).clicked() then
+	if Iris.Button({ buttonText }).clicked() then
 		onOpen(node.path)
 	end
 

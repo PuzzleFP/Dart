@@ -93,6 +93,11 @@ local ClientApp = {}
 
 local started = false
 
+local function setLastError(err)
+	local scope = getGlobalScope()
+	scope.__DartLastError = tostring(err)
+end
+
 local function onCharacterAdded(config, character)
 	Helpers.debugPrint(config.Debug, ("[Client] Character ready: %s"):format(character.Name))
 end
@@ -125,6 +130,8 @@ function ClientApp.start(config)
 		end)
 
 		if not ok then
+			setLastError(err)
+			print("[Dart] Iris viewer start error:", err)
 			warn(("[Client] Iris viewer failed to start: %s"):format(err))
 		end
 	end
