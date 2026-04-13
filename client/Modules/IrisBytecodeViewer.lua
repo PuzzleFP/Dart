@@ -86,10 +86,15 @@ end
 local LuauChunk = loadRemoteModule("LuauChunk")
 local LuauBytecode = loadRemoteModule("LuauBytecode")
 local IrisLoader = loadRemoteModule("IrisLoader")
+local Players = game:GetService("Players")
 
 local IrisBytecodeViewer = {}
 
 local started = false
+
+local function trimText(text)
+	return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
 
 local function splitLines(text)
 	local lines = {}
@@ -113,6 +118,26 @@ local function containsFilter(text, filter)
 	return string.find(string.lower(text), string.lower(filter), 1, true) ~= nil
 end
 
+local function formatChunkResult(chunk, showRawOpcode, metadata)
+	local prettyOutput = LuauChunk.formatPrettyChunk(chunk, {
+		showRawOpcode = showRawOpcode,
+	})
+
+	local result = {
+		chunk = chunk,
+		prettyOutput = prettyOutput,
+		prettyLines = splitLines(prettyOutput),
+	}
+
+	if metadata then
+		for key, value in pairs(metadata) do
+			result[key] = value
+		end
+	end
+
+	return result
+end
+
 local function safeParseFile(path, inputFormat, showRawOpcode)
 	local ok, chunk = pcall(function()
 		return LuauChunk.parseFile(path, {
@@ -124,15 +149,256 @@ local function safeParseFile(path, inputFormat, showRawOpcode)
 		return nil, chunk
 	end
 
-	local prettyOutput = LuauChunk.formatPrettyChunk(chunk, {
-		showRawOpcode = showRawOpcode,
-	})
+	return formatChunkResult(chunk, showRawOpcode, {
+		sourceKind = "file",
+		sourceLabel = path,
+	}), nil
+end
+
+local function splitInstancePath(path)
+	local parts = {}
+
+	for part in string.gmatch(path, "[^%./\\]+") do
+		table.insert(parts, part)
+	end
+
+	return parts
+end
+
+local function tryGetInstanceProperty(instance, propertyName)
+	local ok, value = pcall(function()
+		return instance[propertyName]
+	end)
+
+	if ok and typeof(value) == "Instance" then
+		return value
+	end
+
+	return nil
+end
+
+local function resolveRootSegment(segment)
+	if segment == "game" or segment == "Game" then
+		return game
+	end
+
+	local ok, service = pcall(function()
+		return game:GetService(segment)
+	end)
+
+	if ok and typeof(service) == "Instance" then
+		return service
+	end
+
+	return game:FindFirstChild(segment)
+end
+
+local function resolveInstanceByPath(path)
+	local normalizedPath = trimText(path)
+	if normalizedPath == "" then
+		error("No script path provided")
+	end
+
+	local parts = splitInstancePath(normalizedPath)
+	if #parts == 0 then
+		error(("Invalid script path %q"):format(normalizedPath))
+	end
+
+	local current = resolveRootSegment(parts[1])
+	if current == nil then
+		error(("Unable to resolve root segment %q"):format(parts[1]))
+	end
+
+	for index = 2, #parts do
+		local segment = parts[index]
+		local nextInstance = tryGetInstanceProperty(current, segment)
+
+		if nextInstance == nil then
+			nextInstance = current:FindFirstChild(segment)
+		end
+
+		if nextInstance == nil then
+			error(("Unable to resolve %q under %s"):format(segment, current:GetFullName()))
+		end
+
+		current = nextInstance
+	end
+
+	return current
+end
+
+local function safeParseScript(scriptPath, showRawOpcode)
+	local ok, scriptInstance = pcall(function()
+		return resolveInstanceByPath(scriptPath)
+	end)
+
+	if not ok then
+		return nil, scriptInstance
+	end
+
+	ok, scriptInstance = pcall(function()
+		if not scriptInstance:IsA("LuaSourceContainer") then
+			error(("Resolved instance is %s, not a LuaSourceContainer"):format(scriptInstance.ClassName))
+		end
+
+		return scriptInstance
+	end)
+
+	if not ok then
+		return nil, scriptInstance
+	end
+
+	local chunk
+	ok, chunk = pcall(function()
+		return LuauChunk.parseScriptBytecode(scriptInstance)
+	end)
+
+	if not ok then
+		return nil, chunk
+	end
+
+	return formatChunkResult(chunk, showRawOpcode, {
+		sourceKind = "script",
+		sourceLabel = scriptInstance:GetFullName(),
+		scriptPath = scriptPath,
+	}), nil
+end
+
+local function isScriptLike(instance)
+	return instance:IsA("LuaSourceContainer")
+end
+
+local function collectScriptBrowserRoots()
+	local roots = {}
+	local seen = {}
+
+	local function push(instance)
+		if typeof(instance) ~= "Instance" or seen[instance] then
+			return
+		end
+
+		seen[instance] = true
+		table.insert(roots, instance)
+	end
+
+	push(game:GetService("ReplicatedFirst"))
+	push(game:GetService("ReplicatedStorage"))
+	push(game:GetService("StarterGui"))
+	push(game:GetService("StarterPack"))
+	push(game:GetService("StarterPlayer"))
+	push(game:GetService("Workspace"))
+
+	local localPlayer = Players.LocalPlayer
+	if localPlayer then
+		push(localPlayer)
+		push(localPlayer:FindFirstChildOfClass("PlayerScripts"))
+		push(localPlayer:FindFirstChildOfClass("PlayerGui"))
+		push(localPlayer:FindFirstChildOfClass("Backpack"))
+	end
+
+	return roots
+end
+
+local function buildScriptBrowserNode(instance)
+	local childNodes = {}
+
+	for _, child in ipairs(instance:GetChildren()) do
+		local childNode = buildScriptBrowserNode(child)
+		if childNode ~= nil then
+			table.insert(childNodes, childNode)
+		end
+	end
+
+	if not isScriptLike(instance) and #childNodes == 0 then
+		return nil
+	end
+
+	table.sort(childNodes, function(left, right)
+		if left.isScript ~= right.isScript then
+			return not left.isScript
+		end
+
+		return string.lower(left.name) < string.lower(right.name)
+	end)
 
 	return {
-		chunk = chunk,
-		prettyOutput = prettyOutput,
-		prettyLines = splitLines(prettyOutput),
-	}, nil
+		instance = instance,
+		name = instance.Name,
+		path = instance:GetFullName(),
+		className = instance.ClassName,
+		isScript = isScriptLike(instance),
+		children = childNodes,
+	}
+end
+
+local function buildScriptBrowserTree()
+	local roots = {}
+
+	for _, root in ipairs(collectScriptBrowserRoots()) do
+		local node = buildScriptBrowserNode(root)
+		if node ~= nil then
+			table.insert(roots, node)
+		end
+	end
+
+	table.sort(roots, function(left, right)
+		return string.lower(left.name) < string.lower(right.name)
+	end)
+
+	return roots
+end
+
+local function renderScriptBrowserNode(Iris, node, selectedPath, onOpen)
+	local label = ("%s [%s]"):format(node.name, node.className)
+
+	if #node.children > 0 then
+		Iris.Tree({ label })
+		do
+			if node.isScript then
+				local buttonText = selectedPath == node.path and "Viewing" or "Open"
+				if Iris.SmallButton({ buttonText }).clicked() then
+					onOpen(node.path)
+				end
+			end
+
+			for _, childNode in ipairs(node.children) do
+				renderScriptBrowserNode(Iris, childNode, selectedPath, onOpen)
+			end
+		end
+		Iris.End()
+		return
+	end
+
+	local buttonText = selectedPath == node.path and "Viewing" or "Open"
+	if Iris.SmallButton({ buttonText }).clicked() then
+		onOpen(node.path)
+	end
+
+	Iris.SameLine()
+	do
+		Iris.Text({ label })
+	end
+	Iris.End()
+end
+
+local function renderScriptBrowser(Iris, scriptBrowserTree, scriptBrowserError, selectedPath, onOpen, onRefresh)
+	Iris.CollapsingHeader({ "Script Browser" })
+	do
+		if Iris.Button({ "Refresh Tree" }).clicked() then
+			onRefresh()
+		end
+
+		if scriptBrowserError ~= nil then
+			Iris.TextColored({ "Tree Error: " .. tostring(scriptBrowserError), Color3.fromRGB(255, 110, 110) })
+		elseif #scriptBrowserTree == 0 then
+			Iris.Text({ "No scripts discovered in the current client view." })
+		else
+			for _, rootNode in ipairs(scriptBrowserTree) do
+				renderScriptBrowserNode(Iris, rootNode, selectedPath, onOpen)
+			end
+		end
+	end
+	Iris.End()
 end
 
 local function renderOverview(Iris, result)
@@ -237,6 +503,8 @@ function IrisBytecodeViewer.start(config)
 
 	started = true
 
+	local sourceMode = Iris.State(config.DefaultBytecodeSourceMode or "script")
+	local scriptPath = Iris.State(config.DefaultScriptPath or "")
 	local filePath = Iris.State(config.DefaultBytecodeFilePath or "")
 	local inputFormat = Iris.State(config.DefaultBytecodeInputFormat or "binary")
 	local filterText = Iris.State("")
@@ -248,25 +516,94 @@ function IrisBytecodeViewer.start(config)
 
 	local lastResult = nil
 	local lastError = nil
-	local lastLoadedPath = nil
+	local lastLoadedSourceMode = nil
+	local lastLoadedTarget = nil
+	local scriptBrowserTree = {}
+	local scriptBrowserError = nil
 
-	local function loadCurrentPath()
+	local function refreshScriptBrowser()
+		local ok, result = pcall(buildScriptBrowserTree)
+		if ok then
+			scriptBrowserTree = result
+			scriptBrowserError = nil
+			return
+		end
+
+		scriptBrowserTree = {}
+		scriptBrowserError = result
+	end
+
+	local function loadFileTarget()
 		local path = filePath.value
 		if path == nil or path == "" then
 			lastResult = nil
-			lastLoadedPath = nil
+			lastLoadedSourceMode = nil
+			lastLoadedTarget = nil
 			lastError = "No file path provided"
 			return
 		end
 
 		local result, err = safeParseFile(path, inputFormat.value, showRawOpcodes.value)
 		lastResult = result
-		lastLoadedPath = path
+		lastLoadedSourceMode = "file"
+		lastLoadedTarget = path
 		lastError = err
 	end
 
-	if filePath.value ~= "" then
-		loadCurrentPath()
+	local function loadScriptTarget()
+		local path = trimText(scriptPath.value)
+		if path == "" then
+			lastResult = nil
+			lastLoadedSourceMode = nil
+			lastLoadedTarget = nil
+			lastError = "No script path provided"
+			return
+		end
+
+		local result, err = safeParseScript(path, showRawOpcodes.value)
+		lastResult = result
+		lastLoadedSourceMode = "script"
+		lastLoadedTarget = path
+		lastError = err
+	end
+
+	local function loadCurrentTarget()
+		if sourceMode.value == "script" then
+			loadScriptTarget()
+			return
+		end
+
+		loadFileTarget()
+	end
+
+	local function reloadLastTarget()
+		if lastLoadedSourceMode == "script" and lastLoadedTarget ~= nil then
+			sourceMode:set("script")
+			scriptPath:set(lastLoadedTarget)
+			loadScriptTarget()
+			return
+		end
+
+		if lastLoadedSourceMode == "file" and lastLoadedTarget ~= nil then
+			sourceMode:set("file")
+			filePath:set(lastLoadedTarget)
+			loadFileTarget()
+			return
+		end
+	end
+
+	local function openScriptFromBrowser(path)
+		sourceMode:set("script")
+		scriptPath:set(path)
+		loadScriptTarget()
+	end
+
+	refreshScriptBrowser()
+
+	if sourceMode.value == "script" and trimText(scriptPath.value) ~= "" then
+		loadScriptTarget()
+	elseif filePath.value ~= "" then
+		loadFileTarget()
 	end
 
 	Iris:Connect(function()
@@ -275,31 +612,64 @@ function IrisBytecodeViewer.start(config)
 			position = windowPosition,
 		})
 		do
-			Iris.Text({ "Inspect a Luau bytecode file and show decoded opcodes, constants, and inferred behavior." })
+			Iris.Text({ "Inspect Luau bytecode from a live script instance or a raw bytecode file." })
+			renderScriptBrowser(
+				Iris,
+				scriptBrowserTree,
+				scriptBrowserError,
+				lastResult and lastResult.sourceKind == "script" and lastResult.sourceLabel or nil,
+				openScriptFromBrowser,
+				refreshScriptBrowser
+			)
 
-			Iris.PushConfig({ ContentWidth = UDim.new(1, -160) })
-			Iris.InputText({ "Bytecode File Path" }, { text = filePath })
-			Iris.PopConfig()
-
+			Iris.SeparatorText({ "Source" })
+			Iris.RadioButton({ "Script", "script" }, { index = sourceMode })
 			Iris.SameLine()
-			do
-				if Iris.Button({ "Load File" }).clicked() then
-					loadCurrentPath()
-				end
-
-				if Iris.Button({ "Reload" }).clicked() and lastLoadedPath ~= nil then
-					filePath:set(lastLoadedPath)
-					loadCurrentPath()
-				end
-			end
+			Iris.RadioButton({ "File", "file" }, { index = sourceMode })
 			Iris.End()
 
-			Iris.SameLine()
-			do
-				Iris.RadioButton({ "Binary", "binary" }, { index = inputFormat })
-				Iris.RadioButton({ "Hex", "hex" }, { index = inputFormat })
+			if sourceMode.value == "script" then
+				Iris.PushConfig({ ContentWidth = UDim.new(1, -160) })
+				Iris.InputText({ "Script Instance Path" }, { text = scriptPath })
+				Iris.PopConfig()
+
+				Iris.SameLine()
+				do
+					if Iris.Button({ "Load Script" }).clicked() then
+						loadScriptTarget()
+					end
+
+					if Iris.Button({ "Reload" }).clicked() and lastLoadedTarget ~= nil then
+						reloadLastTarget()
+					end
+				end
+				Iris.End()
+
+				Iris.TextWrapped({ "Example: Players.LocalPlayer.PlayerScripts.YourLocalScript" })
+			else
+				Iris.PushConfig({ ContentWidth = UDim.new(1, -160) })
+				Iris.InputText({ "Bytecode File Path" }, { text = filePath })
+				Iris.PopConfig()
+
+				Iris.SameLine()
+				do
+					if Iris.Button({ "Load File" }).clicked() then
+						loadFileTarget()
+					end
+
+					if Iris.Button({ "Reload" }).clicked() and lastLoadedTarget ~= nil then
+						reloadLastTarget()
+					end
+				end
+				Iris.End()
+
+				Iris.SameLine()
+				do
+					Iris.RadioButton({ "Binary", "binary" }, { index = inputFormat })
+					Iris.RadioButton({ "Hex", "hex" }, { index = inputFormat })
+				end
+				Iris.End()
 			end
-			Iris.End()
 
 			Iris.PushConfig({ ContentWidth = UDim.new(1, -160) })
 			Iris.InputText({ "Filter" }, { text = filterText })
@@ -310,8 +680,11 @@ function IrisBytecodeViewer.start(config)
 				Iris.Checkbox({ "Show Strings" }, { isChecked = showStrings })
 				Iris.Checkbox({ "Show Constants" }, { isChecked = showConstants })
 				Iris.Checkbox({ "Show Raw Opcodes" }, { isChecked = showRawOpcodes })
-				if Iris.Button({ "Reformat" }).clicked() and lastLoadedPath ~= nil then
-					loadCurrentPath()
+				if Iris.Button({ "Reformat" }).clicked() and lastLoadedTarget ~= nil then
+					reloadLastTarget()
+				end
+				if Iris.Button({ "Load Current" }).clicked() then
+					loadCurrentTarget()
 				end
 			end
 			Iris.End()
@@ -321,9 +694,9 @@ function IrisBytecodeViewer.start(config)
 			if lastError then
 				Iris.TextColored({ "Load Error: " .. tostring(lastError), Color3.fromRGB(255, 110, 110) })
 			elseif lastResult == nil then
-				Iris.Text({ "No bytecode file loaded yet." })
+				Iris.Text({ "No bytecode source loaded yet." })
 			else
-				Iris.TextColored({ "Loaded: " .. tostring(lastLoadedPath), Color3.fromRGB(140, 210, 255) })
+				Iris.TextColored({ "Loaded: " .. tostring(lastResult.sourceLabel or lastLoadedTarget), Color3.fromRGB(140, 210, 255) })
 
 				renderOverview(Iris, lastResult)
 				renderPrettyOutput(Iris, lastResult, filterText.value)

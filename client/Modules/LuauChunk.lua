@@ -92,6 +92,7 @@ local LuauBytecode = loadRemoteModule("LuauBytecode")
 
 local LuauChunk = {}
 local nativeReadfile = readfile
+local nativeGetScriptBytecode = getscriptbytecode
 
 local CONSTANT_KIND = {
 	[0] = "nil",
@@ -772,8 +773,43 @@ function LuauChunk.parseFile(path, options)
 	return LuauChunk.parseBinary(input, options)
 end
 
+function LuauChunk.parseScriptBytecode(scriptInstance, options)
+	options = options or {}
+
+	local getScriptBytecode = options.getScriptBytecode or nativeGetScriptBytecode
+	if type(getScriptBytecode) ~= "function" then
+		error("getscriptbytecode is not available in this environment")
+	end
+
+	if typeof(scriptInstance) ~= "Instance" then
+		error("parseScriptBytecode expected an Instance")
+	end
+
+	if not scriptInstance:IsA("LuaSourceContainer") then
+		error(("Expected a LuaSourceContainer, got %s"):format(scriptInstance.ClassName))
+	end
+
+	local bytecode = getScriptBytecode(scriptInstance)
+	if type(bytecode) ~= "string" then
+		error(("getscriptbytecode returned %s instead of a string"):format(typeof(bytecode)))
+	end
+
+	return LuauChunk.parseBinary(bytecode, options)
+end
+
 function LuauChunk.inspectFile(path, options)
 	local chunk = LuauChunk.parseFile(path, options)
+	local output = LuauChunk.formatPrettyChunk(chunk, options)
+
+	if not options or options.printOutput ~= false then
+		print(output)
+	end
+
+	return output, chunk
+end
+
+function LuauChunk.inspectScriptBytecode(scriptInstance, options)
+	local chunk = LuauChunk.parseScriptBytecode(scriptInstance, options)
 	local output = LuauChunk.formatPrettyChunk(chunk, options)
 
 	if not options or options.printOutput ~= false then
