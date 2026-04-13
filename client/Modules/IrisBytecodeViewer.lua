@@ -422,6 +422,22 @@ local function createGui(state)
 		Size = UDim2.fromOffset(28, 28),
 	})
 
+	local resizeGrip = NativeUi.create("TextButton", {
+		Name = "ResizeGrip",
+		Active = true,
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Font = Enum.Font.Code,
+		Position = UDim2.new(1, -24, 1, -24),
+		Size = UDim2.fromOffset(18, 18),
+		Text = "///",
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		ZIndex = 3,
+		Parent = main,
+	})
+
 	local leftPanel = NativeUi.makePanel(main, {
 		Position = UDim2.fromOffset(12, 50),
 		Size = UDim2.new(0, 330, 1, -62),
@@ -584,9 +600,13 @@ local function createGui(state)
 	})
 
 	NativeUi.makeDraggable(topBar, main)
+	NativeUi.makeResizable(resizeGrip, main, {
+		MinSize = Vector2.new(920, 580),
+	})
 
 	refs.gui = screenGui
 	refs.main = main
+	refs.resizeGrip = resizeGrip
 	refs.treeContent = treeContent
 	refs.outputContent = outputContent
 	refs.scriptModeButton = scriptModeButton

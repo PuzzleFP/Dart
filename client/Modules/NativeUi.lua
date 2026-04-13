@@ -382,4 +382,69 @@ function NativeUi.makeDraggable(dragHandle, target)
 	end)
 end
 
+function NativeUi.makeResizable(resizeHandle, target, options)
+	options = options or {}
+
+	local resizing = false
+	local dragStart
+	local sizeStart
+	local minSize = options.MinSize or Vector2.new(720, 480)
+	local maxSize = options.MaxSize
+
+	local function clampSize(size)
+		local width = math.max(minSize.X, size.X)
+		local height = math.max(minSize.Y, size.Y)
+
+		if maxSize ~= nil then
+			width = math.min(width, maxSize.X)
+			height = math.min(height, maxSize.Y)
+		end
+
+		return Vector2.new(width, height)
+	end
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		local nextSize = clampSize(Vector2.new(
+			sizeStart.X + delta.X,
+			sizeStart.Y + delta.Y
+		))
+
+		target.Size = UDim2.new(
+			target.Size.X.Scale,
+			nextSize.X,
+			target.Size.Y.Scale,
+			nextSize.Y
+		)
+	end
+
+	resizeHandle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		resizing = true
+		dragStart = input.Position
+		sizeStart = Vector2.new(target.AbsoluteSize.X, target.AbsoluteSize.Y)
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				resizing = false
+			end
+		end)
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not resizing then
+			return
+		end
+
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		update(input)
+	end)
+end
+
 return NativeUi
