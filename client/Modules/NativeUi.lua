@@ -1,0 +1,385 @@
+local UserInputService = game:GetService("UserInputService")
+
+local NativeUi = {}
+
+NativeUi.Theme = {
+	Background = Color3.fromRGB(15, 18, 24),
+	Panel = Color3.fromRGB(23, 28, 36),
+	PanelAlt = Color3.fromRGB(29, 35, 46),
+	Surface = Color3.fromRGB(37, 45, 58),
+	SurfaceHover = Color3.fromRGB(47, 58, 74),
+	SurfaceActive = Color3.fromRGB(59, 73, 94),
+	Accent = Color3.fromRGB(84, 168, 255),
+	AccentHover = Color3.fromRGB(108, 182, 255),
+	AccentActive = Color3.fromRGB(61, 142, 228),
+	Text = Color3.fromRGB(229, 234, 241),
+	TextMuted = Color3.fromRGB(155, 167, 181),
+	TextDim = Color3.fromRGB(124, 134, 148),
+	Border = Color3.fromRGB(54, 64, 79),
+	Success = Color3.fromRGB(124, 204, 138),
+	Error = Color3.fromRGB(255, 118, 118),
+	Shadow = Color3.fromRGB(5, 7, 10),
+}
+
+local buttonRefreshers = setmetatable({}, { __mode = "k" })
+
+function NativeUi.create(className, properties)
+	local instance = Instance.new(className)
+
+	for key, value in pairs(properties or {}) do
+		if key ~= "Parent" then
+			instance[key] = value
+		end
+	end
+
+	instance.Parent = properties and properties.Parent or nil
+	return instance
+end
+
+function NativeUi.corner(parent, radius)
+	return NativeUi.create("UICorner", {
+		CornerRadius = UDim.new(0, radius or 8),
+		Parent = parent,
+	})
+end
+
+function NativeUi.stroke(parent, color, thickness, transparency)
+	return NativeUi.create("UIStroke", {
+		Color = color or NativeUi.Theme.Border,
+		Thickness = thickness or 1,
+		Transparency = transparency or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent = parent,
+	})
+end
+
+function NativeUi.padding(parent, x, y)
+	return NativeUi.create("UIPadding", {
+		PaddingLeft = UDim.new(0, x or 0),
+		PaddingRight = UDim.new(0, x or 0),
+		PaddingTop = UDim.new(0, y or x or 0),
+		PaddingBottom = UDim.new(0, y or x or 0),
+		Parent = parent,
+	})
+end
+
+function NativeUi.list(parent, padding, fillDirection)
+	return NativeUi.create("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, padding or 0),
+		FillDirection = fillDirection or Enum.FillDirection.Vertical,
+		Parent = parent,
+	})
+end
+
+function NativeUi.clear(parent)
+	for _, child in ipairs(parent:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+end
+
+function NativeUi.makePanel(parent, properties)
+	local panel = NativeUi.create("Frame", {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		BorderSizePixel = 0,
+		Parent = parent,
+	})
+
+	for key, value in pairs(properties or {}) do
+		if key ~= "CornerRadius" then
+			panel[key] = value
+		end
+	end
+
+	NativeUi.corner(panel, properties and properties.CornerRadius or 10)
+	NativeUi.stroke(panel, NativeUi.Theme.Border, 1, 0)
+	return panel
+end
+
+function NativeUi.makeLabel(parent, text, properties)
+	local label = NativeUi.create("TextLabel", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Font = Enum.Font.Gotham,
+		Text = text or "",
+		TextColor3 = NativeUi.Theme.Text,
+		TextSize = 14,
+		TextWrapped = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Size = UDim2.new(1, 0, 0, 20),
+		Parent = parent,
+	})
+
+	for key, value in pairs(properties or {}) do
+		label[key] = value
+	end
+
+	return label
+end
+
+function NativeUi.makeCodeLabel(parent, text, properties)
+	local label = NativeUi.makeLabel(parent, text, {
+		Font = Enum.Font.Code,
+		TextSize = 13,
+		TextColor3 = NativeUi.Theme.Text,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(1, 0, 0, 0),
+	})
+
+	for key, value in pairs(properties or {}) do
+		label[key] = value
+	end
+
+	return label
+end
+
+local function defaultButtonPalette()
+	return {
+		Base = NativeUi.Theme.Surface,
+		Hover = NativeUi.Theme.SurfaceHover,
+		Pressed = NativeUi.Theme.SurfaceActive,
+		Selected = NativeUi.Theme.Accent,
+		Text = NativeUi.Theme.Text,
+		SelectedText = Color3.fromRGB(9, 14, 20),
+	}
+end
+
+local function refreshButtonVisual(button)
+	local palette = buttonRefreshers[button]
+	if palette == nil then
+		return
+	end
+
+	if button:GetAttribute("Pressed") then
+		button.BackgroundColor3 = palette.Pressed
+		button.TextColor3 = palette.Text
+	elseif button:GetAttribute("Selected") then
+		button.BackgroundColor3 = palette.Selected
+		button.TextColor3 = palette.SelectedText
+	elseif button:GetAttribute("Hovered") then
+		button.BackgroundColor3 = palette.Hover
+		button.TextColor3 = palette.Text
+	else
+		button.BackgroundColor3 = palette.Base
+		button.TextColor3 = palette.Text
+	end
+end
+
+function NativeUi.bindButtonStyle(button, palette)
+	local resolved = palette or defaultButtonPalette()
+	button.AutoButtonColor = false
+	button:SetAttribute("Hovered", false)
+	button:SetAttribute("Pressed", false)
+	button:SetAttribute("Selected", false)
+	buttonRefreshers[button] = resolved
+
+	button.MouseEnter:Connect(function()
+		button:SetAttribute("Hovered", true)
+		refreshButtonVisual(button)
+	end)
+
+	button.MouseLeave:Connect(function()
+		button:SetAttribute("Hovered", false)
+		button:SetAttribute("Pressed", false)
+		refreshButtonVisual(button)
+	end)
+
+	button.MouseButton1Down:Connect(function()
+		button:SetAttribute("Pressed", true)
+		refreshButtonVisual(button)
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		button:SetAttribute("Pressed", false)
+		refreshButtonVisual(button)
+	end)
+
+	refreshButtonVisual(button)
+end
+
+function NativeUi.setButtonSelected(button, selected)
+	button:SetAttribute("Selected", selected == true)
+	refreshButtonVisual(button)
+end
+
+function NativeUi.makeButton(parent, text, properties)
+	local button = NativeUi.create("TextButton", {
+		BackgroundColor3 = NativeUi.Theme.Surface,
+		BorderSizePixel = 0,
+		Font = Enum.Font.GothamSemibold,
+		Text = text or "Button",
+		TextColor3 = NativeUi.Theme.Text,
+		TextSize = 13,
+		TextWrapped = false,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Size = UDim2.new(0, 84, 0, 28),
+		Parent = parent,
+	})
+
+	for key, value in pairs(properties or {}) do
+		if key ~= "CornerRadius" and key ~= "Palette" then
+			button[key] = value
+		end
+	end
+
+	NativeUi.corner(button, properties and properties.CornerRadius or 8)
+	NativeUi.stroke(button, NativeUi.Theme.Border, 1, 0)
+	NativeUi.bindButtonStyle(button, properties and properties.Palette or nil)
+	return button
+end
+
+function NativeUi.makeTextBox(parent, text, properties)
+	local box = NativeUi.create("TextBox", {
+		BackgroundColor3 = NativeUi.Theme.Surface,
+		BorderSizePixel = 0,
+		ClearTextOnFocus = false,
+		Font = Enum.Font.Code,
+		PlaceholderColor3 = NativeUi.Theme.TextDim,
+		Text = text or "",
+		TextColor3 = NativeUi.Theme.Text,
+		TextSize = 13,
+		TextWrapped = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Size = UDim2.new(1, 0, 0, 30),
+		Parent = parent,
+	})
+
+	for key, value in pairs(properties or {}) do
+		if key ~= "CornerRadius" then
+			box[key] = value
+		end
+	end
+
+	NativeUi.corner(box, properties and properties.CornerRadius or 8)
+	NativeUi.stroke(box, NativeUi.Theme.Border, 1, 0)
+	NativeUi.padding(box, 10, 8)
+	return box
+end
+
+function NativeUi.makeDivider(parent)
+	return NativeUi.create("Frame", {
+		BackgroundColor3 = NativeUi.Theme.Border,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 1),
+		Parent = parent,
+	})
+end
+
+function NativeUi.makeRow(parent, height, properties)
+	local row = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, height or 30),
+		Parent = parent,
+	})
+
+	for key, value in pairs(properties or {}) do
+		row[key] = value
+	end
+
+	return row
+end
+
+function NativeUi.makeScrollList(parent, properties)
+	properties = properties or {}
+
+	local scroll = NativeUi.create("ScrollingFrame", {
+		Active = true,
+		AutomaticCanvasSize = Enum.AutomaticSize.None,
+		BackgroundColor3 = properties.BackgroundColor3 or NativeUi.Theme.PanelAlt,
+		BorderSizePixel = 0,
+		CanvasSize = UDim2.fromOffset(0, 0),
+		ScrollBarImageColor3 = NativeUi.Theme.TextDim,
+		ScrollBarThickness = properties.ScrollBarThickness or 6,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Size = properties.Size or UDim2.new(1, 0, 1, 0),
+		TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
+		BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
+		Parent = parent,
+	})
+
+	for key, value in pairs(properties) do
+		if key ~= "Padding" and key ~= "ContentPadding" and key ~= "ScrollBarThickness" and key ~= "CornerRadius" then
+			scroll[key] = value
+		end
+	end
+
+	NativeUi.corner(scroll, properties.CornerRadius or 10)
+	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0)
+
+	local content = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, -8, 0, 0),
+		Parent = scroll,
+	})
+
+	local contentPadding = properties.ContentPadding or 8
+	NativeUi.padding(content, contentPadding, contentPadding)
+	local layout = NativeUi.list(content, properties.Padding or 6, Enum.FillDirection.Vertical)
+
+	local function updateCanvas()
+		local height = layout.AbsoluteContentSize.Y + contentPadding * 2
+		content.Size = UDim2.new(1, -8, 0, height)
+		scroll.CanvasSize = UDim2.fromOffset(0, height)
+	end
+
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+	updateCanvas()
+
+	return scroll, content, layout
+end
+
+function NativeUi.makeDraggable(dragHandle, target)
+	local dragging = false
+	local dragStart
+	local targetStart
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		target.Position = UDim2.new(
+			targetStart.X.Scale,
+			targetStart.X.Offset + delta.X,
+			targetStart.Y.Scale,
+			targetStart.Y.Offset + delta.Y
+		)
+	end
+
+	dragHandle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		dragging = true
+		dragStart = input.Position
+		targetStart = target.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging then
+			return
+		end
+
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		update(input)
+	end)
+end
+
+return NativeUi

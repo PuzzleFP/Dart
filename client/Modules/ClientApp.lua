@@ -87,7 +87,7 @@ local function loadRemoteModule(moduleName)
 end
 
 local Helpers = loadRemoteModule("Helpers")
-local IrisBytecodeViewer = loadRemoteModule("IrisBytecodeViewer")
+local BytecodeViewer = loadRemoteModule("IrisBytecodeViewer")
 
 local ClientApp = {}
 
@@ -124,15 +124,20 @@ function ClientApp.start(config)
 		Helpers.safeNotify(config.GameName, "Client script loaded.")
 	end
 
-	if config.EnableIrisBytecodeViewer then
+	local enableViewer = config.EnableBytecodeViewer
+	if enableViewer == nil then
+		enableViewer = config.EnableIrisBytecodeViewer
+	end
+
+	if enableViewer then
 		local ok, err = pcall(function()
-			IrisBytecodeViewer.start(config)
+			BytecodeViewer.start(config)
 		end)
 
 		if not ok then
 			setLastError(err)
-			print("[Dart] Iris viewer start error:", err)
-			warn(("[Client] Iris viewer failed to start: %s"):format(err))
+			print("[Dart] Bytecode viewer start error:", err)
+			warn(("[Client] Bytecode viewer failed to start: %s"):format(err))
 		end
 	end
 

@@ -30,6 +30,17 @@ local function getRemoteState()
 	return state
 end
 
+local function resetRemoteCache()
+	local state = getRemoteState()
+	state.cache = {}
+	return state
+end
+
+local function clearLastError()
+	local scope = getGlobalScope()
+	scope.__DartLastError = nil
+end
+
 local function httpGet(url)
 	local ok, result = pcall(function()
 		return game:HttpGet(url)
@@ -97,6 +108,9 @@ local function applyRemoteConfig(config)
 	)
 	state.modulesBaseUrl = config.RemoteModulesBaseUrl or (state.rawBaseUrl .. state.modulesPath .. "/")
 end
+
+resetRemoteCache()
+clearLastError()
 
 local Config = loadRemoteModule("Config")
 applyRemoteConfig(Config)
