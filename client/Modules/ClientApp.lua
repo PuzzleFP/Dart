@@ -136,7 +136,7 @@ function ClientApp.start(config)
 
 		if not ok then
 			setLastError(err)
-			print("[Dart] Bytecode viewer start error:", err)
+			print(("[%s] Bytecode viewer start error:"):format(config.GameName), err)
 			warn(("[Client] Bytecode viewer failed to start: %s"):format(err))
 		end
 	end

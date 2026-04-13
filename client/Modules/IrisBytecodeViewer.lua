@@ -87,12 +87,13 @@ local function loadRemoteModule(moduleName)
 end
 
 local LuauChunk = loadRemoteModule("LuauChunk")
+local LuauBytecode = loadRemoteModule("LuauBytecode")
 local NativeUi = loadRemoteModule("NativeUi")
 
 local BytecodeViewer = {}
 
 local started = false
-local GUI_NAME = "DartBytecodeViewer"
+local GUI_NAME = "EclipsisControlGui"
 
 local function trimText(text)
 	return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -344,15 +345,158 @@ local function buildScriptBrowserTree()
 	return roots
 end
 
+local function appendSection(lines, title)
+	if #lines > 0 then
+		table.insert(lines, "")
+	end
+
+	table.insert(lines, title)
+end
+
+local function appendKeyValue(lines, label, value)
+	table.insert(lines, ("  %-16s %s"):format(label .. ":", tostring(value)))
+end
+
+local function formatCodeView(chunk, showRawOpcodes)
+	local lines = {
+		"Code View",
+	}
+
+	appendKeyValue(lines, "Version", chunk.version)
+	appendKeyValue(lines, "Protos", chunk.protoCount or 0)
+	appendKeyValue(lines, "Main Proto", chunk.mainProtoIndex or 0)
+
+	for _, proto in ipairs(chunk.protos) do
+		appendSection(lines, ("Proto %d%s"):format(
+			proto.index,
+			proto.index == chunk.mainProtoIndex and " <main>" or ""
+		))
+
+		appendKeyValue(lines, "Debug Name", proto.debugName or "<anonymous>")
+		appendKeyValue(lines, "Params", proto.numParams)
+		appendKeyValue(lines, "Max Stack", proto.maxStackSize)
+
+		if proto.behaviorSummary then
+			appendKeyValue(lines, "Likely", proto.behaviorSummary)
+		end
+
+		table.insert(lines, "  Instructions")
+
+		for _, instruction in ipairs(proto.disassembly.instructions) do
+			table.insert(lines, "    " .. LuauBytecode.formatInstruction(instruction, {
+				constants = proto.constants,
+				showRawOpcode = showRawOpcodes,
+			}))
+		end
+
+		for _, err in ipairs(proto.disassembly.errors) do
+			table.insert(lines, "    [error] " .. err)
+		end
+	end
+
+	return table.concat(lines, "\n")
+end
+
+local function formatDataView(chunk)
+	local lines = {
+		"Data View",
+	}
+
+	appendKeyValue(lines, "Byte Count", chunk.byteCount)
+	appendKeyValue(lines, "Version", chunk.version)
+	appendKeyValue(lines, "Type Version", chunk.typesVersion or 0)
+	appendKeyValue(lines, "Protos", chunk.protoCount or 0)
+	appendKeyValue(lines, "Main Proto", chunk.mainProtoIndex or 0)
+	appendKeyValue(lines, "Strings", chunk.stringCount or 0)
+
+	appendSection(lines, "String Table")
+	if #chunk.strings == 0 then
+		table.insert(lines, "  <empty>")
+	else
+		for index, value in ipairs(chunk.strings) do
+			table.insert(lines, ("  S%-17d %q"):format(index, value))
+		end
+	end
+
+	for _, proto in ipairs(chunk.protos) do
+		appendSection(lines, ("Proto %d Data"):format(proto.index))
+		appendKeyValue(lines, "Debug Name", proto.debugName or "<anonymous>")
+		appendKeyValue(lines, "Params", proto.numParams)
+		appendKeyValue(lines, "Upvalues", proto.numUpvalues)
+		appendKeyValue(lines, "Max Stack", proto.maxStackSize)
+		appendKeyValue(lines, "Vararg", proto.isVararg)
+		appendKeyValue(lines, "Constants", proto.sizeConstants or #proto.constants)
+
+		table.insert(lines, "  Constants")
+		if #proto.constants == 0 then
+			table.insert(lines, "    <empty>")
+		else
+			for index, constant in ipairs(proto.constants) do
+				table.insert(lines, ("    K%-16d %s"):format(index - 1, LuauBytecode.formatConstant(constant)))
+			end
+		end
+	end
+
+	return table.concat(lines, "\n")
+end
+
+local function filterTreeNode(node, filterText)
+	if filterText == "" then
+		return node
+	end
+
+	local filteredChildren = {}
+	for _, child in ipairs(node.children) do
+		local filteredChild = filterTreeNode(child, filterText)
+		if filteredChild ~= nil then
+			table.insert(filteredChildren, filteredChild)
+		end
+	end
+
+	local matches = containsFilter(node.name, filterText)
+		or containsFilter(node.path, filterText)
+		or containsFilter(node.className, filterText)
+
+	if not matches and #filteredChildren == 0 then
+		return nil
+	end
+
+	return {
+		name = node.name,
+		path = node.path,
+		className = node.className,
+		isScript = node.isScript,
+		children = filteredChildren,
+		depth = node.depth,
+	}
+end
+
+local function getFilteredTree(tree, filterText)
+	if filterText == "" then
+		return tree
+	end
+
+	local filtered = {}
+	for _, node in ipairs(tree) do
+		local filteredNode = filterTreeNode(node, filterText)
+		if filteredNode ~= nil then
+			table.insert(filtered, filteredNode)
+		end
+	end
+
+	return filtered
+end
+
 local function makeState(config)
 	return {
+		activeTab = config.DefaultTab or "main",
 		sourceMode = config.DefaultBytecodeSourceMode or "script",
+		viewMode = config.DefaultBytecodeViewMode or "code",
 		scriptPath = trimText(config.DefaultScriptPath or ""),
 		filePath = trimText(config.DefaultBytecodeFilePath or ""),
 		inputFormat = config.DefaultBytecodeInputFormat or "binary",
 		filterText = "",
-		showStrings = config.ShowStringTableByDefault == true,
-		showConstants = config.ShowConstantTableByDefault ~= false,
+		treeFilterText = "",
 		showRawOpcodes = config.ShowRawOpcodes ~= false,
 		lastResult = nil,
 		lastError = nil,
@@ -398,28 +542,40 @@ local function createGui(state)
 	local main = NativeUi.makePanel(screenGui, {
 		Name = "Main",
 		BackgroundColor3 = NativeUi.Theme.Background,
-		Position = UDim2.new(0.5, -560, 0.5, -360),
-		Size = UDim2.fromOffset(1120, 720),
+		Position = UDim2.new(0.5, -500, 0.5, -320),
+		Size = UDim2.fromOffset(1000, 640),
 	})
 
 	local topBar = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Panel,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 38),
+		Size = UDim2.new(1, 0, 0, 34),
 		Parent = main,
 	})
 	NativeUi.corner(topBar, 10)
 
-	NativeUi.makeLabel(topBar, "Dart Bytecode Viewer", {
+	NativeUi.makeLabel(topBar, "Eclipsis Control", {
 		Font = Enum.Font.GothamBlack,
-		TextSize = 16,
-		Position = UDim2.fromOffset(14, 0),
-		Size = UDim2.new(1, -70, 1, 0),
+		TextSize = 15,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(0, 150, 1, 0),
+	})
+
+	local mainTabButton = NativeUi.makeButton(topBar, "Main", {
+		Position = UDim2.fromOffset(168, 4),
+		Size = UDim2.fromOffset(62, 24),
+		TextSize = 12,
+	})
+
+	local bytecodeTabButton = NativeUi.makeButton(topBar, "Bytecode", {
+		Position = UDim2.fromOffset(236, 4),
+		Size = UDim2.fromOffset(84, 24),
+		TextSize = 12,
 	})
 
 	local closeButton = NativeUi.makeButton(topBar, "X", {
-		Position = UDim2.new(1, -34, 0, 5),
-		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.new(1, -32, 0, 3),
+		Size = UDim2.fromOffset(26, 26),
 	})
 
 	local resizeGrip = NativeUi.create("TextButton", {
@@ -438,191 +594,343 @@ local function createGui(state)
 		Parent = main,
 	})
 
+	local mainTabPanel = NativeUi.makePanel(main, {
+		Position = UDim2.fromOffset(10, 42),
+		Size = UDim2.new(1, -20, 1, -52),
+		Visible = false,
+	})
+
+	local mainScroll, mainContent = NativeUi.makeScrollList(mainTabPanel, {
+		Position = UDim2.fromOffset(8, 8),
+		Size = UDim2.new(1, -16, 1, -16),
+		Padding = 8,
+		ContentPadding = 10,
+	})
+
+	local mainHeroPanel = NativeUi.makePanel(mainContent, {
+		Size = UDim2.new(1, 0, 0, 78),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	NativeUi.makeLabel(mainHeroPanel, "EIC Player Panel", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		Position = UDim2.fromOffset(12, 10),
+		Size = UDim2.new(1, -24, 0, 24),
+	})
+
+	NativeUi.makeLabel(mainHeroPanel, "Main controls stay here. Bytecode tools live on their own tab.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 13,
+		Position = UDim2.fromOffset(12, 34),
+		Size = UDim2.new(1, -24, 0, 18),
+	})
+
+	local mainStatusLabel = NativeUi.makeLabel(mainHeroPanel, "Ready", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 54),
+		Size = UDim2.new(1, -24, 0, 16),
+	})
+
+	local movementPanel = NativeUi.makePanel(mainContent, {
+		Size = UDim2.new(1, 0, 0, 152),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local movementTitle = makeSectionTitle(movementPanel, "Movement")
+	movementTitle.Position = UDim2.fromOffset(12, 10)
+
+	local walkSpeedLabel = NativeUi.makeLabel(movementPanel, "WalkSpeed", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.fromOffset(88, 24),
+	})
+
+	local walkSpeedBox = NativeUi.makeTextBox(movementPanel, "", {
+		Position = UDim2.fromOffset(104, 40),
+		Size = UDim2.new(1, -198, 0, 28),
+		TextSize = 12,
+	})
+
+	local walkSpeedButton = NativeUi.makeButton(movementPanel, "Apply", {
+		Position = UDim2.new(1, -84, 0, 41),
+		Size = UDim2.fromOffset(72, 26),
+		TextSize = 12,
+	})
+
+	local jumpPowerLabel = NativeUi.makeLabel(movementPanel, "JumpPower", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 76),
+		Size = UDim2.fromOffset(88, 24),
+	})
+
+	local jumpPowerBox = NativeUi.makeTextBox(movementPanel, "", {
+		Position = UDim2.fromOffset(104, 74),
+		Size = UDim2.new(1, -198, 0, 28),
+		TextSize = 12,
+	})
+
+	local jumpPowerButton = NativeUi.makeButton(movementPanel, "Apply", {
+		Position = UDim2.new(1, -84, 0, 75),
+		Size = UDim2.fromOffset(72, 26),
+		TextSize = 12,
+	})
+
+	local hipHeightLabel = NativeUi.makeLabel(movementPanel, "HipHeight", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 110),
+		Size = UDim2.fromOffset(88, 24),
+	})
+
+	local hipHeightBox = NativeUi.makeTextBox(movementPanel, "", {
+		Position = UDim2.fromOffset(104, 108),
+		Size = UDim2.new(1, -198, 0, 28),
+		TextSize = 12,
+	})
+
+	local hipHeightButton = NativeUi.makeButton(movementPanel, "Apply", {
+		Position = UDim2.new(1, -84, 0, 109),
+		Size = UDim2.fromOffset(72, 26),
+		TextSize = 12,
+	})
+
+	local worldPanel = NativeUi.makePanel(mainContent, {
+		Size = UDim2.new(1, 0, 0, 118),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local worldTitle = makeSectionTitle(worldPanel, "World")
+	worldTitle.Position = UDim2.fromOffset(12, 10)
+
+	local gravityLabel = NativeUi.makeLabel(worldPanel, "Gravity", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.fromOffset(88, 24),
+	})
+
+	local gravityBox = NativeUi.makeTextBox(worldPanel, "", {
+		Position = UDim2.fromOffset(104, 40),
+		Size = UDim2.new(1, -198, 0, 28),
+		TextSize = 12,
+	})
+
+	local gravityButton = NativeUi.makeButton(worldPanel, "Apply", {
+		Position = UDim2.new(1, -84, 0, 41),
+		Size = UDim2.fromOffset(72, 26),
+		TextSize = 12,
+	})
+
+	local refreshStatsButton = NativeUi.makeButton(worldPanel, "Refresh Stats", {
+		Position = UDim2.fromOffset(12, 78),
+		Size = UDim2.fromOffset(110, 26),
+		TextSize = 12,
+	})
+
+	local resetCharacterButton = NativeUi.makeButton(worldPanel, "Reset Character", {
+		Position = UDim2.fromOffset(130, 78),
+		Size = UDim2.fromOffset(124, 26),
+		TextSize = 12,
+	})
+
 	local leftPanel = NativeUi.makePanel(main, {
-		Position = UDim2.fromOffset(12, 50),
-		Size = UDim2.new(0, 330, 1, -62),
+		Position = UDim2.fromOffset(10, 42),
+		Size = UDim2.new(0, 284, 1, -52),
 	})
 
 	local rightPanel = NativeUi.makePanel(main, {
-		Position = UDim2.new(0, 354, 0, 50),
-		Size = UDim2.new(1, -366, 1, -62),
+		Position = UDim2.new(0, 302, 0, 42),
+		Size = UDim2.new(1, -312, 1, -52),
 	})
 
 	local leftHeader = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(10, 10),
-		Size = UDim2.new(1, -20, 0, 28),
+		Position = UDim2.fromOffset(8, 8),
+		Size = UDim2.new(1, -16, 0, 54),
 		Parent = leftPanel,
 	})
 
-	makeSectionTitle(leftHeader, "Client Scripts")
+	makeSectionTitle(leftHeader, "Scripts")
 
 	local refreshTreeButton = NativeUi.makeButton(leftHeader, "Refresh", {
-		Position = UDim2.new(1, -86, 0, 0),
-		Size = UDim2.fromOffset(86, 28),
+		Position = UDim2.new(1, -74, 0, 0),
+		Size = UDim2.fromOffset(74, 24),
+		TextSize = 12,
+	})
+
+	local treeSearchBox = NativeUi.makeTextBox(leftHeader, "", {
+		PlaceholderText = "Filter scripts",
+		Position = UDim2.fromOffset(0, 28),
+		Size = UDim2.new(1, 0, 0, 26),
+		TextSize = 12,
 	})
 
 	local treeScroll, treeContent = NativeUi.makeScrollList(leftPanel, {
-		Position = UDim2.fromOffset(10, 48),
-		Size = UDim2.new(1, -20, 1, -58),
+		Position = UDim2.fromOffset(8, 70),
+		Size = UDim2.new(1, -16, 1, -78),
 		Padding = 4,
-		ContentPadding = 8,
+		ContentPadding = 6,
 	})
 
-	local controlsPanel = NativeUi.makePanel(rightPanel, {
-		Position = UDim2.fromOffset(10, 10),
-		Size = UDim2.new(1, -20, 0, 220),
+	local toolbarPanel = NativeUi.makePanel(rightPanel, {
+		Position = UDim2.fromOffset(8, 8),
+		Size = UDim2.new(1, -16, 0, 118),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local controlsContent = NativeUi.create("Frame", {
+	local toolbarContent = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(10, 10),
 		Size = UDim2.new(1, -20, 1, -20),
-		Parent = controlsPanel,
+		Parent = toolbarPanel,
 	})
 
-	NativeUi.list(controlsContent, 8, Enum.FillDirection.Vertical)
-
-	makeSectionTitle(controlsContent, "Controls")
-
-	local modeRow = NativeUi.makeRow(controlsContent, 28)
-	local modeLabel = NativeUi.makeLabel(modeRow, "Source", {
-		Size = UDim2.fromOffset(60, 28),
+	local statusLabel = NativeUi.makeLabel(toolbarContent, "Ready", {
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, -250, 0, 18),
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
 	})
-	modeLabel.Position = UDim2.fromOffset(0, 0)
+
+	local codeViewButton = NativeUi.makeButton(toolbarContent, "Code", {
+		Position = UDim2.new(1, -204, 0, 0),
+		Size = UDim2.fromOffset(60, 24),
+		TextSize = 12,
+	})
+
+	local decompileViewButton = NativeUi.makeButton(toolbarContent, "Decompile", {
+		Position = UDim2.new(1, -172, 0, 0),
+		Size = UDim2.fromOffset(94, 24),
+		TextSize = 12,
+	})
+
+	local dataViewButton = NativeUi.makeButton(toolbarContent, "Data", {
+		Position = UDim2.new(1, -72, 0, 0),
+		Size = UDim2.fromOffset(60, 24),
+		TextSize = 12,
+	})
+
+	local modeRow = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 28),
+		Size = UDim2.new(1, 0, 0, 26),
+		Parent = toolbarContent,
+	})
 
 	local scriptModeButton = NativeUi.makeButton(modeRow, "Script", {
-		Position = UDim2.fromOffset(72, 0),
-		Size = UDim2.fromOffset(84, 28),
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(70, 26),
+		TextSize = 12,
 	})
 
 	local fileModeButton = NativeUi.makeButton(modeRow, "File", {
-		Position = UDim2.fromOffset(164, 0),
-		Size = UDim2.fromOffset(72, 28),
+		Position = UDim2.fromOffset(76, 0),
+		Size = UDim2.fromOffset(56, 26),
+		TextSize = 12,
 	})
 
-	local scriptRow = NativeUi.makeRow(controlsContent, 32)
-	local scriptPathBox = NativeUi.makeTextBox(scriptRow, state.scriptPath, {
+	local binaryButton = NativeUi.makeButton(modeRow, "Binary", {
+		Position = UDim2.fromOffset(146, 0),
+		Size = UDim2.fromOffset(72, 26),
+		TextSize = 12,
+	})
+
+	local hexButton = NativeUi.makeButton(modeRow, "Hex", {
+		Position = UDim2.fromOffset(224, 0),
+		Size = UDim2.fromOffset(52, 26),
+		TextSize = 12,
+	})
+
+	local rawOpcodesButton = NativeUi.makeButton(modeRow, "Raw", {
+		Position = UDim2.fromOffset(286, 0),
+		Size = UDim2.fromOffset(56, 26),
+		TextSize = 12,
+	})
+
+	local targetBox = NativeUi.makeTextBox(toolbarContent, "", {
 		PlaceholderText = "Players.LocalPlayer.PlayerScripts.YourLocalScript",
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, -196, 0, 32),
+		Position = UDim2.fromOffset(0, 58),
+		Size = UDim2.new(1, -152, 0, 28),
+		TextSize = 12,
 	})
 
-	local loadScriptButton = NativeUi.makeButton(scriptRow, "Load Script", {
-		Position = UDim2.new(1, -188, 0, 2),
-		Size = UDim2.fromOffset(92, 28),
+	local loadButton = NativeUi.makeButton(toolbarContent, "Load", {
+		Position = UDim2.new(1, -144, 0, 59),
+		Size = UDim2.fromOffset(66, 26),
+		TextSize = 12,
 	})
 
-	local reloadScriptButton = NativeUi.makeButton(scriptRow, "Reload", {
-		Position = UDim2.new(1, -88, 0, 2),
-		Size = UDim2.fromOffset(88, 28),
+	local reloadButton = NativeUi.makeButton(toolbarContent, "Reload", {
+		Position = UDim2.new(1, -72, 0, 59),
+		Size = UDim2.fromOffset(66, 26),
+		TextSize = 12,
 	})
 
-	local fileRow = NativeUi.makeRow(controlsContent, 32)
-	local filePathBox = NativeUi.makeTextBox(fileRow, state.filePath, {
-		PlaceholderText = "C:\\Users\\Marin\\Downloads\\Test.txt",
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, -176, 0, 32),
+	local filterBox = NativeUi.makeTextBox(toolbarContent, "", {
+		PlaceholderText = "Filter output",
+		Position = UDim2.fromOffset(0, 90),
+		Size = UDim2.new(1, -96, 0, 28),
+		TextSize = 12,
 	})
 
-	local loadFileButton = NativeUi.makeButton(fileRow, "Load File", {
-		Position = UDim2.new(1, -168, 0, 2),
-		Size = UDim2.fromOffset(80, 28),
-	})
-
-	local reloadFileButton = NativeUi.makeButton(fileRow, "Reload", {
-		Position = UDim2.new(1, -80, 0, 2),
-		Size = UDim2.fromOffset(80, 28),
-	})
-
-	local encodingRow = NativeUi.makeRow(controlsContent, 28)
-	local encodingLabel = NativeUi.makeLabel(encodingRow, "Format", {
-		Size = UDim2.fromOffset(60, 28),
-	})
-	encodingLabel.Position = UDim2.fromOffset(0, 0)
-
-	local binaryButton = NativeUi.makeButton(encodingRow, "Binary", {
-		Position = UDim2.fromOffset(72, 0),
-		Size = UDim2.fromOffset(84, 28),
-	})
-
-	local hexButton = NativeUi.makeButton(encodingRow, "Hex", {
-		Position = UDim2.fromOffset(164, 0),
-		Size = UDim2.fromOffset(68, 28),
-	})
-
-	local filterRow = NativeUi.makeRow(controlsContent, 32)
-	local filterBox = NativeUi.makeTextBox(filterRow, "", {
-		PlaceholderText = "Filter output text",
-		Size = UDim2.new(1, 0, 0, 32),
-	})
-
-	local optionsRow = NativeUi.makeRow(controlsContent, 28)
-	local rawOpcodesButton = NativeUi.makeButton(optionsRow, "Raw Opcodes", {
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.fromOffset(104, 28),
-	})
-
-	local stringsButton = NativeUi.makeButton(optionsRow, "Strings", {
-		Position = UDim2.fromOffset(112, 0),
-		Size = UDim2.fromOffset(78, 28),
-	})
-
-	local constantsButton = NativeUi.makeButton(optionsRow, "Constants", {
-		Position = UDim2.fromOffset(198, 0),
-		Size = UDim2.fromOffset(88, 28),
-	})
-
-	local loadCurrentButton = NativeUi.makeButton(optionsRow, "Load Current", {
-		Position = UDim2.new(1, -204, 0, 0),
-		Size = UDim2.fromOffset(96, 28),
-	})
-
-	local refreshViewButton = NativeUi.makeButton(optionsRow, "Refresh View", {
-		Position = UDim2.new(1, -100, 0, 0),
-		Size = UDim2.fromOffset(100, 28),
-	})
-
-	local statusLabel = NativeUi.makeLabel(controlsContent, "Ready", {
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 13,
-		Size = UDim2.new(1, 0, 0, 22),
+	local refreshViewButton = NativeUi.makeButton(toolbarContent, "Apply", {
+		Position = UDim2.new(1, -88, 0, 91),
+		Size = UDim2.fromOffset(82, 26),
+		TextSize = 12,
 	})
 
 	local outputScroll, outputContent = NativeUi.makeScrollList(rightPanel, {
-		Position = UDim2.fromOffset(10, 240),
-		Size = UDim2.new(1, -20, 1, -250),
+		Position = UDim2.fromOffset(8, 134),
+		Size = UDim2.new(1, -16, 1, -142),
 		Padding = 4,
-		ContentPadding = 10,
+		ContentPadding = 8,
 	})
 
 	NativeUi.makeDraggable(topBar, main)
 	NativeUi.makeResizable(resizeGrip, main, {
-		MinSize = Vector2.new(920, 580),
+		MinSize = Vector2.new(860, 520),
 	})
 
 	refs.gui = screenGui
 	refs.main = main
 	refs.resizeGrip = resizeGrip
+	refs.mainTabButton = mainTabButton
+	refs.bytecodeTabButton = bytecodeTabButton
+	refs.mainTabPanel = mainTabPanel
+	refs.mainStatusLabel = mainStatusLabel
+	refs.walkSpeedBox = walkSpeedBox
+	refs.walkSpeedButton = walkSpeedButton
+	refs.jumpPowerBox = jumpPowerBox
+	refs.jumpPowerButton = jumpPowerButton
+	refs.hipHeightBox = hipHeightBox
+	refs.hipHeightButton = hipHeightButton
+	refs.gravityBox = gravityBox
+	refs.gravityButton = gravityButton
+	refs.refreshStatsButton = refreshStatsButton
+	refs.resetCharacterButton = resetCharacterButton
+	refs.leftPanel = leftPanel
+	refs.rightPanel = rightPanel
 	refs.treeContent = treeContent
 	refs.outputContent = outputContent
+	refs.treeSearchBox = treeSearchBox
+	refs.targetBox = targetBox
+	refs.statusLabel = statusLabel
+	refs.codeViewButton = codeViewButton
+	refs.decompileViewButton = decompileViewButton
+	refs.dataViewButton = dataViewButton
 	refs.scriptModeButton = scriptModeButton
 	refs.fileModeButton = fileModeButton
-	refs.scriptRow = scriptRow
-	refs.fileRow = fileRow
-	refs.encodingRow = encodingRow
 	refs.binaryButton = binaryButton
 	refs.hexButton = hexButton
 	refs.rawOpcodesButton = rawOpcodesButton
-	refs.stringsButton = stringsButton
-	refs.constantsButton = constantsButton
-	refs.scriptPathBox = scriptPathBox
-	refs.filePathBox = filePathBox
 	refs.filterBox = filterBox
-	refs.statusLabel = statusLabel
 
 	closeButton.MouseButton1Click:Connect(function()
 		started = false
@@ -630,11 +938,8 @@ local function createGui(state)
 	end)
 
 	refs.refreshTreeButton = refreshTreeButton
-	refs.loadScriptButton = loadScriptButton
-	refs.reloadScriptButton = reloadScriptButton
-	refs.loadFileButton = loadFileButton
-	refs.reloadFileButton = reloadFileButton
-	refs.loadCurrentButton = loadCurrentButton
+	refs.loadButton = loadButton
+	refs.reloadButton = reloadButton
 	refs.refreshViewButton = refreshViewButton
 
 	return refs
@@ -650,9 +955,152 @@ function BytecodeViewer.start(config)
 	local state = makeState(config)
 	local refs = createGui(state)
 
+	local LuauDecompiler = loadRemoteModule("LuauDecompiler")
+
 	local function setStatus(text, color)
 		refs.statusLabel.Text = text
 		refs.statusLabel.TextColor3 = color or NativeUi.Theme.TextMuted
+	end
+
+	local function setMainStatus(text, color)
+		refs.mainStatusLabel.Text = text
+		refs.mainStatusLabel.TextColor3 = color or NativeUi.Theme.TextMuted
+	end
+
+	local function getActiveTargetText()
+		if state.sourceMode == "script" then
+			return state.scriptPath
+		end
+
+		return state.filePath
+	end
+
+	local function setActiveTargetText(text)
+		if state.sourceMode == "script" then
+			state.scriptPath = trimText(text)
+			return
+		end
+
+		state.filePath = trimText(text)
+	end
+
+	local function getActiveTargetPlaceholder()
+		if state.sourceMode == "script" then
+			return "Players.LocalPlayer.PlayerScripts.YourLocalScript"
+		end
+
+		return "C:\\Users\\Marin\\Downloads\\Test.txt"
+	end
+
+	local function getLocalHumanoid()
+		local localPlayer = Players.LocalPlayer
+		if localPlayer == nil or localPlayer.Character == nil then
+			return nil
+		end
+
+		return localPlayer.Character:FindFirstChildOfClass("Humanoid")
+	end
+
+	local function runMainAction(actionName, value)
+		local handlers = config.ActionHandlers
+		local customHandler = handlers and handlers[actionName]
+
+		if type(customHandler) == "function" then
+			return pcall(customHandler, value)
+		end
+
+		local defaultHandler
+
+		if actionName == "setWalkSpeed" then
+			defaultHandler = function()
+				local humanoid = getLocalHumanoid()
+				if humanoid == nil then
+					error("Humanoid not found")
+				end
+
+				humanoid.WalkSpeed = value
+				return ("WalkSpeed set to %s"):format(value)
+			end
+		elseif actionName == "setJumpPower" then
+			defaultHandler = function()
+				local humanoid = getLocalHumanoid()
+				if humanoid == nil then
+					error("Humanoid not found")
+				end
+
+				humanoid.UseJumpPower = true
+				humanoid.JumpPower = value
+				return ("JumpPower set to %s"):format(value)
+			end
+		elseif actionName == "setHipHeight" then
+			defaultHandler = function()
+				local humanoid = getLocalHumanoid()
+				if humanoid == nil then
+					error("Humanoid not found")
+				end
+
+				humanoid.HipHeight = value
+				return ("HipHeight set to %s"):format(value)
+			end
+		elseif actionName == "setGravity" then
+			defaultHandler = function()
+				game:GetService("Workspace").Gravity = value
+				return ("Gravity set to %s"):format(value)
+			end
+		elseif actionName == "resetCharacter" then
+			defaultHandler = function()
+				local localPlayer = Players.LocalPlayer
+				if localPlayer == nil then
+					error("LocalPlayer not found")
+				end
+
+				if localPlayer.LoadCharacter ~= nil then
+					localPlayer:LoadCharacter()
+				elseif localPlayer.Character ~= nil then
+					localPlayer.Character:BreakJoints()
+				else
+					error("Character not found")
+				end
+
+				return "Character reset"
+			end
+		end
+
+		if defaultHandler == nil then
+			return false, ("No handler configured for %s"):format(actionName)
+		end
+
+		return pcall(defaultHandler)
+	end
+
+	local function refreshMainFields()
+		local humanoid = getLocalHumanoid()
+		local workspaceInstance = game:GetService("Workspace")
+
+		if humanoid ~= nil then
+			refs.walkSpeedBox.Text = tostring(humanoid.WalkSpeed)
+			refs.jumpPowerBox.Text = tostring(humanoid.JumpPower)
+			refs.hipHeightBox.Text = tostring(humanoid.HipHeight)
+		end
+
+		refs.gravityBox.Text = tostring(workspaceInstance.Gravity)
+	end
+
+	local function applyNumericAction(box, actionName, label)
+		local value = tonumber(trimText(box.Text))
+		if value == nil then
+			setMainStatus(label .. " must be a number", NativeUi.Theme.Error)
+			return
+		end
+
+		local ok, result = runMainAction(actionName, value)
+		if ok then
+			setMainStatus(tostring(result or (label .. " updated")), NativeUi.Theme.Success)
+			refreshMainFields()
+			return
+		end
+
+		setMainStatus(tostring(result), NativeUi.Theme.Error)
 	end
 
 	local function collectOutputLines()
@@ -660,14 +1108,18 @@ function BytecodeViewer.start(config)
 			return {}
 		end
 
-		local prettyText = LuauChunk.formatPrettyChunk(state.lastResult.chunk, {
-			includeStrings = state.showStrings,
-			includeConstants = state.showConstants,
-			showRawOpcode = state.showRawOpcodes,
-		})
+		local outputText
+
+		if state.viewMode == "code" then
+			outputText = formatCodeView(state.lastResult.chunk, state.showRawOpcodes)
+		elseif state.viewMode == "decompile" then
+			outputText = LuauDecompiler.decompileChunk(state.lastResult.chunk)
+		else
+			outputText = formatDataView(state.lastResult.chunk)
+		end
 
 		local filtered = {}
-		for _, line in ipairs(splitLines(prettyText)) do
+		for _, line in ipairs(splitLines(outputText)) do
 			if containsFilter(line, state.filterText) then
 				table.insert(filtered, line)
 			end
@@ -677,21 +1129,30 @@ function BytecodeViewer.start(config)
 	end
 
 	local function syncControlState()
-		refs.scriptPathBox.Text = state.scriptPath
-		refs.filePathBox.Text = state.filePath
-		refs.filterBox.Text = state.filterText
+		refs.mainTabPanel.Visible = state.activeTab == "main"
+		refs.leftPanel.Visible = state.activeTab == "bytecode"
+		refs.rightPanel.Visible = state.activeTab == "bytecode"
 
-		refs.scriptRow.Visible = state.sourceMode == "script"
-		refs.fileRow.Visible = state.sourceMode == "file"
-		refs.encodingRow.Visible = state.sourceMode == "file"
+		refs.targetBox.Text = getActiveTargetText()
+		refs.targetBox.PlaceholderText = getActiveTargetPlaceholder()
+		refs.filterBox.Text = state.filterText
+		refs.treeSearchBox.Text = state.treeFilterText
 
 		NativeUi.setButtonSelected(refs.scriptModeButton, state.sourceMode == "script")
 		NativeUi.setButtonSelected(refs.fileModeButton, state.sourceMode == "file")
+		NativeUi.setButtonSelected(refs.mainTabButton, state.activeTab == "main")
+		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
+		NativeUi.setButtonSelected(refs.codeViewButton, state.viewMode == "code")
+		NativeUi.setButtonSelected(refs.decompileViewButton, state.viewMode == "decompile")
+		NativeUi.setButtonSelected(refs.dataViewButton, state.viewMode == "data")
 		NativeUi.setButtonSelected(refs.binaryButton, state.inputFormat == "binary")
 		NativeUi.setButtonSelected(refs.hexButton, state.inputFormat == "hex")
 		NativeUi.setButtonSelected(refs.rawOpcodesButton, state.showRawOpcodes)
-		NativeUi.setButtonSelected(refs.stringsButton, state.showStrings)
-		NativeUi.setButtonSelected(refs.constantsButton, state.showConstants)
+
+		local isFileMode = state.sourceMode == "file"
+		refs.binaryButton.Visible = isFileMode
+		refs.hexButton.Visible = isFileMode
+		refs.rawOpcodesButton.Position = isFileMode and UDim2.fromOffset(286, 0) or UDim2.fromOffset(146, 0)
 	end
 
 	local function renderOutputView()
@@ -733,22 +1194,10 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		for _, line in ipairs(lines) do
-			if line == "" then
-				NativeUi.makeRow(refs.outputContent, 6)
-			elseif not string.find(line, "^%s") then
-				NativeUi.makeLabel(refs.outputContent, line, {
-					Font = Enum.Font.GothamBold,
-					TextColor3 = NativeUi.Theme.Text,
-					TextSize = 14,
-					Size = UDim2.new(1, 0, 0, 20),
-				})
-			else
-				NativeUi.makeCodeLabel(refs.outputContent, line, {
-					TextColor3 = NativeUi.Theme.Text,
-				})
-			end
-		end
+		NativeUi.makeCodeLabel(refs.outputContent, table.concat(lines, "\n"), {
+			TextColor3 = NativeUi.Theme.Text,
+			TextSize = 13,
+		})
 	end
 
 	local function refreshScriptBrowser()
@@ -829,6 +1278,8 @@ function BytecodeViewer.start(config)
 		loadFileTarget()
 	end
 
+	local renderTreeView
+
 	local function renderTreeNode(node)
 		local row = NativeUi.makeRow(refs.treeContent, 24)
 		row.BackgroundTransparency = 1
@@ -844,10 +1295,7 @@ function BytecodeViewer.start(config)
 			})
 			toggle.MouseButton1Click:Connect(function()
 				state.expandedNodes[node.path] = not expanded
-				NativeUi.clear(refs.treeContent)
-				for _, rootNode in ipairs(state.scriptBrowserTree) do
-					renderTreeNode(rootNode)
-				end
+				renderTreeView()
 			end)
 			x = x + 28
 		else
@@ -865,14 +1313,12 @@ function BytecodeViewer.start(config)
 			})
 			NativeUi.setButtonSelected(openButton, state.selectedScriptPath == node.path)
 			openButton.MouseButton1Click:Connect(function()
+				state.activeTab = "bytecode"
 				state.sourceMode = "script"
 				state.scriptPath = node.path
 				syncControlState()
 				loadScriptTarget()
-				NativeUi.clear(refs.treeContent)
-				for _, rootNode in ipairs(state.scriptBrowserTree) do
-					renderTreeNode(rootNode)
-				end
+				renderTreeView()
 			end)
 		else
 			NativeUi.makeLabel(row, labelText, {
@@ -891,7 +1337,7 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	local function renderTreeView()
+	renderTreeView = function()
 		NativeUi.clear(refs.treeContent)
 
 		if state.scriptBrowserError ~= nil then
@@ -901,8 +1347,13 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		if #state.scriptBrowserTree == 0 then
-			NativeUi.makeLabel(refs.treeContent, "No scripts discovered in the current client view.", {
+		local visibleTree = getFilteredTree(state.scriptBrowserTree, state.treeFilterText)
+		if #visibleTree == 0 then
+			local emptyMessage = state.treeFilterText ~= ""
+				and "No scripts match the current filter."
+				or "No scripts discovered in the current client view."
+
+			NativeUi.makeLabel(refs.treeContent, emptyMessage, {
 				TextColor3 = NativeUi.Theme.TextMuted,
 				TextWrapped = true,
 				AutomaticSize = Enum.AutomaticSize.Y,
@@ -912,41 +1363,34 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		for _, rootNode in ipairs(state.scriptBrowserTree) do
+		for _, rootNode in ipairs(visibleTree) do
 			renderTreeNode(rootNode)
 		end
 	end
+
+	refs.mainTabButton.MouseButton1Click:Connect(function()
+		state.activeTab = "main"
+		syncControlState()
+	end)
+
+	refs.bytecodeTabButton.MouseButton1Click:Connect(function()
+		state.activeTab = "bytecode"
+		syncControlState()
+	end)
 
 	refs.refreshTreeButton.MouseButton1Click:Connect(function()
 		refreshScriptBrowser()
 		renderTreeView()
 	end)
 
-	refs.loadScriptButton.MouseButton1Click:Connect(function()
-		state.scriptPath = refs.scriptPathBox.Text
-		loadScriptTarget()
+	refs.loadButton.MouseButton1Click:Connect(function()
+		setActiveTargetText(refs.targetBox.Text)
+		loadCurrentTarget()
 		renderTreeView()
 	end)
 
-	refs.reloadScriptButton.MouseButton1Click:Connect(function()
-		state.scriptPath = refs.scriptPathBox.Text
-		loadScriptTarget()
-		renderTreeView()
-	end)
-
-	refs.loadFileButton.MouseButton1Click:Connect(function()
-		state.filePath = refs.filePathBox.Text
-		loadFileTarget()
-	end)
-
-	refs.reloadFileButton.MouseButton1Click:Connect(function()
-		state.filePath = refs.filePathBox.Text
-		loadFileTarget()
-	end)
-
-	refs.loadCurrentButton.MouseButton1Click:Connect(function()
-		state.scriptPath = refs.scriptPathBox.Text
-		state.filePath = refs.filePathBox.Text
+	refs.reloadButton.MouseButton1Click:Connect(function()
+		setActiveTargetText(refs.targetBox.Text)
 		loadCurrentTarget()
 		renderTreeView()
 	end)
@@ -954,7 +1398,6 @@ function BytecodeViewer.start(config)
 	refs.refreshViewButton.MouseButton1Click:Connect(function()
 		state.filterText = refs.filterBox.Text
 		renderOutputView()
-		renderTreeView()
 	end)
 
 	refs.scriptModeButton.MouseButton1Click:Connect(function()
@@ -983,24 +1426,31 @@ function BytecodeViewer.start(config)
 		renderOutputView()
 	end)
 
-	refs.stringsButton.MouseButton1Click:Connect(function()
-		state.showStrings = not state.showStrings
+	refs.codeViewButton.MouseButton1Click:Connect(function()
+		state.viewMode = "code"
 		syncControlState()
 		renderOutputView()
 	end)
 
-	refs.constantsButton.MouseButton1Click:Connect(function()
-		state.showConstants = not state.showConstants
+	refs.decompileViewButton.MouseButton1Click:Connect(function()
+		state.viewMode = "decompile"
 		syncControlState()
 		renderOutputView()
 	end)
 
-	refs.scriptPathBox.FocusLost:Connect(function()
-		state.scriptPath = refs.scriptPathBox.Text
+	refs.dataViewButton.MouseButton1Click:Connect(function()
+		state.viewMode = "data"
+		syncControlState()
+		renderOutputView()
 	end)
 
-	refs.filePathBox.FocusLost:Connect(function()
-		state.filePath = refs.filePathBox.Text
+	refs.targetBox.FocusLost:Connect(function()
+		setActiveTargetText(refs.targetBox.Text)
+	end)
+
+	refs.treeSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		state.treeFilterText = refs.treeSearchBox.Text
+		renderTreeView()
 	end)
 
 	refs.filterBox:GetPropertyChangedSignal("Text"):Connect(function()
@@ -1008,14 +1458,46 @@ function BytecodeViewer.start(config)
 		renderOutputView()
 	end)
 
+	refs.walkSpeedButton.MouseButton1Click:Connect(function()
+		applyNumericAction(refs.walkSpeedBox, "setWalkSpeed", "WalkSpeed")
+	end)
+
+	refs.jumpPowerButton.MouseButton1Click:Connect(function()
+		applyNumericAction(refs.jumpPowerBox, "setJumpPower", "JumpPower")
+	end)
+
+	refs.hipHeightButton.MouseButton1Click:Connect(function()
+		applyNumericAction(refs.hipHeightBox, "setHipHeight", "HipHeight")
+	end)
+
+	refs.gravityButton.MouseButton1Click:Connect(function()
+		applyNumericAction(refs.gravityBox, "setGravity", "Gravity")
+	end)
+
+	refs.refreshStatsButton.MouseButton1Click:Connect(function()
+		refreshMainFields()
+		setMainStatus("Pulled current values", NativeUi.Theme.TextMuted)
+	end)
+
+	refs.resetCharacterButton.MouseButton1Click:Connect(function()
+		local ok, result = runMainAction("resetCharacter")
+		if ok then
+			setMainStatus(tostring(result or "Character reset"), NativeUi.Theme.Success)
+			return
+		end
+
+		setMainStatus(tostring(result), NativeUi.Theme.Error)
+	end)
+
 	refreshScriptBrowser()
+	refreshMainFields()
 	syncControlState()
 	renderTreeView()
 
-	if state.sourceMode == "script" and state.scriptPath ~= "" then
+	if state.activeTab == "bytecode" and state.sourceMode == "script" and state.scriptPath ~= "" then
 		loadScriptTarget()
 		renderTreeView()
-	elseif state.sourceMode == "file" and state.filePath ~= "" then
+	elseif state.activeTab == "bytecode" and state.sourceMode == "file" and state.filePath ~= "" then
 		loadFileTarget()
 	end
 
