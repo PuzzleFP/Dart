@@ -891,7 +891,7 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Bytecode", {
+	local gunsTabButton = NativeUi.makeButton(navRail, "  Guns", {
 		Position = UDim2.fromOffset(12, 164),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -899,8 +899,16 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local buildTabButton = NativeUi.makeButton(navRail, "  Guns / Build", {
+	local buildTabButton = NativeUi.makeButton(navRail, "  Build", {
 		Position = UDim2.fromOffset(12, 202),
+		Size = UDim2.new(1, -24, 0, 32),
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = navButtonPalette,
+	})
+
+	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Bytecode", {
+		Position = UDim2.new(0, 12, 1, -72),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -910,7 +918,7 @@ local function createGui(state)
 	local navFooter = NativeUi.makeLabel(navRail, "Clean dark shell", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
-		Position = UDim2.new(0, 16, 1, -32),
+		Position = UDim2.new(0, 16, 1, -30),
 		Size = UDim2.new(1, -32, 0, 16),
 	})
 
@@ -968,6 +976,14 @@ local function createGui(state)
 		Parent = main,
 	})
 
+	local gunsWorkspace = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(contentX, 70),
+		Size = UDim2.new(1, -(contentX + 12), 1, -82),
+		Parent = main,
+	})
+
 	local buildWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -976,47 +992,13 @@ local function createGui(state)
 		Parent = main,
 	})
 
-	local mainControlsPanel = NativeUi.makePanel(mainWorkspace, {
+	local mainPanel = NativeUi.makePanel(mainWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(0, 500, 1, 0),
+		Size = UDim2.new(1, 0, 1, 0),
 	})
 
-	local mainSplitter = NativeUi.create("TextButton", {
-		Active = true,
-		AutoButtonColor = false,
-		BackgroundColor3 = NativeUi.Theme.Border,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(508, 0),
-		Size = UDim2.fromOffset(6, 100),
-		Text = "",
-		Parent = mainWorkspace,
-	})
-	NativeUi.corner(mainSplitter, 999)
-
-	local mainPlayersPanel = NativeUi.makePanel(mainWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(522, 0),
-		Size = UDim2.new(1, -522, 1, 0),
-	})
-
-	local mainLeftColumn = NativeUi.create("Frame", {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.fromOffset(304, 100),
-		Parent = mainControlsPanel,
-	})
-
-	local mainCenterColumn = NativeUi.create("Frame", {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(320, 0),
-		Size = UDim2.new(1, -320, 1, 0),
-		Parent = mainControlsPanel,
-	})
-
-	local leftControlsScroll, leftControlsContent = NativeUi.makeScrollList(mainLeftColumn, {
+	local mainScroll, mainContent = NativeUi.makeScrollList(mainPanel, {
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
@@ -1024,73 +1006,46 @@ local function createGui(state)
 		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
-	local centerControlsScroll, centerControlsContent = NativeUi.makeScrollList(mainCenterColumn, {
-		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.new(1, -24, 1, -24),
-		Padding = 10,
-		ContentPadding = 0,
-		BackgroundColor3 = NativeUi.Theme.Panel,
-	})
-
-	local heroCard = NativeUi.makePanel(leftControlsContent, {
-		Size = UDim2.new(1, 0, 0, 82),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
-	})
-
-	local heroTitle = NativeUi.makeLabel(heroCard, "Main", {
-		Font = Enum.Font.GothamBold,
-		TextSize = 18,
-		Position = UDim2.fromOffset(16, 14),
-		Size = UDim2.new(1, -32, 0, 24),
-	})
-
-	local heroBody = makeBodyLabel(heroCard, "Core movement and automation stay grouped here so the suite reads faster in play.", {
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 44),
-		Size = UDim2.new(1, -32, 0, 0),
-	})
-
-	local movementSection = NativeUi.makePanel(leftControlsContent, {
+	local movementSection = NativeUi.makePanel(mainContent, {
 		Size = UDim2.new(1, 0, 0, 196),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local movementTitle = makeSectionTitle(movementSection, "Movement", Color3.fromRGB(206, 220, 248))
+	local movementTitle = makeSectionTitle(movementSection, "Movement")
 	movementTitle.Position = UDim2.fromOffset(12, 10)
 
 	local walkSlider = makeSliderRow(movementSection, 40, "Walk Speed")
 	local jumpSlider = makeSliderRow(movementSection, 92, "Jump Power")
 	local hipSlider = makeSliderRow(movementSection, 144, "Hip Height")
 
-	local automationSection = NativeUi.makePanel(leftControlsContent, {
-		Size = UDim2.new(1, 0, 0, 188),
+	local automationSection = NativeUi.makePanel(mainContent, {
+		Size = UDim2.new(1, 0, 0, 170),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local automationTitle = makeSectionTitle(automationSection, "Automation", Color3.fromRGB(170, 242, 187))
+	local automationTitle = makeSectionTitle(automationSection, "Automation")
 	automationTitle.Position = UDim2.fromOffset(12, 10)
 
 	local infiniteJumpToggle = makeToggleRow(automationSection, 40, "Infinite Jump", "Keeps jump requests hot for the local character when enabled.")
-	local noClipToggle = makeToggleRow(automationSection, 94, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
-	local fullBrightToggle = makeToggleRow(automationSection, 148, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
+	local noClipToggle = makeToggleRow(automationSection, 84, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
+	local fullBrightToggle = makeToggleRow(automationSection, 128, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
 
-	local worldSection = NativeUi.makePanel(centerControlsContent, {
+	local worldSection = NativeUi.makePanel(mainContent, {
 		Size = UDim2.new(1, 0, 0, 104),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local worldTitle = makeSectionTitle(worldSection, "World", Color3.fromRGB(240, 214, 165))
+	local worldTitle = makeSectionTitle(worldSection, "World")
 	worldTitle.Position = UDim2.fromOffset(12, 10)
 
 	local gravitySlider = makeSliderRow(worldSection, 40, "Gravity")
 
-	local sessionSection = NativeUi.makePanel(centerControlsContent, {
-		Size = UDim2.new(1, 0, 0, 138),
+	local sessionSection = NativeUi.makePanel(mainContent, {
+		Size = UDim2.new(1, 0, 0, 114),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local sessionTitle = makeSectionTitle(sessionSection, "Session", Color3.fromRGB(205, 221, 248))
+	local sessionTitle = makeSectionTitle(sessionSection, "Session")
 	sessionTitle.Position = UDim2.fromOffset(12, 10)
 
 	local mainStatusLabel = NativeUi.makeLabel(sessionSection, "Ready", {
@@ -1101,77 +1056,16 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 16),
 	})
 
-	local sessionBody = makeBodyLabel(sessionSection, "Quick character pulls and resets stay separate from the movement rail.", {
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(12, 60),
-		Size = UDim2.new(1, -24, 0, 0),
-	})
-
 	local refreshStatsButton = NativeUi.makeButton(sessionSection, "Refresh Stats", {
-		Position = UDim2.fromOffset(12, 98),
+		Position = UDim2.fromOffset(12, 72),
 		Size = UDim2.fromOffset(110, 28),
 		TextSize = 12,
 	})
 
 	local resetCharacterButton = NativeUi.makeButton(sessionSection, "Reset", {
-		Position = UDim2.fromOffset(130, 98),
+		Position = UDim2.fromOffset(130, 72),
 		Size = UDim2.fromOffset(74, 28),
 		TextSize = 12,
-	})
-
-	local notesSection = NativeUi.makePanel(centerControlsContent, {
-		Size = UDim2.new(1, 0, 0, 128),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
-	})
-
-	local notesTitle = makeSectionTitle(notesSection, "Queue", Color3.fromRGB(171, 210, 255))
-	notesTitle.Position = UDim2.fromOffset(12, 10)
-
-	local notesBody = makeBodyLabel(notesSection, "Guns and Building stay in their own tab. This rail is only for fast local adjustments.", {
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(12, 42),
-		Size = UDim2.new(1, -24, 0, 0),
-	})
-
-	local targetsHeader = NativeUi.create("Frame", {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.new(1, -24, 0, 90),
-		Parent = mainPlayersPanel,
-	})
-
-	local targetsTitle = makeSectionTitle(targetsHeader, "Targets", Color3.fromRGB(255, 215, 156))
-	targetsTitle.Position = UDim2.fromOffset(0, 0)
-
-	local targetsBody = makeBodyLabel(targetsHeader, "Player selection is separated from the control rail so the suite stays readable once remote handlers are wired in.", {
-		Position = UDim2.fromOffset(0, 22),
-		Size = UDim2.new(1, 0, 0, 0),
-	})
-
-	local selectedPlayerLabel = NativeUi.makeLabel(targetsHeader, "Selected: -", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(0, 66),
-		Size = UDim2.new(1, 0, 0, 16),
-	})
-
-	local playerSearchBox = NativeUi.makeTextBox(mainPlayersPanel, "", {
-		PlaceholderText = "Filter players",
-		Position = UDim2.fromOffset(12, 110),
-		Size = UDim2.new(1, -24, 0, 30),
-		TextSize = 12,
-	})
-
-	local playerScroll, playerContent = NativeUi.makeScrollList(mainPlayersPanel, {
-		Position = UDim2.fromOffset(12, 150),
-		Size = UDim2.new(1, -24, 1, -162),
-		Padding = 6,
-		ContentPadding = 8,
-		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
 
 	local espPlayersPanel = NativeUi.makePanel(espWorkspace, {
@@ -1620,16 +1514,16 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local gunsPanel = NativeUi.makePanel(buildWorkspace, {
+	local gunsPanel = NativeUi.makePanel(gunsWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(0.5, -8, 1, 0),
+		Size = UDim2.new(1, 0, 1, 0),
 	})
 
 	local buildingPanel = NativeUi.makePanel(buildWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.new(0.5, 8, 0, 0),
-		Size = UDim2.new(0.5, -8, 1, 0),
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
 	})
 
 	local gunsScroll, gunsContent = NativeUi.makeScrollList(gunsPanel, {
@@ -1955,8 +1849,6 @@ local function createGui(state)
 		local workspaceHeight = height - 82
 		local panelGap = 16
 		local splitterWidth = 6
-		local mainInnerGap = 16
-		local mainLeftColumnWidth = 304
 
 		rightResizeHandle.Position = UDim2.new(1, -5, 0, 14)
 		rightResizeHandle.Size = UDim2.new(0, 10, 1, -28)
@@ -1974,19 +1866,10 @@ local function createGui(state)
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		espWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		bytecodeWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		gunsWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-
-		state.mainControlsWidth = clamp(state.mainControlsWidth, 560, math.max(560, workspaceWidth - panelGap - 280))
-		mainControlsPanel.Size = UDim2.fromOffset(state.mainControlsWidth, workspaceHeight)
-		mainLeftColumn.Size = UDim2.fromOffset(mainLeftColumnWidth, workspaceHeight)
-		mainCenterColumn.Position = UDim2.fromOffset(mainLeftColumnWidth + mainInnerGap, 0)
-		mainCenterColumn.Size = UDim2.fromOffset(state.mainControlsWidth - mainLeftColumnWidth - mainInnerGap, workspaceHeight)
-		mainSplitter.Position = UDim2.fromOffset(state.mainControlsWidth + 8, 0)
-		mainSplitter.Size = UDim2.fromOffset(splitterWidth, workspaceHeight)
-		mainPlayersPanel.Position = UDim2.fromOffset(state.mainControlsWidth + panelGap, 0)
-		mainPlayersPanel.Size = UDim2.fromOffset(workspaceWidth - state.mainControlsWidth - panelGap, workspaceHeight)
-		leftControlsScroll.Size = UDim2.new(1, -24, 1, -24)
-		centerControlsScroll.Size = UDim2.new(1, -24, 1, -24)
+		mainPanel.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		mainScroll.Size = UDim2.new(1, -24, 1, -24)
 
 		local espResourceWidth = clamp(math.floor((workspaceWidth - state.espPlayersWidth - panelGap * 2) * 0.5), 260, 360)
 		state.espPlayersWidth = clamp(state.espPlayersWidth, 280, math.max(300, workspaceWidth - espResourceWidth - 280 - panelGap * 2))
@@ -2032,10 +1915,8 @@ local function createGui(state)
 		outputViewerHost.Size = UDim2.new(1, -24, 1, -116)
 		outputScroll.Size = UDim2.new(1, 0, 1, 0)
 		inspectorScroll.Size = UDim2.new(1, -24, 1, -24)
-		local gunsWidth = math.floor((workspaceWidth - panelGap) * 0.5)
-		gunsPanel.Size = UDim2.fromOffset(gunsWidth, workspaceHeight)
-		buildingPanel.Position = UDim2.fromOffset(gunsWidth + panelGap, 0)
-		buildingPanel.Size = UDim2.fromOffset(workspaceWidth - gunsWidth - panelGap, workspaceHeight)
+		gunsPanel.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		buildingPanel.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		gunsScroll.Size = UDim2.new(1, -24, 1, -24)
 		buildingScroll.Size = UDim2.new(1, -24, 1, -24)
 
@@ -2050,9 +1931,6 @@ local function createGui(state)
 	bindWindowResize(topResizeHandle, "top")
 	bindWindowResize(bottomResizeHandle, "bottom")
 	bindWindowResize(bottomRightResizeHandle, "bottomright")
-	bindVerticalSplitter(mainSplitter, "mainControlsWidth", 560, function()
-		return math.max(560, main.AbsoluteSize.X - (contentX + 12) - 16 - 280)
-	end)
 	bindVerticalSplitter(bytecodeSplitter, "bytecodeSidebarWidth", 240, function()
 		return math.max(280, main.AbsoluteSize.X - (contentX + 12) - state.bytecodeInspectorWidth - 420)
 	end)
@@ -2071,9 +1949,9 @@ local function createGui(state)
 	refs.suiteStatus = suiteStatus
 	refs.mainTabButton = mainTabButton
 	refs.espTabButton = espTabButton
+	refs.gunsTabButton = gunsTabButton
 	refs.bytecodeTabButton = bytecodeTabButton
 	refs.buildTabButton = buildTabButton
-	refs.mainSplitter = mainSplitter
 	refs.bytecodeSplitter = bytecodeSplitter
 	refs.inspectorSplitter = inspectorSplitter
 	refs.rightResizeHandle = rightResizeHandle
@@ -2084,11 +1962,9 @@ local function createGui(state)
 	refs.mainWorkspace = mainWorkspace
 	refs.espWorkspace = espWorkspace
 	refs.bytecodeWorkspace = bytecodeWorkspace
+	refs.gunsWorkspace = gunsWorkspace
 	refs.buildWorkspace = buildWorkspace
 	refs.mainStatusLabel = mainStatusLabel
-	refs.selectedPlayerLabel = selectedPlayerLabel
-	refs.playerSearchBox = playerSearchBox
-	refs.playerContent = playerContent
 	refs.espSelectedPlayersLabel = espSelectedPlayersLabel
 	refs.espPlayerSearchBox = espPlayerSearchBox
 	refs.espPlayerContent = espPlayerContent
@@ -3158,43 +3034,7 @@ function BytecodeViewer.start(config)
 	end
 
 	refreshPlayersList = function()
-		NativeUi.clear(refs.playerContent)
-
-		local players = Players:GetPlayers()
-		table.sort(players, function(left, right)
-			return string.lower(left.Name) < string.lower(right.Name)
-		end)
-
-		local shown = 0
-		for _, player in ipairs(players) do
-			ensurePlayerCharacterConnection(player)
-			local searchable = player.Name .. " " .. (player.DisplayName or "")
-			if containsFilter(searchable, state.playerFilterText) then
-				shown = shown + 1
-				local button = NativeUi.makeButton(refs.playerContent, player.DisplayName ~= player.Name and (player.DisplayName .. " @" .. player.Name) or player.Name, {
-					Size = UDim2.new(1, 0, 0, 30),
-					TextSize = 12,
-					TextXAlignment = Enum.TextXAlignment.Left,
-				})
-				NativeUi.setButtonSelected(button, state.selectedPlayerName == player.Name)
-
-				button.MouseButton1Click:Connect(function()
-					state.selectedPlayerName = player.Name
-					refs.selectedPlayerLabel.Text = ("Selected: %s"):format(player.Name)
-					refreshPlayersList()
-				end)
-			end
-		end
-
-		if shown == 0 then
-			NativeUi.makeLabel(refs.playerContent, "No players match the current filter.", {
-				TextColor3 = NativeUi.Theme.TextMuted,
-				TextWrapped = true,
-				TextYAlignment = Enum.TextYAlignment.Top,
-				AutomaticSize = Enum.AutomaticSize.Y,
-				Size = UDim2.new(1, 0, 0, 0),
-			})
-		end
+		return
 	end
 
 	local function countHighlightedPlayers()
@@ -3361,9 +3201,9 @@ function BytecodeViewer.start(config)
 		local bodyVisible = not state.isMinimized
 		refs.mainWorkspace.Visible = bodyVisible and state.activeTab == "main"
 		refs.espWorkspace.Visible = bodyVisible and state.activeTab == "esp"
+		refs.gunsWorkspace.Visible = bodyVisible and state.activeTab == "guns"
 		refs.bytecodeWorkspace.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.buildWorkspace.Visible = bodyVisible and state.activeTab == "build"
-		refs.mainSplitter.Visible = bodyVisible and state.activeTab == "main"
 		refs.bytecodeSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.inspectorSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.rightResizeHandle.Visible = not state.isMinimized
@@ -3374,6 +3214,7 @@ function BytecodeViewer.start(config)
 
 		NativeUi.setButtonSelected(refs.mainTabButton, state.activeTab == "main")
 		NativeUi.setButtonSelected(refs.espTabButton, state.activeTab == "esp")
+		NativeUi.setButtonSelected(refs.gunsTabButton, state.activeTab == "guns")
 		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
 		NativeUi.setButtonSelected(refs.buildTabButton, state.activeTab == "build")
 		NativeUi.setButtonSelected(refs.scriptModeButton, state.sourceMode == "script")
@@ -3403,10 +3244,8 @@ function BytecodeViewer.start(config)
 		refs.targetBox.Text = getActiveTargetText()
 		refs.filterBox.Text = state.filterText
 		refs.treeSearchBox.Text = state.treeFilterText
-		refs.playerSearchBox.Text = state.playerFilterText
 		refs.espPlayerSearchBox.Text = state.espPlayerFilterText
 		refs.activeTargetLabel.Text = ("Active target: %s"):format(getActiveTargetText() ~= "" and getActiveTargetText() or "-")
-		refs.selectedPlayerLabel.Text = ("Selected: %s"):format(state.selectedPlayerName ~= "" and state.selectedPlayerName or "-")
 		refs.espSelectedPlayersLabel.Text = state.highlightAllPlayers
 			and "Highlighted: all players"
 			or ("Highlighted: %d"):format(countHighlightedPlayers())
@@ -3590,6 +3429,10 @@ function BytecodeViewer.start(config)
 		state.activeTab = "esp"
 		syncControlState()
 	end))
+	trackConnection(refs.gunsTabButton.MouseButton1Click:Connect(function()
+		state.activeTab = "guns"
+		syncControlState()
+	end))
 	trackConnection(refs.bytecodeTabButton.MouseButton1Click:Connect(function()
 		state.activeTab = "bytecode"
 		syncControlState()
@@ -3670,10 +3513,6 @@ function BytecodeViewer.start(config)
 	trackConnection(refs.treeSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		state.treeFilterText = refs.treeSearchBox.Text
 		renderTreeView()
-	end))
-	trackConnection(refs.playerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-		state.playerFilterText = refs.playerSearchBox.Text
-		refreshPlayersList()
 	end))
 	trackConnection(refs.espPlayerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		state.espPlayerFilterText = refs.espPlayerSearchBox.Text
