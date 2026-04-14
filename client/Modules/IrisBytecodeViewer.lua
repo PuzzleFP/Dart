@@ -726,26 +726,12 @@ local function makeSliderRow(parent, y, labelText)
 end
 
 local function makeToggleRow(parent, y, labelText, description)
-	local row = NativeUi.makePanel(parent, {
+	local row = NativeUi.makeButton(parent, "", {
 		Position = UDim2.new(0, 12, 0, y),
 		Size = UDim2.new(1, -24, 0, 40),
-		BackgroundColor3 = NativeUi.Theme.Surface,
-		CornerRadius = 8,
-	})
-
-	local title = NativeUi.makeLabel(row, labelText, {
-		Font = Enum.Font.GothamSemibold,
-		TextSize = 12,
-		Position = UDim2.fromOffset(12, 0),
-		Size = UDim2.new(1, -48, 1, 0),
-	})
-
-	local toggle = NativeUi.makeButton(row, "", {
-		Position = UDim2.new(1, -30, 0.5, -9),
-		Size = UDim2.fromOffset(18, 18),
 		TextSize = 1,
 		Palette = {
-			Base = NativeUi.Theme.Panel,
+			Base = NativeUi.Theme.Surface,
 			Hover = NativeUi.Theme.SurfaceHover,
 			Pressed = NativeUi.Theme.SurfaceActive,
 			Selected = NativeUi.Theme.Success,
@@ -755,23 +741,30 @@ local function makeToggleRow(parent, y, labelText, description)
 			DisabledText = NativeUi.Theme.TextDim,
 		},
 	})
-	toggle.Text = ""
+	row.Text = ""
+
+	local title = NativeUi.makeLabel(row, labelText, {
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, -48, 1, 0),
+	})
 
 	local indicator = NativeUi.create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = Color3.fromRGB(245, 248, 252),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromScale(0.5, 0.5),
+		Position = UDim2.new(1, -21, 0.5, 0),
 		Size = UDim2.fromOffset(8, 8),
-		Parent = toggle,
+		Parent = row,
 	})
 	NativeUi.corner(indicator, 3)
 
 	return {
 		row = row,
 		title = title,
-		toggle = toggle,
+		toggle = row,
 		indicator = indicator,
 		description = description,
 	}
@@ -841,7 +834,7 @@ local function createGui(state)
 		BackgroundColor3 = NativeUi.Theme.Panel,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(contentX, 12),
-		Size = UDim2.new(1, -(contentX + 12), 0, 46),
+		Size = UDim2.new(1, -(contentX + 12), 0, 40),
 		Parent = main,
 	})
 	NativeUi.corner(topBar, 12)
@@ -859,20 +852,6 @@ local function createGui(state)
 		TextSize = 11,
 		Position = UDim2.fromOffset(16, 38),
 		Size = UDim2.new(1, -32, 0, 16),
-	})
-
-	local workspaceLabel = NativeUi.makeLabel(topBar, "Workspace", {
-		Font = Enum.Font.GothamBold,
-		TextSize = 13,
-		Position = UDim2.fromOffset(16, 7),
-		Size = UDim2.fromOffset(140, 18),
-	})
-
-	local workspaceHint = NativeUi.makeLabel(topBar, "Focused modules and bytecode tools.", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
-		Position = UDim2.fromOffset(16, 23),
-		Size = UDim2.fromOffset(220, 16),
 	})
 
 	local mainTabButton = NativeUi.makeButton(navRail, "  Main", {
@@ -928,19 +907,19 @@ local function createGui(state)
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Position = UDim2.new(1, -280, 0, 0),
-		Size = UDim2.fromOffset(210, 46),
+		Size = UDim2.fromOffset(210, 40),
 	})
 
 	local minimizeButton = NativeUi.makeButton(topBar, "-", {
-		Position = UDim2.new(1, -66, 0, 9),
-		Size = UDim2.fromOffset(26, 28),
+		Position = UDim2.new(1, -66, 0, 6),
+		Size = UDim2.fromOffset(26, 26),
 		TextSize = 14,
 		Palette = navButtonPalette,
 	})
 
 	local closeButton = NativeUi.makeButton(topBar, "X", {
-		Position = UDim2.new(1, -34, 0, 9),
-		Size = UDim2.fromOffset(26, 28),
+		Position = UDim2.new(1, -34, 0, 6),
+		Size = UDim2.fromOffset(26, 26),
 		TextSize = 12,
 		Palette = {
 			Base = NativeUi.Theme.Panel,
@@ -955,40 +934,40 @@ local function createGui(state)
 	local mainWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 70),
-		Size = UDim2.new(1, -(contentX + 12), 1, -82),
+		Position = UDim2.fromOffset(contentX, 60),
+		Size = UDim2.new(1, -(contentX + 12), 1, -72),
 		Parent = main,
 	})
 
 	local espWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 70),
-		Size = UDim2.new(1, -(contentX + 12), 1, -82),
+		Position = UDim2.fromOffset(contentX, 60),
+		Size = UDim2.new(1, -(contentX + 12), 1, -72),
 		Parent = main,
 	})
 
 	local bytecodeWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 70),
-		Size = UDim2.new(1, -(contentX + 12), 1, -82),
+		Position = UDim2.fromOffset(contentX, 60),
+		Size = UDim2.new(1, -(contentX + 12), 1, -72),
 		Parent = main,
 	})
 
 	local gunsWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 70),
-		Size = UDim2.new(1, -(contentX + 12), 1, -82),
+		Position = UDim2.fromOffset(contentX, 60),
+		Size = UDim2.new(1, -(contentX + 12), 1, -72),
 		Parent = main,
 	})
 
 	local buildWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 70),
-		Size = UDim2.new(1, -(contentX + 12), 1, -82),
+		Position = UDim2.fromOffset(contentX, 60),
+		Size = UDim2.new(1, -(contentX + 12), 1, -72),
 		Parent = main,
 	})
 
@@ -1068,24 +1047,11 @@ local function createGui(state)
 		Size = UDim2.fromOffset(330, 100),
 	})
 
-	local espPlayersHeader = NativeUi.create("Frame", {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.new(1, -24, 0, 122),
-		Parent = espPlayersPanel,
-	})
+	local espPlayersTitle = makeSectionTitle(espPlayersPanel, "Players")
+	espPlayersTitle.Position = UDim2.fromOffset(12, 12)
 
-	local espPlayersTitle = makeSectionTitle(espPlayersHeader, "Players", Color3.fromRGB(171, 210, 255))
-	espPlayersTitle.Position = UDim2.fromOffset(0, 0)
-
-	local espPlayersBody = makeBodyLabel(espPlayersHeader, "Click a player to add or remove a highlight. Toggle all players to lock the individual list and mark everyone at once.", {
-		Position = UDim2.fromOffset(0, 22),
-		Size = UDim2.new(1, 0, 0, 0),
-	})
-
-	local highlightAllPlayersButton = NativeUi.makeButton(espPlayersHeader, "Highlight All Players", {
-		Position = UDim2.fromOffset(0, 66),
+	local highlightAllPlayersButton = NativeUi.makeButton(espPlayersPanel, "Highlight All Players", {
+		Position = UDim2.fromOffset(12, 40),
 		Size = UDim2.fromOffset(150, 28),
 		TextSize = 11,
 		Palette = {
@@ -1100,30 +1066,30 @@ local function createGui(state)
 		},
 	})
 
-	local clearPlayerHighlightsButton = NativeUi.makeButton(espPlayersHeader, "Clear", {
-		Position = UDim2.fromOffset(158, 66),
+	local clearPlayerHighlightsButton = NativeUi.makeButton(espPlayersPanel, "Clear", {
+		Position = UDim2.fromOffset(170, 40),
 		Size = UDim2.fromOffset(60, 28),
 		TextSize = 11,
 	})
 
-	local espSelectedPlayersLabel = NativeUi.makeLabel(espPlayersHeader, "Highlighted: 0", {
+	local espSelectedPlayersLabel = NativeUi.makeLabel(espPlayersPanel, "Highlighted: 0", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(0, 98),
-		Size = UDim2.new(1, 0, 0, 16),
+		Position = UDim2.fromOffset(12, 76),
+		Size = UDim2.new(1, -24, 0, 16),
 	})
 
 	local espPlayerSearchBox = NativeUi.makeTextBox(espPlayersPanel, "", {
 		PlaceholderText = "Filter players",
-		Position = UDim2.fromOffset(12, 144),
+		Position = UDim2.fromOffset(12, 104),
 		Size = UDim2.new(1, -24, 0, 30),
 		TextSize = 12,
 	})
 
 	local espPlayerScroll, espPlayerContent = NativeUi.makeScrollList(espPlayersPanel, {
-		Position = UDim2.fromOffset(12, 184),
-		Size = UDim2.new(1, -24, 1, -196),
+		Position = UDim2.fromOffset(12, 142),
+		Size = UDim2.new(1, -24, 1, -154),
 		Padding = 6,
 		ContentPadding = 8,
 		BackgroundColor3 = NativeUi.Theme.Surface,
@@ -1141,85 +1107,20 @@ local function createGui(state)
 		Size = UDim2.new(1, -718, 1, 0),
 	})
 
-	local espResourcesScroll, espResourcesContent = NativeUi.makeScrollList(espResourcesPanel, {
-		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.new(1, -24, 1, -24),
-		Padding = 10,
-		ContentPadding = 0,
-		BackgroundColor3 = NativeUi.Theme.Panel,
-	})
+	local resourceEspTitle = makeSectionTitle(espResourcesPanel, "Resources")
+	resourceEspTitle.Position = UDim2.fromOffset(12, 12)
 
-	local espWellsScroll, espWellsContent = NativeUi.makeScrollList(espWellsPanel, {
-		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.new(1, -24, 1, -24),
-		Padding = 10,
-		ContentPadding = 0,
-		BackgroundColor3 = NativeUi.Theme.Panel,
-	})
+	local spawnPointToggle = makeToggleRow(espResourcesPanel, 40, "Spawn Point", "Highlights any instance named Spawn Point in the workspace.")
+	local wellPumpToggle = makeToggleRow(espResourcesPanel, 84, "Well Pump", "Highlights any instance named Well Pump in the workspace.")
+	local iridiumToggle = makeToggleRow(espResourcesPanel, 128, "Iridium Crystals", "Filters Workspace.Resources by CrystalFullness and highlights crystals at or above the threshold.")
+	local iridiumSlider = makeSliderRow(espResourcesPanel, 172, "Minimum Fullness")
 
-	local resourcesHeader = NativeUi.makePanel(espResourcesContent, {
-		Size = UDim2.new(1, 0, 0, 82),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
-	})
+	local wellsEspTitle = makeSectionTitle(espWellsPanel, "Structures")
+	wellsEspTitle.Position = UDim2.fromOffset(12, 12)
 
-	local resourcesHeaderTitle = NativeUi.makeLabel(resourcesHeader, "Resources", {
-		Font = Enum.Font.GothamBold,
-		TextSize = 17,
-		Position = UDim2.fromOffset(16, 14),
-		Size = UDim2.new(1, -32, 0, 22),
-	})
-
-	local resourcesHeaderBody = makeBodyLabel(resourcesHeader, "Static world targets and iridium filtering live here. Fill transparency stays fixed at 0.65.", {
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 42),
-		Size = UDim2.new(1, -32, 0, 0),
-	})
-
-	local resourceEspSection = NativeUi.makePanel(espResourcesContent, {
-		Size = UDim2.new(1, 0, 0, 244),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
-	})
-
-	local resourceEspTitle = makeSectionTitle(resourceEspSection, "Resources", Color3.fromRGB(205, 221, 248))
-	resourceEspTitle.Position = UDim2.fromOffset(12, 10)
-
-	local spawnPointToggle = makeToggleRow(resourceEspSection, 40, "Spawn Point", "Highlights any instance named Spawn Point in the workspace.")
-	local wellPumpToggle = makeToggleRow(resourceEspSection, 94, "Well Pump", "Highlights any instance named Well Pump in the workspace.")
-	local iridiumToggle = makeToggleRow(resourceEspSection, 148, "Iridium Crystals", "Filters Workspace.Resources by CrystalFullness and highlights crystals at or above the threshold.")
-
-	local iridiumSlider = makeSliderRow(resourceEspSection, 202, "Minimum Fullness")
-
-	local wellsHeader = NativeUi.makePanel(espWellsContent, {
-		Size = UDim2.new(1, 0, 0, 82),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
-	})
-
-	local wellsHeaderTitle = NativeUi.makeLabel(wellsHeader, "Structures", {
-		Font = Enum.Font.GothamBold,
-		TextSize = 17,
-		Position = UDim2.fromOffset(16, 14),
-		Size = UDim2.new(1, -32, 0, 22),
-	})
-
-	local wellsHeaderBody = makeBodyLabel(wellsHeader, "Distance-gated structure ESP stays isolated so moving filters do not clutter the player list.", {
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 42),
-		Size = UDim2.new(1, -32, 0, 0),
-	})
-
-	local wellsEspSection = NativeUi.makePanel(espWellsContent, {
-		Size = UDim2.new(1, 0, 0, 192),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
-	})
-
-	local wellsEspTitle = makeSectionTitle(wellsEspSection, "Wells", Color3.fromRGB(205, 221, 248))
-	wellsEspTitle.Position = UDim2.fromOffset(12, 10)
-
-	local spireWellToggle = makeToggleRow(wellsEspSection, 40, "Spire Well", "Maps to SpireOpenLarge1 in Workspace.Map and only shows entries within the selected distance.")
-	local wellToggle = makeToggleRow(wellsEspSection, 94, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
-	local wellDistanceSlider = makeSliderRow(wellsEspSection, 148, "Distance")
+	local spireWellToggle = makeToggleRow(espWellsPanel, 40, "Spire Well", "Maps to SpireOpenLarge1 in Workspace.Map and only shows entries within the selected distance.")
+	local wellToggle = makeToggleRow(espWellsPanel, 84, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
+	local wellDistanceSlider = makeSliderRow(espWellsPanel, 128, "Distance")
 
 	local scriptPanel = NativeUi.makePanel(bytecodeWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
@@ -1828,7 +1729,7 @@ local function createGui(state)
 		local width = main.AbsoluteSize.X
 		local height = main.AbsoluteSize.Y
 		local workspaceWidth = width - (contentX + 12)
-		local workspaceHeight = height - 82
+		local workspaceHeight = height - 72
 		local panelGap = 16
 		local splitterWidth = 6
 
@@ -1843,7 +1744,7 @@ local function createGui(state)
 		bottomRightResizeHandle.Position = UDim2.new(1, -26, 1, -22)
 		navRail.Size = UDim2.fromOffset(navWidth, height - 24)
 		topBar.Position = UDim2.fromOffset(contentX, 12)
-		topBar.Size = UDim2.fromOffset(workspaceWidth, 46)
+		topBar.Size = UDim2.fromOffset(workspaceWidth, 40)
 
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		espWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
@@ -1866,9 +1767,7 @@ local function createGui(state)
 		espWellsPanel.Position = UDim2.fromOffset(state.espPlayersWidth + espResourceWidth + panelGap * 2, 0)
 		espWellsPanel.Size = UDim2.fromOffset(espWellsWidth, workspaceHeight)
 		espPlayerSearchBox.Size = UDim2.new(1, -24, 0, 30)
-		espPlayerScroll.Size = UDim2.new(1, -24, 1, -196)
-		espResourcesScroll.Size = UDim2.new(1, -24, 1, -24)
-		espWellsScroll.Size = UDim2.new(1, -24, 1, -24)
+		espPlayerScroll.Size = UDim2.new(1, -24, 1, -154)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
 		local maxInspector = math.max(280, workspaceWidth - state.bytecodeSidebarWidth - 420)
