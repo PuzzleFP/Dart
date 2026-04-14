@@ -3,22 +3,22 @@ local UserInputService = game:GetService("UserInputService")
 local NativeUi = {}
 
 NativeUi.Theme = {
-	Background = Color3.fromRGB(15, 18, 24),
-	Panel = Color3.fromRGB(23, 28, 36),
-	PanelAlt = Color3.fromRGB(29, 35, 46),
-	Surface = Color3.fromRGB(37, 45, 58),
-	SurfaceHover = Color3.fromRGB(47, 58, 74),
-	SurfaceActive = Color3.fromRGB(59, 73, 94),
-	Accent = Color3.fromRGB(84, 168, 255),
-	AccentHover = Color3.fromRGB(108, 182, 255),
-	AccentActive = Color3.fromRGB(61, 142, 228),
-	Text = Color3.fromRGB(229, 234, 241),
-	TextMuted = Color3.fromRGB(155, 167, 181),
-	TextDim = Color3.fromRGB(124, 134, 148),
-	Border = Color3.fromRGB(54, 64, 79),
-	Success = Color3.fromRGB(124, 204, 138),
-	Error = Color3.fromRGB(255, 118, 118),
-	Shadow = Color3.fromRGB(5, 7, 10),
+	Background = Color3.fromRGB(10, 12, 16),
+	Panel = Color3.fromRGB(16, 18, 24),
+	PanelAlt = Color3.fromRGB(20, 23, 31),
+	Surface = Color3.fromRGB(28, 32, 42),
+	SurfaceHover = Color3.fromRGB(34, 39, 50),
+	SurfaceActive = Color3.fromRGB(42, 48, 62),
+	Accent = Color3.fromRGB(96, 166, 255),
+	AccentHover = Color3.fromRGB(120, 180, 255),
+	AccentActive = Color3.fromRGB(74, 141, 228),
+	Text = Color3.fromRGB(236, 239, 244),
+	TextMuted = Color3.fromRGB(157, 165, 178),
+	TextDim = Color3.fromRGB(107, 116, 129),
+	Border = Color3.fromRGB(42, 48, 62),
+	Success = Color3.fromRGB(122, 192, 146),
+	Error = Color3.fromRGB(235, 111, 111),
+	Shadow = Color3.fromRGB(3, 4, 7),
 }
 
 local buttonRefreshers = setmetatable({}, { __mode = "k" })
@@ -93,7 +93,7 @@ function NativeUi.makePanel(parent, properties)
 		end
 	end
 
-	NativeUi.corner(panel, properties and properties.CornerRadius or 10)
+	NativeUi.corner(panel, properties and properties.CornerRadius or 8)
 	NativeUi.stroke(panel, NativeUi.Theme.Border, 1, 0)
 	return panel
 end

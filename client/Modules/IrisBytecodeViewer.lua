@@ -528,6 +528,8 @@ local function makeState(config)
 		bytecodeInspectorWidth = 320,
 		windowMinSize = Vector2.new(1100, 700),
 		windowMaxSize = nil,
+		isMinimized = false,
+		restoredSize = nil,
 		infiniteJump = false,
 		noClip = false,
 		fullBright = false,
@@ -579,14 +581,6 @@ local function makeBodyLabel(parent, text, properties)
 	end
 
 	return label
-end
-
-local function applyGradient(target, colors)
-	return NativeUi.create("UIGradient", {
-		Rotation = 135,
-		Color = ColorSequence.new(colors),
-		Parent = target,
-	})
 end
 
 local function makeOutputViewer(parent)
@@ -689,11 +683,6 @@ local function makeSliderRow(parent, y, labelText)
 		Parent = track,
 	})
 	NativeUi.corner(fill, 999)
-	applyGradient(fill, {
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(84, 168, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(56, 116, 236)),
-	})
-
 	local knob = NativeUi.create("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
@@ -793,7 +782,7 @@ local function createGui(state)
 	NativeUi.corner(shadow, 20)
 
 	local topBar = NativeUi.create("Frame", {
-		BackgroundColor3 = Color3.fromRGB(20, 24, 33),
+		BackgroundColor3 = Color3.fromRGB(14, 16, 22),
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 0, 46),
@@ -820,18 +809,18 @@ local function createGui(state)
 	})
 	NativeUi.corner(brandCut, 4)
 
-	local title = NativeUi.makeLabel(topBar, "Eclipsis Intelligence Suite", {
+	local title = NativeUi.makeLabel(topBar, "Eclipsis", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 15,
-		Position = UDim2.fromOffset(44, 6),
-		Size = UDim2.fromOffset(260, 18),
+		Position = UDim2.fromOffset(44, 7),
+		Size = UDim2.fromOffset(160, 18),
 	})
 
-	local subtitle = NativeUi.makeLabel(topBar, "Operations, targets, and bytecode analysis", {
+	local subtitle = NativeUi.makeLabel(topBar, "Control Suite", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
 		Position = UDim2.fromOffset(44, 23),
-		Size = UDim2.fromOffset(260, 16),
+		Size = UDim2.fromOffset(140, 16),
 	})
 
 	local mainTabButton = NativeUi.makeButton(topBar, "Main", {
@@ -840,25 +829,31 @@ local function createGui(state)
 		TextSize = 12,
 	})
 
-	local bytecodeTabButton = NativeUi.makeButton(topBar, "Bytecode Lab", {
+	local bytecodeTabButton = NativeUi.makeButton(topBar, "Lab", {
 		Position = UDim2.fromOffset(402, 9),
-		Size = UDim2.fromOffset(110, 28),
+		Size = UDim2.fromOffset(70, 28),
 		TextSize = 12,
 	})
 
 	local profilesTabButton = NativeUi.makeButton(topBar, "Profiles", {
-		Position = UDim2.fromOffset(520, 9),
+		Position = UDim2.fromOffset(480, 9),
 		Size = UDim2.fromOffset(82, 28),
 		TextSize = 12,
 	})
 
-	local suiteStatus = NativeUi.makeLabel(topBar, "Command center ready", {
+	local suiteStatus = NativeUi.makeLabel(topBar, "Ready", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		Position = UDim2.new(1, -300, 0, 0),
-		Size = UDim2.fromOffset(240, 46),
+		Position = UDim2.new(1, -250, 0, 0),
+		Size = UDim2.fromOffset(180, 46),
+	})
+
+	local minimizeButton = NativeUi.makeButton(topBar, "-", {
+		Position = UDim2.new(1, -66, 0, 9),
+		Size = UDim2.fromOffset(26, 28),
+		TextSize = 14,
 	})
 
 	local closeButton = NativeUi.makeButton(topBar, "X", {
@@ -932,24 +927,19 @@ local function createGui(state)
 	})
 
 	local heroCard = NativeUi.makePanel(controlsContent, {
-		Size = UDim2.new(1, 0, 0, 110),
-		BackgroundColor3 = Color3.fromRGB(24, 32, 48),
-	})
-	applyGradient(heroCard, {
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 64, 132)),
-		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(28, 44, 83)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 29, 45)),
+		Size = UDim2.new(1, 0, 0, 82),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local heroTitle = NativeUi.makeLabel(heroCard, "Operations", {
+	local heroTitle = NativeUi.makeLabel(heroCard, "Main", {
 		Font = Enum.Font.GothamBlack,
 		TextSize = 22,
 		Position = UDim2.fromOffset(16, 14),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
 
-	local heroBody = makeBodyLabel(heroCard, "Keep the live controls compact here. Bytecode work stays isolated in its own lab so the suite reads cleanly even during heavy analysis.", {
-		TextColor3 = Color3.fromRGB(214, 222, 238),
+	local heroBody = makeBodyLabel(heroCard, "Live controls on the left, selected players on the right.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 44),
 		Size = UDim2.new(1, -32, 0, 0),
@@ -959,7 +949,7 @@ local function createGui(state)
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(16, 84),
+		Position = UDim2.fromOffset(16, 60),
 		Size = UDim2.new(1, -32, 0, 16),
 	})
 
@@ -1097,7 +1087,7 @@ local function createGui(state)
 		Parent = scriptPanel,
 	})
 
-	local scriptTitle = makeSectionTitle(scriptHeader, "Script Tree", Color3.fromRGB(171, 210, 255))
+	local scriptTitle = makeSectionTitle(scriptHeader, "Scripts", Color3.fromRGB(171, 210, 255))
 	scriptTitle.Position = UDim2.fromOffset(0, 0)
 
 	local scriptCountLabel = NativeUi.makeLabel(scriptHeader, "Ready", {
@@ -1137,7 +1127,7 @@ local function createGui(state)
 		Parent = outputPanel,
 	})
 
-	local outputTitle = makeSectionTitle(outputHeader, "Bytecode Output", Color3.fromRGB(255, 224, 171))
+	local outputTitle = makeSectionTitle(outputHeader, "Output", Color3.fromRGB(255, 224, 171))
 	outputTitle.Position = UDim2.fromOffset(0, 0)
 
 	local outputSourceLabel = NativeUi.makeLabel(outputHeader, "No target loaded", {
@@ -1173,15 +1163,10 @@ local function createGui(state)
 
 	local intelCard = NativeUi.makePanel(inspectorContent, {
 		Size = UDim2.new(1, 0, 0, 108),
-		BackgroundColor3 = Color3.fromRGB(52, 34, 16),
-	})
-	applyGradient(intelCard, {
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 117, 36)),
-		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(82, 50, 23)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 24, 21)),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local intelTitle = NativeUi.makeLabel(intelCard, "Signal", {
+	local intelTitle = NativeUi.makeLabel(intelCard, "Inspector", {
 		Font = Enum.Font.GothamBlack,
 		TextSize = 22,
 		Position = UDim2.fromOffset(16, 14),
@@ -1190,14 +1175,14 @@ local function createGui(state)
 
 	local inspectorStatusLabel = NativeUi.makeLabel(intelCard, "Ready", {
 		Font = Enum.Font.Code,
-		TextColor3 = Color3.fromRGB(241, 232, 214),
+		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 44),
 		Size = UDim2.new(1, -32, 0, 16),
 	})
 
-	local inspectorInfoLabel = makeBodyLabel(intelCard, "Script mode uses getscriptbytecode directly. File mode stays available as a fallback for offline chunk testing.", {
-		TextColor3 = Color3.fromRGB(246, 236, 218),
+	local inspectorInfoLabel = makeBodyLabel(intelCard, "Script mode uses getscriptbytecode. File mode stays as the offline fallback.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
 		Position = UDim2.fromOffset(16, 66),
 		Size = UDim2.new(1, -32, 0, 0),
 	})
@@ -1319,7 +1304,7 @@ local function createGui(state)
 		TextSize = 12,
 	})
 
-	local filterHint = NativeUi.makeLabel(filterSection, "Live filter over the rendered output surface", {
+	local filterHint = NativeUi.makeLabel(filterSection, "Filters visible lines only", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
 		Position = UDim2.fromOffset(122, 88),
@@ -1339,86 +1324,31 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local profilesHero = NativeUi.makePanel(profilesWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(20, 25, 34),
+	local profilesPanel = NativeUi.makePanel(profilesWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, 0, 0, 140),
-	})
-	applyGradient(profilesHero, {
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(34, 52, 97)),
-		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(22, 29, 48)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 21, 33)),
+		Size = UDim2.new(1, 0, 1, 0),
 	})
 
-	local profilesTitle = NativeUi.makeLabel(profilesHero, "Profiles", {
+	local profilesTitle = NativeUi.makeLabel(profilesPanel, "Profiles", {
 		Font = Enum.Font.GothamBlack,
-		TextSize = 26,
+		TextSize = 24,
 		Position = UDim2.fromOffset(18, 18),
 		Size = UDim2.new(1, -36, 0, 28),
 	})
 
-	local profilesBody = makeBodyLabel(profilesHero, "Reserve this workspace for paid presets, saved operations, and target-specific modules once the remote contract is finalized.", {
-		TextColor3 = Color3.fromRGB(214, 222, 238),
+	local profilesBody = makeBodyLabel(profilesPanel, "Keep this page lean. Use it later for presets, saved module states, and paid layouts once the game-side contract is stable.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 13,
-		Position = UDim2.fromOffset(18, 56),
+		Position = UDim2.fromOffset(18, 58),
 		Size = UDim2.new(1, -36, 0, 0),
 	})
 
-	local profilesCardA = NativeUi.makePanel(profilesWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(25, 34, 49),
-		Position = UDim2.fromOffset(0, 152),
-		Size = UDim2.fromOffset(320, 148),
-	})
-	applyGradient(profilesCardA, {
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 64, 132)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(19, 31, 54)),
-	})
-
-	local profilesCardATitle = makeSectionTitle(profilesCardA, "Operations Stack", Color3.fromRGB(247, 250, 255))
-	profilesCardATitle.Position = UDim2.fromOffset(14, 12)
-
-	local profilesCardABody = makeBodyLabel(profilesCardA, "Movement, world, and automation modules can be saved here as role-based presets.", {
-		TextColor3 = Color3.fromRGB(230, 235, 244),
-		Position = UDim2.fromOffset(14, 44),
-		Size = UDim2.new(1, -28, 0, 0),
-	})
-
-	local profilesCardB = NativeUi.makePanel(profilesWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(43, 31, 17),
-		Position = UDim2.fromOffset(336, 152),
-		Size = UDim2.fromOffset(320, 148),
-	})
-	applyGradient(profilesCardB, {
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(183, 118, 39)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(64, 39, 18)),
-	})
-
-	local profilesCardBTitle = makeSectionTitle(profilesCardB, "Bytecode Lab", Color3.fromRGB(255, 246, 230))
-	profilesCardBTitle.Position = UDim2.fromOffset(14, 12)
-
-	local profilesCardBBody = makeBodyLabel(profilesCardB, "Keep decode multipliers, file test sets, and future decompiler passes isolated as saved analysis profiles.", {
-		TextColor3 = Color3.fromRGB(255, 238, 214),
-		Position = UDim2.fromOffset(14, 44),
-		Size = UDim2.new(1, -28, 0, 0),
-	})
-
-	local profilesCardC = NativeUi.makePanel(profilesWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(20, 44, 32),
-		Position = UDim2.fromOffset(672, 152),
-		Size = UDim2.fromOffset(320, 148),
-	})
-	applyGradient(profilesCardC, {
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 123, 79)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 48, 35)),
-	})
-
-	local profilesCardCTitle = makeSectionTitle(profilesCardC, "Signals", Color3.fromRGB(234, 255, 242))
-	profilesCardCTitle.Position = UDim2.fromOffset(14, 12)
-
-	local profilesCardCBody = makeBodyLabel(profilesCardC, "Use this lane for remote-driven alerts, target heuristics, and audit logs once the game-side structure is defined.", {
-		TextColor3 = Color3.fromRGB(224, 250, 232),
-		Position = UDim2.fromOffset(14, 44),
-		Size = UDim2.new(1, -28, 0, 0),
+	local profilesHint = makeBodyLabel(profilesPanel, "This tab is intentionally quiet for now so the suite stays focused on Main and Lab.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 12,
+		Position = UDim2.fromOffset(18, 110),
+		Size = UDim2.new(1, -36, 0, 0),
 	})
 
 	local rightResizeHandle = NativeUi.create("TextButton", {
@@ -1706,11 +1636,20 @@ local function createGui(state)
 
 	refs.gui = screenGui
 	refs.main = main
+	refs.minimizeButton = minimizeButton
 	refs.closeButton = closeButton
 	refs.suiteStatus = suiteStatus
 	refs.mainTabButton = mainTabButton
 	refs.bytecodeTabButton = bytecodeTabButton
 	refs.profilesTabButton = profilesTabButton
+	refs.mainSplitter = mainSplitter
+	refs.bytecodeSplitter = bytecodeSplitter
+	refs.inspectorSplitter = inspectorSplitter
+	refs.rightResizeHandle = rightResizeHandle
+	refs.leftResizeHandle = leftResizeHandle
+	refs.topResizeHandle = topResizeHandle
+	refs.bottomResizeHandle = bottomResizeHandle
+	refs.bottomRightResizeHandle = bottomRightResizeHandle
 	refs.mainWorkspace = mainWorkspace
 	refs.bytecodeWorkspace = bytecodeWorkspace
 	refs.profilesWorkspace = profilesWorkspace
@@ -2019,6 +1958,23 @@ function BytecodeViewer.start(config)
 
 		state[toggleName] = enabled
 		return true, ((enabled and "Enabled " or "Disabled ") .. toggleName)
+	end
+
+	local function setMinimized(minimized)
+		if state.isMinimized == minimized then
+			return
+		end
+
+		if minimized then
+			state.restoredSize = Vector2.new(refs.main.AbsoluteSize.X, refs.main.AbsoluteSize.Y)
+			refs.main.Size = UDim2.fromOffset(refs.main.AbsoluteSize.X, 70)
+		else
+			local restoredSize = state.restoredSize or state.windowMinSize
+			refs.main.Size = UDim2.fromOffset(restoredSize.X, restoredSize.Y)
+		end
+
+		state.isMinimized = minimized
+		refs.applyLayout()
 	end
 
 	local function collectOutputText()
@@ -2435,9 +2391,18 @@ function BytecodeViewer.start(config)
 	end
 
 	syncControlState = function()
-		refs.mainWorkspace.Visible = state.activeTab == "main"
-		refs.bytecodeWorkspace.Visible = state.activeTab == "bytecode"
-		refs.profilesWorkspace.Visible = state.activeTab == "profiles"
+		local bodyVisible = not state.isMinimized
+		refs.mainWorkspace.Visible = bodyVisible and state.activeTab == "main"
+		refs.bytecodeWorkspace.Visible = bodyVisible and state.activeTab == "bytecode"
+		refs.profilesWorkspace.Visible = bodyVisible and state.activeTab == "profiles"
+		refs.mainSplitter.Visible = bodyVisible and state.activeTab == "main"
+		refs.bytecodeSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
+		refs.inspectorSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
+		refs.rightResizeHandle.Visible = not state.isMinimized
+		refs.leftResizeHandle.Visible = not state.isMinimized
+		refs.topResizeHandle.Visible = not state.isMinimized
+		refs.bottomResizeHandle.Visible = not state.isMinimized
+		refs.bottomRightResizeHandle.Visible = not state.isMinimized
 
 		NativeUi.setButtonSelected(refs.mainTabButton, state.activeTab == "main")
 		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
@@ -2454,6 +2419,8 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.infiniteJumpToggle, state.infiniteJump)
 		syncToggleButton(refs.noClipToggle, state.noClip)
 		syncToggleButton(refs.fullBrightToggle, state.fullBright)
+		refs.minimizeButton.Text = state.isMinimized and "+" or "-"
+		NativeUi.setButtonSelected(refs.minimizeButton, state.isMinimized)
 
 		refs.binaryButton.Visible = state.sourceMode == "file"
 		refs.hexButton.Visible = state.sourceMode == "file"
@@ -2464,6 +2431,13 @@ function BytecodeViewer.start(config)
 		refs.playerSearchBox.Text = state.playerFilterText
 		refs.activeTargetLabel.Text = ("Active target: %s"):format(getActiveTargetText() ~= "" and getActiveTargetText() or "-")
 		refs.selectedPlayerLabel.Text = ("Selected: %s"):format(state.selectedPlayerName ~= "" and state.selectedPlayerName or "-")
+		if state.isMinimized then
+			refs.suiteStatus.Text = "Minimized"
+			refs.suiteStatus.TextColor3 = NativeUi.Theme.TextMuted
+		else
+			refs.suiteStatus.Text = refs.inspectorStatusLabel.Text
+			refs.suiteStatus.TextColor3 = refs.inspectorStatusLabel.TextColor3
+		end
 	end
 
 	local function applyNumericAction(actionName, value, label)
@@ -2532,6 +2506,10 @@ function BytecodeViewer.start(config)
 	end))
 
 	trackConnection(refs.closeButton.MouseButton1Click:Connect(runCleanup))
+	trackConnection(refs.minimizeButton.MouseButton1Click:Connect(function()
+		setMinimized(not state.isMinimized)
+		syncControlState()
+	end))
 	trackConnection(refs.mainTabButton.MouseButton1Click:Connect(function()
 		state.activeTab = "main"
 		syncControlState()
