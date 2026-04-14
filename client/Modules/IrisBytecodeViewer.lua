@@ -795,11 +795,20 @@ local function createGui(state)
 	})
 	NativeUi.corner(shadow, 20)
 
-	local topBar = NativeUi.create("Frame", {
-		BackgroundColor3 = Color3.fromRGB(14, 16, 22),
-		BorderSizePixel = 0,
+	local navWidth = 166
+	local contentX = 190
+
+	local navRail = NativeUi.makePanel(main, {
+		BackgroundColor3 = Color3.fromRGB(12, 14, 19),
 		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.new(1, -24, 0, 46),
+		Size = UDim2.fromOffset(navWidth, 696),
+	})
+
+	local topBar = NativeUi.create("Frame", {
+		BackgroundColor3 = Color3.fromRGB(13, 15, 20),
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(contentX, 12),
+		Size = UDim2.new(1, -(contentX + 12), 0, 46),
 		Parent = main,
 	})
 	NativeUi.corner(topBar, 12)
@@ -808,14 +817,14 @@ local function createGui(state)
 	local brandMark = NativeUi.create("Frame", {
 		BackgroundColor3 = Color3.fromRGB(245, 247, 251),
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(14, 11),
+		Position = UDim2.fromOffset(16, 16),
 		Size = UDim2.fromOffset(20, 20),
-		Parent = topBar,
+		Parent = navRail,
 	})
 	NativeUi.corner(brandMark, 6)
 
 	local brandCut = NativeUi.create("Frame", {
-		BackgroundColor3 = topBar.BackgroundColor3,
+		BackgroundColor3 = navRail.BackgroundColor3,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(9, 2),
 		Size = UDim2.fromOffset(9, 7),
@@ -826,39 +835,68 @@ local function createGui(state)
 	local title = NativeUi.makeLabel(topBar, "Eclipsis", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 15,
-		Position = UDim2.fromOffset(44, 7),
-		Size = UDim2.fromOffset(160, 18),
+		Position = UDim2.fromOffset(46, 14),
+		Size = UDim2.fromOffset(108, 18),
+		Parent = navRail,
 	})
 
 	local subtitle = NativeUi.makeLabel(topBar, "Control Suite", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
-		Position = UDim2.fromOffset(44, 23),
-		Size = UDim2.fromOffset(140, 16),
+		Position = UDim2.fromOffset(46, 32),
+		Size = UDim2.fromOffset(108, 16),
+		Parent = navRail,
 	})
 
-	local mainTabButton = NativeUi.makeButton(topBar, "Main", {
-		Position = UDim2.fromOffset(300, 9),
-		Size = UDim2.fromOffset(64, 28),
-		TextSize = 12,
+	local workspaceLabel = NativeUi.makeLabel(topBar, "Operations", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		Position = UDim2.fromOffset(16, 7),
+		Size = UDim2.fromOffset(140, 18),
 	})
 
-	local espTabButton = NativeUi.makeButton(topBar, "ESP", {
-		Position = UDim2.fromOffset(372, 9),
-		Size = UDim2.fromOffset(70, 28),
-		TextSize = 12,
+	local workspaceHint = NativeUi.makeLabel(topBar, "Main, ESP, Lab, Guns, and Building modules.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		Position = UDim2.fromOffset(16, 23),
+		Size = UDim2.fromOffset(260, 16),
 	})
 
-	local bytecodeTabButton = NativeUi.makeButton(topBar, "Lab", {
-		Position = UDim2.fromOffset(450, 9),
-		Size = UDim2.fromOffset(64, 28),
+	local mainTabButton = NativeUi.makeButton(navRail, "  Main", {
+		Position = UDim2.fromOffset(12, 98),
+		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
 	})
 
-	local buildTabButton = NativeUi.makeButton(topBar, "Guns+Build", {
-		Position = UDim2.fromOffset(522, 9),
-		Size = UDim2.fromOffset(98, 28),
+	local espTabButton = NativeUi.makeButton(navRail, "  ESP", {
+		Position = UDim2.fromOffset(12, 138),
+		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Bytecode", {
+		Position = UDim2.fromOffset(12, 178),
+		Size = UDim2.new(1, -24, 0, 32),
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local buildTabButton = NativeUi.makeButton(navRail, "  Guns / Build", {
+		Position = UDim2.fromOffset(12, 218),
+		Size = UDim2.new(1, -24, 0, 32),
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+
+	local navFooter = NativeUi.makeLabel(navRail, "Compact dark shell\nResizable workspaces", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.new(0, 14, 1, -58),
+		Size = UDim2.new(1, -28, 0, 34),
 	})
 
 	local suiteStatus = NativeUi.makeLabel(topBar, "Ready", {
@@ -866,8 +904,8 @@ local function createGui(state)
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		Position = UDim2.new(1, -250, 0, 0),
-		Size = UDim2.fromOffset(180, 46),
+		Position = UDim2.new(1, -280, 0, 0),
+		Size = UDim2.fromOffset(210, 46),
 	})
 
 	local minimizeButton = NativeUi.makeButton(topBar, "-", {
@@ -893,32 +931,32 @@ local function createGui(state)
 	local mainWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 70),
-		Size = UDim2.new(1, -24, 1, -82),
+		Position = UDim2.fromOffset(contentX, 70),
+		Size = UDim2.new(1, -(contentX + 12), 1, -82),
 		Parent = main,
 	})
 
 	local espWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 70),
-		Size = UDim2.new(1, -24, 1, -82),
+		Position = UDim2.fromOffset(contentX, 70),
+		Size = UDim2.new(1, -(contentX + 12), 1, -82),
 		Parent = main,
 	})
 
 	local bytecodeWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 70),
-		Size = UDim2.new(1, -24, 1, -82),
+		Position = UDim2.fromOffset(contentX, 70),
+		Size = UDim2.new(1, -(contentX + 12), 1, -82),
 		Parent = main,
 	})
 
 	local buildWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 70),
-		Size = UDim2.new(1, -24, 1, -82),
+		Position = UDim2.fromOffset(contentX, 70),
+		Size = UDim2.new(1, -(contentX + 12), 1, -82),
 		Parent = main,
 	})
 
@@ -946,7 +984,23 @@ local function createGui(state)
 		Size = UDim2.new(1, -522, 1, 0),
 	})
 
-	local controlsScroll, controlsContent = NativeUi.makeScrollList(mainControlsPanel, {
+	local mainLeftColumn = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(304, 100),
+		Parent = mainControlsPanel,
+	})
+
+	local mainCenterColumn = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(320, 0),
+		Size = UDim2.new(1, -320, 1, 0),
+		Parent = mainControlsPanel,
+	})
+
+	local leftControlsScroll, leftControlsContent = NativeUi.makeScrollList(mainLeftColumn, {
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
@@ -954,7 +1008,15 @@ local function createGui(state)
 		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
 	})
 
-	local heroCard = NativeUi.makePanel(controlsContent, {
+	local centerControlsScroll, centerControlsContent = NativeUi.makeScrollList(mainCenterColumn, {
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 1, -24),
+		Padding = 10,
+		ContentPadding = 0,
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+	})
+
+	local heroCard = NativeUi.makePanel(leftControlsContent, {
 		Size = UDim2.new(1, 0, 0, 82),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
@@ -966,22 +1028,14 @@ local function createGui(state)
 		Size = UDim2.new(1, -32, 0, 24),
 	})
 
-	local heroBody = makeBodyLabel(heroCard, "Live controls on the left, selected players on the right.", {
+	local heroBody = makeBodyLabel(heroCard, "Core movement and automation stay grouped here so the suite reads faster in play.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 44),
 		Size = UDim2.new(1, -32, 0, 0),
 	})
 
-	local mainStatusLabel = NativeUi.makeLabel(heroCard, "Ready", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 60),
-		Size = UDim2.new(1, -32, 0, 16),
-	})
-
-	local movementSection = NativeUi.makePanel(controlsContent, {
+	local movementSection = NativeUi.makePanel(leftControlsContent, {
 		Size = UDim2.new(1, 0, 0, 196),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
@@ -993,28 +1047,7 @@ local function createGui(state)
 	local jumpSlider = makeSliderRow(movementSection, 92, "Jump Power")
 	local hipSlider = makeSliderRow(movementSection, 144, "Hip Height")
 
-	local worldSection = NativeUi.makePanel(controlsContent, {
-		Size = UDim2.new(1, 0, 0, 138),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
-	})
-
-	local worldTitle = makeSectionTitle(worldSection, "World", Color3.fromRGB(240, 214, 165))
-	worldTitle.Position = UDim2.fromOffset(12, 10)
-
-	local gravitySlider = makeSliderRow(worldSection, 40, "Gravity")
-	local refreshStatsButton = NativeUi.makeButton(worldSection, "Refresh Stats", {
-		Position = UDim2.fromOffset(12, 94),
-		Size = UDim2.fromOffset(110, 28),
-		TextSize = 12,
-	})
-
-	local resetCharacterButton = NativeUi.makeButton(worldSection, "Reset", {
-		Position = UDim2.fromOffset(130, 94),
-		Size = UDim2.fromOffset(74, 28),
-		TextSize = 12,
-	})
-
-	local automationSection = NativeUi.makePanel(controlsContent, {
+	local automationSection = NativeUi.makePanel(leftControlsContent, {
 		Size = UDim2.new(1, 0, 0, 188),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
@@ -1025,6 +1058,66 @@ local function createGui(state)
 	local infiniteJumpToggle = makeToggleRow(automationSection, 40, "Infinite Jump", "Keeps jump requests hot for the local character when enabled.")
 	local noClipToggle = makeToggleRow(automationSection, 94, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
 	local fullBrightToggle = makeToggleRow(automationSection, 148, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
+
+	local worldSection = NativeUi.makePanel(centerControlsContent, {
+		Size = UDim2.new(1, 0, 0, 104),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local worldTitle = makeSectionTitle(worldSection, "World", Color3.fromRGB(240, 214, 165))
+	worldTitle.Position = UDim2.fromOffset(12, 10)
+
+	local gravitySlider = makeSliderRow(worldSection, 40, "Gravity")
+
+	local sessionSection = NativeUi.makePanel(centerControlsContent, {
+		Size = UDim2.new(1, 0, 0, 138),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local sessionTitle = makeSectionTitle(sessionSection, "Session", Color3.fromRGB(205, 221, 248))
+	sessionTitle.Position = UDim2.fromOffset(12, 10)
+
+	local mainStatusLabel = NativeUi.makeLabel(sessionSection, "Ready", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 38),
+		Size = UDim2.new(1, -24, 0, 16),
+	})
+
+	local sessionBody = makeBodyLabel(sessionSection, "Quick character pulls and resets stay separate from the movement rail.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 60),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+
+	local refreshStatsButton = NativeUi.makeButton(sessionSection, "Refresh Stats", {
+		Position = UDim2.fromOffset(12, 98),
+		Size = UDim2.fromOffset(110, 28),
+		TextSize = 12,
+	})
+
+	local resetCharacterButton = NativeUi.makeButton(sessionSection, "Reset", {
+		Position = UDim2.fromOffset(130, 98),
+		Size = UDim2.fromOffset(74, 28),
+		TextSize = 12,
+	})
+
+	local notesSection = NativeUi.makePanel(centerControlsContent, {
+		Size = UDim2.new(1, 0, 0, 128),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local notesTitle = makeSectionTitle(notesSection, "Queue", Color3.fromRGB(171, 210, 255))
+	notesTitle.Position = UDim2.fromOffset(12, 10)
+
+	local notesBody = makeBodyLabel(notesSection, "Guns and Building stay in their own tab. This rail is only for fast local adjustments.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
 
 	local targetsHeader = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -1132,13 +1225,19 @@ local function createGui(state)
 		BackgroundColor3 = Color3.fromRGB(20, 25, 34),
 	})
 
-	local espObjectsPanel = NativeUi.makePanel(espWorkspace, {
+	local espResourcesPanel = NativeUi.makePanel(espWorkspace, {
 		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
 		Position = UDim2.fromOffset(346, 0),
-		Size = UDim2.new(1, -346, 1, 0),
+		Size = UDim2.fromOffset(356, 100),
 	})
 
-	local espObjectsScroll, espObjectsContent = NativeUi.makeScrollList(espObjectsPanel, {
+	local espWellsPanel = NativeUi.makePanel(espWorkspace, {
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		Position = UDim2.fromOffset(718, 0),
+		Size = UDim2.new(1, -718, 1, 0),
+	})
+
+	local espResourcesScroll, espResourcesContent = NativeUi.makeScrollList(espResourcesPanel, {
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
@@ -1146,26 +1245,34 @@ local function createGui(state)
 		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
 	})
 
-	local espHeroPanel = NativeUi.makePanel(espObjectsContent, {
+	local espWellsScroll, espWellsContent = NativeUi.makeScrollList(espWellsPanel, {
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 1, -24),
+		Padding = 10,
+		ContentPadding = 0,
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+	})
+
+	local resourcesHeader = NativeUi.makePanel(espResourcesContent, {
 		Size = UDim2.new(1, 0, 0, 82),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
 
-	local espHeroTitle = NativeUi.makeLabel(espHeroPanel, "ESP", {
+	local resourcesHeaderTitle = NativeUi.makeLabel(resourcesHeader, "Resources", {
 		Font = Enum.Font.GothamBlack,
-		TextSize = 22,
+		TextSize = 20,
 		Position = UDim2.fromOffset(16, 14),
-		Size = UDim2.new(1, -32, 0, 24),
+		Size = UDim2.new(1, -32, 0, 22),
 	})
 
-	local espHeroBody = makeBodyLabel(espHeroPanel, "Player, resource, and structure highlights live here. Fill transparency is fixed to 0.65.", {
+	local resourcesHeaderBody = makeBodyLabel(resourcesHeader, "Static world targets and iridium filtering live here. Fill transparency stays fixed at 0.65.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(16, 44),
+		Position = UDim2.fromOffset(16, 42),
 		Size = UDim2.new(1, -32, 0, 0),
 	})
 
-	local resourceEspSection = NativeUi.makePanel(espObjectsContent, {
+	local resourceEspSection = NativeUi.makePanel(espResourcesContent, {
 		Size = UDim2.new(1, 0, 0, 244),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
@@ -1179,7 +1286,26 @@ local function createGui(state)
 
 	local iridiumSlider = makeSliderRow(resourceEspSection, 202, "Minimum Fullness")
 
-	local wellsEspSection = NativeUi.makePanel(espObjectsContent, {
+	local wellsHeader = NativeUi.makePanel(espWellsContent, {
+		Size = UDim2.new(1, 0, 0, 82),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local wellsHeaderTitle = NativeUi.makeLabel(wellsHeader, "Structures", {
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		Position = UDim2.fromOffset(16, 14),
+		Size = UDim2.new(1, -32, 0, 22),
+	})
+
+	local wellsHeaderBody = makeBodyLabel(wellsHeader, "Distance-gated structure ESP stays isolated so moving filters do not clutter the player list.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 42),
+		Size = UDim2.new(1, -32, 0, 0),
+	})
+
+	local wellsEspSection = NativeUi.makePanel(espWellsContent, {
 		Size = UDim2.new(1, 0, 0, 192),
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 	})
@@ -1478,31 +1604,130 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local buildPanel = NativeUi.makePanel(buildWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	local gunsPanel = NativeUi.makePanel(buildWorkspace, {
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
 		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, 0, 1, 0),
+		Size = UDim2.new(0.5, -8, 1, 0),
 	})
 
-	local buildTitle = NativeUi.makeLabel(buildPanel, "Guns & Building", {
+	local buildingPanel = NativeUi.makePanel(buildWorkspace, {
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		Position = UDim2.new(0.5, 8, 0, 0),
+		Size = UDim2.new(0.5, -8, 1, 0),
+	})
+
+	local gunsScroll, gunsContent = NativeUi.makeScrollList(gunsPanel, {
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 1, -24),
+		Padding = 10,
+		ContentPadding = 0,
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+	})
+
+	local buildingScroll, buildingContent = NativeUi.makeScrollList(buildingPanel, {
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 1, -24),
+		Padding = 10,
+		ContentPadding = 0,
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+	})
+
+	local gunsHeader = NativeUi.makePanel(gunsContent, {
+		Size = UDim2.new(1, 0, 0, 82),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local gunsTitle = NativeUi.makeLabel(gunsHeader, "Guns", {
 		Font = Enum.Font.GothamBlack,
-		TextSize = 24,
-		Position = UDim2.fromOffset(18, 18),
-		Size = UDim2.new(1, -36, 0, 28),
+		TextSize = 22,
+		Position = UDim2.fromOffset(16, 14),
+		Size = UDim2.new(1, -32, 0, 24),
 	})
 
-	local buildBody = makeBodyLabel(buildPanel, "This stays quiet until you explain the building and weapon mechanics. The tab is in place so we can wire those systems without disturbing Main, ESP, or Lab.", {
+	local gunsBody = makeBodyLabel(gunsHeader, "Weapon handling, fire controls, recoil, and combat remotes will live in this column.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 13,
-		Position = UDim2.fromOffset(18, 58),
-		Size = UDim2.new(1, -36, 0, 0),
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 42),
+		Size = UDim2.new(1, -32, 0, 0),
 	})
 
-	local buildHint = makeBodyLabel(buildPanel, "Next pass can turn this into the dedicated build editor once you give the remote contract and placement rules.", {
-		TextColor3 = NativeUi.Theme.TextDim,
+	local gunCombatSection = NativeUi.makePanel(gunsContent, {
+		Size = UDim2.new(1, 0, 0, 128),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local gunCombatTitle = makeSectionTitle(gunCombatSection, "Combat", Color3.fromRGB(255, 214, 171))
+	gunCombatTitle.Position = UDim2.fromOffset(12, 10)
+
+	local gunCombatBody = makeBodyLabel(gunCombatSection, "Reserve this rail for fire cadence, reload handling, spread control, and weapon-state remotes.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(18, 110),
-		Size = UDim2.new(1, -36, 0, 0),
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+
+	local gunUtilitySection = NativeUi.makePanel(gunsContent, {
+		Size = UDim2.new(1, 0, 0, 128),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local gunUtilityTitle = makeSectionTitle(gunUtilitySection, "Handling", Color3.fromRGB(171, 210, 255))
+	gunUtilityTitle.Position = UDim2.fromOffset(12, 10)
+
+	local gunUtilityBody = makeBodyLabel(gunUtilitySection, "Auxiliary gun tools can sit here once you define ammo, sway, ADS, and equip behavior.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+
+	local buildingHeader = NativeUi.makePanel(buildingContent, {
+		Size = UDim2.new(1, 0, 0, 82),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local buildingTitle = NativeUi.makeLabel(buildingHeader, "Building", {
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		Position = UDim2.fromOffset(16, 14),
+		Size = UDim2.new(1, -32, 0, 24),
+	})
+
+	local buildingBody = makeBodyLabel(buildingHeader, "Placement, snapping, piece selection, and structure edits get their own column instead of sharing gun controls.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 42),
+		Size = UDim2.new(1, -32, 0, 0),
+	})
+
+	local buildPlacementSection = NativeUi.makePanel(buildingContent, {
+		Size = UDim2.new(1, 0, 0, 128),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local buildPlacementTitle = makeSectionTitle(buildPlacementSection, "Placement", Color3.fromRGB(170, 242, 187))
+	buildPlacementTitle.Position = UDim2.fromOffset(12, 10)
+
+	local buildPlacementBody = makeBodyLabel(buildPlacementSection, "This is where grid offsets, preview state, placement remotes, and rotation logic should land.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+
+	local buildEditSection = NativeUi.makePanel(buildingContent, {
+		Size = UDim2.new(1, 0, 0, 128),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local buildEditTitle = makeSectionTitle(buildEditSection, "Edit", Color3.fromRGB(205, 221, 248))
+	buildEditTitle.Position = UDim2.fromOffset(12, 10)
+
+	local buildEditBody = makeBodyLabel(buildEditSection, "Upgrade, delete, swap-piece, and ownership flows can be isolated here once you walk through the build system.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 0),
 	})
 
 	local rightResizeHandle = NativeUi.create("TextButton", {
@@ -1710,10 +1935,12 @@ local function createGui(state)
 	local function applyLayout()
 		local width = main.AbsoluteSize.X
 		local height = main.AbsoluteSize.Y
-		local workspaceWidth = width - 24
+		local workspaceWidth = width - (contentX + 12)
 		local workspaceHeight = height - 82
 		local panelGap = 16
 		local splitterWidth = 6
+		local mainInnerGap = 16
+		local mainLeftColumnWidth = 304
 
 		rightResizeHandle.Position = UDim2.new(1, -5, 0, 14)
 		rightResizeHandle.Size = UDim2.new(0, 10, 1, -28)
@@ -1724,26 +1951,44 @@ local function createGui(state)
 		bottomResizeHandle.Position = UDim2.new(0, 14, 1, -5)
 		bottomResizeHandle.Size = UDim2.new(1, -28, 0, 10)
 		bottomRightResizeHandle.Position = UDim2.new(1, -26, 1, -22)
+		navRail.Size = UDim2.fromOffset(navWidth, height - 24)
+		topBar.Position = UDim2.fromOffset(contentX, 12)
+		topBar.Size = UDim2.fromOffset(workspaceWidth, 46)
 
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		espWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		bytecodeWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 
-		state.mainControlsWidth = clamp(state.mainControlsWidth, 420, math.max(520, workspaceWidth - 280))
+		state.mainControlsWidth = clamp(state.mainControlsWidth, 560, math.max(560, workspaceWidth - panelGap - 280))
 		mainControlsPanel.Size = UDim2.fromOffset(state.mainControlsWidth, workspaceHeight)
+		mainLeftColumn.Size = UDim2.fromOffset(mainLeftColumnWidth, workspaceHeight)
+		mainCenterColumn.Position = UDim2.fromOffset(mainLeftColumnWidth + mainInnerGap, 0)
+		mainCenterColumn.Size = UDim2.fromOffset(state.mainControlsWidth - mainLeftColumnWidth - mainInnerGap, workspaceHeight)
 		mainSplitter.Position = UDim2.fromOffset(state.mainControlsWidth + 8, 0)
 		mainSplitter.Size = UDim2.fromOffset(splitterWidth, workspaceHeight)
 		mainPlayersPanel.Position = UDim2.fromOffset(state.mainControlsWidth + panelGap, 0)
 		mainPlayersPanel.Size = UDim2.fromOffset(workspaceWidth - state.mainControlsWidth - panelGap, workspaceHeight)
+		leftControlsScroll.Size = UDim2.new(1, -24, 1, -24)
+		centerControlsScroll.Size = UDim2.new(1, -24, 1, -24)
 
-		state.espPlayersWidth = clamp(state.espPlayersWidth, 280, math.max(320, workspaceWidth - 360))
+		local espResourceWidth = clamp(math.floor((workspaceWidth - state.espPlayersWidth - panelGap * 2) * 0.5), 260, 360)
+		state.espPlayersWidth = clamp(state.espPlayersWidth, 280, math.max(300, workspaceWidth - espResourceWidth - 280 - panelGap * 2))
+		espResourceWidth = clamp(math.floor((workspaceWidth - state.espPlayersWidth - panelGap * 2) * 0.5), 260, 360)
+		local espWellsWidth = workspaceWidth - state.espPlayersWidth - espResourceWidth - panelGap * 2
+		if espWellsWidth < 280 then
+			espResourceWidth = math.max(240, espResourceWidth - (280 - espWellsWidth))
+			espWellsWidth = workspaceWidth - state.espPlayersWidth - espResourceWidth - panelGap * 2
+		end
 		espPlayersPanel.Size = UDim2.fromOffset(state.espPlayersWidth, workspaceHeight)
-		espObjectsPanel.Position = UDim2.fromOffset(state.espPlayersWidth + panelGap, 0)
-		espObjectsPanel.Size = UDim2.fromOffset(workspaceWidth - state.espPlayersWidth - panelGap, workspaceHeight)
+		espResourcesPanel.Position = UDim2.fromOffset(state.espPlayersWidth + panelGap, 0)
+		espResourcesPanel.Size = UDim2.fromOffset(espResourceWidth, workspaceHeight)
+		espWellsPanel.Position = UDim2.fromOffset(state.espPlayersWidth + espResourceWidth + panelGap * 2, 0)
+		espWellsPanel.Size = UDim2.fromOffset(espWellsWidth, workspaceHeight)
 		espPlayerSearchBox.Size = UDim2.new(1, -24, 0, 30)
 		espPlayerScroll.Size = UDim2.new(1, -24, 1, -196)
-		espObjectsScroll.Size = UDim2.new(1, -24, 1, -24)
+		espResourcesScroll.Size = UDim2.new(1, -24, 1, -24)
+		espWellsScroll.Size = UDim2.new(1, -24, 1, -24)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
 		local maxInspector = math.max(280, workspaceWidth - state.bytecodeSidebarWidth - 420)
@@ -1771,6 +2016,12 @@ local function createGui(state)
 		outputViewerHost.Size = UDim2.new(1, -24, 1, -116)
 		outputScroll.Size = UDim2.new(1, 0, 1, 0)
 		inspectorScroll.Size = UDim2.new(1, -24, 1, -24)
+		local gunsWidth = math.floor((workspaceWidth - panelGap) * 0.5)
+		gunsPanel.Size = UDim2.fromOffset(gunsWidth, workspaceHeight)
+		buildingPanel.Position = UDim2.fromOffset(gunsWidth + panelGap, 0)
+		buildingPanel.Size = UDim2.fromOffset(workspaceWidth - gunsWidth - panelGap, workspaceHeight)
+		gunsScroll.Size = UDim2.new(1, -24, 1, -24)
+		buildingScroll.Size = UDim2.new(1, -24, 1, -24)
 
 		syncOutputCanvas()
 	end
@@ -1783,14 +2034,14 @@ local function createGui(state)
 	bindWindowResize(topResizeHandle, "top")
 	bindWindowResize(bottomResizeHandle, "bottom")
 	bindWindowResize(bottomRightResizeHandle, "bottomright")
-	bindVerticalSplitter(mainSplitter, "mainControlsWidth", 420, function()
-		return math.max(520, main.AbsoluteSize.X - 320)
+	bindVerticalSplitter(mainSplitter, "mainControlsWidth", 560, function()
+		return math.max(560, main.AbsoluteSize.X - (contentX + 12) - 16 - 280)
 	end)
 	bindVerticalSplitter(bytecodeSplitter, "bytecodeSidebarWidth", 240, function()
-		return math.max(280, main.AbsoluteSize.X - state.bytecodeInspectorWidth - 420)
+		return math.max(280, main.AbsoluteSize.X - (contentX + 12) - state.bytecodeInspectorWidth - 420)
 	end)
 	bindVerticalSplitter(inspectorSplitter, "bytecodeInspectorWidth", 280, function()
-		return math.max(320, main.AbsoluteSize.X - state.bytecodeSidebarWidth - 420)
+		return math.max(320, main.AbsoluteSize.X - (contentX + 12) - state.bytecodeSidebarWidth - 420)
 	end)
 
 	trackConnection(main:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyLayout))
