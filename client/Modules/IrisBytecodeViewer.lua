@@ -908,7 +908,7 @@ local function createGui(state)
 	})
 
 	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Bytecode", {
-		Position = UDim2.new(0, 12, 1, -72),
+		Position = UDim2.fromOffset(12, 240),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -992,13 +992,7 @@ local function createGui(state)
 		Parent = main,
 	})
 
-	local mainPanel = NativeUi.makePanel(mainWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, 0, 1, 0),
-	})
-
-	local mainScroll, mainContent = NativeUi.makeScrollList(mainPanel, {
+	local mainScroll, mainContent = NativeUi.makeScrollList(mainWorkspace, {
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
@@ -1514,19 +1508,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local gunsPanel = NativeUi.makePanel(gunsWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, 0, 1, 0),
-	})
-
-	local buildingPanel = NativeUi.makePanel(buildWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, 0, 1, 0),
-	})
-
-	local gunsScroll, gunsContent = NativeUi.makeScrollList(gunsPanel, {
+	local gunsScroll, gunsContent = NativeUi.makeScrollList(gunsWorkspace, {
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
@@ -1534,7 +1516,7 @@ local function createGui(state)
 		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
-	local buildingScroll, buildingContent = NativeUi.makeScrollList(buildingPanel, {
+	local buildingScroll, buildingContent = NativeUi.makeScrollList(buildWorkspace, {
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
@@ -1868,7 +1850,6 @@ local function createGui(state)
 		bytecodeWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		gunsWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		mainPanel.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		mainScroll.Size = UDim2.new(1, -24, 1, -24)
 
 		local espResourceWidth = clamp(math.floor((workspaceWidth - state.espPlayersWidth - panelGap * 2) * 0.5), 260, 360)
@@ -1915,8 +1896,6 @@ local function createGui(state)
 		outputViewerHost.Size = UDim2.new(1, -24, 1, -116)
 		outputScroll.Size = UDim2.new(1, 0, 1, 0)
 		inspectorScroll.Size = UDim2.new(1, -24, 1, -24)
-		gunsPanel.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		buildingPanel.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		gunsScroll.Size = UDim2.new(1, -24, 1, -24)
 		buildingScroll.Size = UDim2.new(1, -24, 1, -24)
 
