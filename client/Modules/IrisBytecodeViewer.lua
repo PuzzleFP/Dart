@@ -982,7 +982,7 @@ local function createGui(state)
 	local movementSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 196),
+		Size = UDim2.new(1, 0, 0, 222),
 		Parent = mainContent,
 	})
 
@@ -990,13 +990,13 @@ local function createGui(state)
 	movementTitle.Position = UDim2.fromOffset(12, 10)
 
 	local walkSlider = makeSliderRow(movementSection, 40, "Walk Speed")
-	local jumpSlider = makeSliderRow(movementSection, 92, "Jump Power")
-	local hipSlider = makeSliderRow(movementSection, 144, "Hip Height")
+	local jumpSlider = makeSliderRow(movementSection, 100, "Jump Power")
+	local hipSlider = makeSliderRow(movementSection, 160, "Hip Height")
 
 	local automationSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 170),
+		Size = UDim2.new(1, 0, 0, 178),
 		Parent = mainContent,
 	})
 
@@ -1004,8 +1004,8 @@ local function createGui(state)
 	automationTitle.Position = UDim2.fromOffset(12, 10)
 
 	local infiniteJumpToggle = makeToggleRow(automationSection, 40, "Infinite Jump", "Keeps jump requests hot for the local character when enabled.")
-	local noClipToggle = makeToggleRow(automationSection, 84, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
-	local fullBrightToggle = makeToggleRow(automationSection, 128, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
+	local noClipToggle = makeToggleRow(automationSection, 86, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
+	local fullBrightToggle = makeToggleRow(automationSection, 132, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
 
 	local worldSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -1017,7 +1017,7 @@ local function createGui(state)
 	local worldTitle = makeSectionTitle(worldSection, "World")
 	worldTitle.Position = UDim2.fromOffset(12, 10)
 
-	local gravitySlider = makeSliderRow(worldSection, 40, "Gravity")
+	local gravitySlider = makeSliderRow(worldSection, 42, "Gravity")
 
 	local sessionSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -1119,16 +1119,16 @@ local function createGui(state)
 	resourceEspTitle.Position = UDim2.fromOffset(12, 12)
 
 	local spawnPointToggle = makeToggleRow(espResourcesPanel, 40, "Spawn Point", "Highlights any instance named Spawn Point in the workspace.")
-	local wellPumpToggle = makeToggleRow(espResourcesPanel, 84, "Well Pump", "Highlights any instance named Well Pump in the workspace.")
-	local iridiumToggle = makeToggleRow(espResourcesPanel, 128, "Iridium Crystals", "Filters Workspace.Resources by CrystalFullness and highlights crystals at or above the threshold.")
-	local iridiumSlider = makeSliderRow(espResourcesPanel, 172, "Minimum Fullness")
+	local wellPumpToggle = makeToggleRow(espResourcesPanel, 86, "Well Pump", "Highlights any instance named Well Pump in the workspace.")
+	local iridiumToggle = makeToggleRow(espResourcesPanel, 132, "Iridium Crystals", "Filters Workspace.Resources by CrystalFullness and highlights crystals at or above the threshold.")
+	local iridiumSlider = makeSliderRow(espResourcesPanel, 178, "Minimum Fullness")
 
 	local wellsEspTitle = makeSectionTitle(espWellsPanel, "Structures")
 	wellsEspTitle.Position = UDim2.fromOffset(12, 12)
 
 	local spireWellToggle = makeToggleRow(espWellsPanel, 40, "Spire Well", "Maps to SpireOpenLarge1 in Workspace.Map and only shows entries within the selected distance.")
-	local wellToggle = makeToggleRow(espWellsPanel, 84, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
-	local wellDistanceSlider = makeSliderRow(espWellsPanel, 128, "Distance")
+	local wellToggle = makeToggleRow(espWellsPanel, 86, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
+	local wellDistanceSlider = makeSliderRow(espWellsPanel, 132, "Distance")
 
 	local scriptPanel = NativeUi.makePanel(bytecodeWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
@@ -2842,6 +2842,17 @@ function BytecodeViewer.start(config)
 		return targets
 	end
 
+	local function getPlayerHighlightColors(player)
+		local baseColor = NativeUi.Theme.Accent
+		if player.Team ~= nil and player.Team.TeamColor ~= nil then
+			baseColor = player.Team.TeamColor.Color
+		elseif player.TeamColor ~= nil then
+			baseColor = player.TeamColor.Color
+		end
+
+		return baseColor:Lerp(Color3.new(1, 1, 1), 0.08), baseColor:Lerp(Color3.new(1, 1, 1), 0.34)
+	end
+
 	local function reconcilePlayerHighlights()
 		local desired = {}
 
@@ -2849,10 +2860,11 @@ function BytecodeViewer.start(config)
 			if player ~= Players.LocalPlayer then
 				local shouldHighlight = state.highlightAllPlayers or state.highlightedPlayers[player.Name] == true
 				if shouldHighlight and player.Character ~= nil then
+					local fillColor, outlineColor = getPlayerHighlightColors(player)
 					desired["player:" .. player.Name] = {
 						target = player.Character,
-						fillColor = state.highlightAllPlayers and Color3.fromRGB(122, 192, 146) or NativeUi.Theme.Accent,
-						outlineColor = state.highlightAllPlayers and Color3.fromRGB(162, 225, 181) or Color3.fromRGB(164, 209, 255),
+						fillColor = fillColor,
+						outlineColor = outlineColor,
 					}
 				end
 			end
