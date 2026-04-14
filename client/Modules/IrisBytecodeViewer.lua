@@ -1462,7 +1462,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -32, 0, 24),
 	})
 
-	local gunsBody = makeBodyLabel(gunsHeader, "Hold Ctrl to lock the camera onto the target nearest your mouse while the aimbot is enabled.", {
+	local gunsBody = makeBodyLabel(gunsHeader, "Hold Ctrl to lock the cursor onto the target nearest your mouse while the aimbot is enabled.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 42),
@@ -1479,7 +1479,7 @@ local function createGui(state)
 	local gunCombatTitle = makeSectionTitle(gunCombatSection, "Aimbot", Color3.fromRGB(255, 214, 171))
 	gunCombatTitle.Position = UDim2.fromOffset(12, 10)
 
-	local aimbotToggle = makeToggleRow(gunCombatSection, 40, "Enable Aimbot", "Holds a local lock on the target nearest the mouse while Ctrl is pressed.")
+	local aimbotToggle = makeToggleRow(gunCombatSection, 40, "Enable Aimbot", "Moves the cursor onto the target nearest the mouse while Ctrl is pressed.")
 
 	local gunCombatBody = makeBodyLabel(gunCombatSection, "Only active while Ctrl is held. The lock reacquires if the current target drops out of view.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
@@ -2151,28 +2151,42 @@ function BytecodeViewer.start(config)
 		return candidates
 	end
 
-	local function getBestAimPartForPlayer(player, mode, mousePosition)
+	local function getScreenPointForPart(part)
 		local camera = getCurrentCamera()
-		if camera == nil or player == nil or player.Character == nil then
-			return nil, math.huge
+		if camera == nil or part == nil then
+			return nil
+		end
+
+		local viewportPoint, onScreen = camera:WorldToViewportPoint(part.Position)
+		if not onScreen or viewportPoint.Z <= 0 then
+			return nil
+		end
+
+		return Vector2.new(viewportPoint.X, viewportPoint.Y)
+	end
+
+	local function getBestAimPartForPlayer(player, mode, mousePosition)
+		if getCurrentCamera() == nil or player == nil or player.Character == nil then
+			return nil, math.huge, nil
 		end
 
 		local bestPart
 		local bestDistance = math.huge
+		local bestScreenPosition
 
 		for _, part in ipairs(getAimCandidatesForCharacter(player.Character, mode)) do
-			local viewportPoint, onScreen = camera:WorldToViewportPoint(part.Position)
-			if onScreen and viewportPoint.Z > 0 then
-				local screenPosition = Vector2.new(viewportPoint.X, viewportPoint.Y)
+			local screenPosition = getScreenPointForPart(part)
+			if screenPosition ~= nil then
 				local distance = (screenPosition - mousePosition).Magnitude
 				if distance < bestDistance then
 					bestDistance = distance
 					bestPart = part
+					bestScreenPosition = screenPosition
 				end
 			end
 		end
 
-		return bestPart, bestDistance
+		return bestPart, bestDistance, bestScreenPosition
 	end
 
 	local function clearAimbotLock()
@@ -2191,14 +2205,16 @@ function BytecodeViewer.start(config)
 		local bestPlayer
 		local bestPart
 		local bestDistance = math.huge
+		local bestScreenPosition
 
 		for _, player in ipairs(Players:GetPlayers()) do
 			if not shouldSkipAimbotPlayer(player) then
-				local part, distance = getBestAimPartForPlayer(player, state.aimTargetPart, mousePosition)
+				local part, distance, screenPosition = getBestAimPartForPlayer(player, state.aimTargetPart, mousePosition)
 				if part ~= nil and distance < bestDistance then
 					bestDistance = distance
 					bestPlayer = player
 					bestPart = part
+					bestScreenPosition = screenPosition
 				end
 			end
 		end
@@ -2206,11 +2222,11 @@ function BytecodeViewer.start(config)
 		if bestPlayer ~= nil and bestPart ~= nil then
 			state.aimLockedPlayerName = bestPlayer.Name
 			state.aimLockedPartName = bestPart.Name
-			return bestPlayer, bestPart
+			return bestPlayer, bestPart, bestScreenPosition
 		end
 
 		clearAimbotLock()
-		return nil, nil
+		return nil, nil, nil
 	end
 
 	local function resolveLockedAimbotTarget()
@@ -2224,13 +2240,13 @@ function BytecodeViewer.start(config)
 		end
 
 		local mousePosition = UserInputService:GetMouseLocation()
-		local part = getBestAimPartForPlayer(player, state.aimTargetPart, mousePosition)
+		local part, _, screenPosition = getBestAimPartForPlayer(player, state.aimTargetPart, mousePosition)
 		if part == nil then
 			return acquireAimbotTarget()
 		end
 
 		state.aimLockedPartName = part.Name
-		return player, part
+		return player, part, screenPosition
 	end
 
 	local function setAimbotHoldActive(active)
@@ -2251,6 +2267,47 @@ function BytecodeViewer.start(config)
 
 	local function isAimbotHotkeyDown()
 		return UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+	end
+
+	local function roundNumber(value)
+		if value >= 0 then
+			return math.floor(value + 0.5)
+		end
+
+		return math.ceil(value - 0.5)
+	end
+
+	local function getMouseMoveFunctions()
+		local scope = getGlobalScope()
+		return scope.mousemoveabs or scope.mousemoveabsolute, scope.mousemoverel or scope.mousemoverelative
+	end
+
+	local function canMoveMouseCursor()
+		local moveAbs, moveRel = getMouseMoveFunctions()
+		return type(moveAbs) == "function" or type(moveRel) == "function"
+	end
+
+	local function moveMouseToScreenPosition(screenPosition)
+		if screenPosition == nil then
+			return false
+		end
+
+		local moveAbs, moveRel = getMouseMoveFunctions()
+		if type(moveAbs) == "function" then
+			moveAbs(roundNumber(screenPosition.X), roundNumber(screenPosition.Y))
+			return true
+		end
+
+		if type(moveRel) == "function" then
+			local mousePosition = UserInputService:GetMouseLocation()
+			moveRel(
+				roundNumber(screenPosition.X - mousePosition.X),
+				roundNumber(screenPosition.Y - mousePosition.Y)
+			)
+			return true
+		end
+
+		return false
 	end
 
 	local function getActiveTargetText()
@@ -3475,6 +3532,8 @@ function BytecodeViewer.start(config)
 			or ("Highlighted: %d"):format(countHighlightedPlayers())
 		if not state.aimbotEnabled then
 			refs.aimStatusLabel.Text = "Aimbot disabled"
+		elseif not canMoveMouseCursor() then
+			refs.aimStatusLabel.Text = "Mouse move API unavailable"
 		elseif state.aimHoldActive and state.aimLockedPlayerName ~= "" then
 			refs.aimStatusLabel.Text = ("Locked: %s [%s]"):format(state.aimLockedPlayerName, state.aimLockedPartName ~= "" and state.aimLockedPartName or state.aimTargetPart)
 		elseif state.aimHoldActive then
@@ -3614,26 +3673,21 @@ function BytecodeViewer.start(config)
 	end))
 
 	trackConnection(RunService.RenderStepped:Connect(function()
-		local wantsHold = state.aimbotEnabled and UserInputService:GetFocusedTextBox() == nil and isAimbotHotkeyDown()
+		local wantsHold = state.aimbotEnabled and canMoveMouseCursor() and UserInputService:GetFocusedTextBox() == nil and isAimbotHotkeyDown()
 		if wantsHold ~= state.aimHoldActive then
 			setAimbotHoldActive(wantsHold)
 		end
 
-		if not state.aimbotEnabled or not wantsHold then
+		if not state.aimbotEnabled or not wantsHold or not canMoveMouseCursor() then
 			return
 		end
 
-		local camera = getCurrentCamera()
-		if camera == nil then
+		local _, targetPart, targetScreenPosition = resolveLockedAimbotTarget()
+		if targetPart == nil or targetScreenPosition == nil then
 			return
 		end
 
-		local _, targetPart = resolveLockedAimbotTarget()
-		if targetPart == nil then
-			return
-		end
-
-		camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
+		moveMouseToScreenPosition(targetScreenPosition)
 	end))
 
 	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
