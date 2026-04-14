@@ -979,9 +979,11 @@ local function createGui(state)
 		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
-	local movementSection = NativeUi.makePanel(mainContent, {
+	local movementSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 196),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = mainContent,
 	})
 
 	local movementTitle = makeSectionTitle(movementSection, "Movement")
@@ -991,9 +993,11 @@ local function createGui(state)
 	local jumpSlider = makeSliderRow(movementSection, 92, "Jump Power")
 	local hipSlider = makeSliderRow(movementSection, 144, "Hip Height")
 
-	local automationSection = NativeUi.makePanel(mainContent, {
+	local automationSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 170),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = mainContent,
 	})
 
 	local automationTitle = makeSectionTitle(automationSection, "Automation")
@@ -1003,9 +1007,11 @@ local function createGui(state)
 	local noClipToggle = makeToggleRow(automationSection, 84, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
 	local fullBrightToggle = makeToggleRow(automationSection, 128, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
 
-	local worldSection = NativeUi.makePanel(mainContent, {
+	local worldSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 104),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = mainContent,
 	})
 
 	local worldTitle = makeSectionTitle(worldSection, "World")
@@ -1013,9 +1019,11 @@ local function createGui(state)
 
 	local gravitySlider = makeSliderRow(worldSection, 40, "Gravity")
 
-	local sessionSection = NativeUi.makePanel(mainContent, {
+	local sessionSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 114),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = mainContent,
 	})
 
 	local sessionTitle = makeSectionTitle(sessionSection, "Session")
@@ -1246,9 +1254,11 @@ local function createGui(state)
 		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
-	local intelCard = NativeUi.makePanel(inspectorContent, {
+	local intelCard = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 108),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = inspectorContent,
 	})
 
 	local intelTitle = NativeUi.makeLabel(intelCard, "Inspector", {
@@ -1272,9 +1282,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -32, 0, 0),
 	})
 
-	local inputSection = NativeUi.makePanel(inspectorContent, {
+	local inputSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 192),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = inspectorContent,
 	})
 
 	local inputTitle = makeSectionTitle(inputSection, "Input", Color3.fromRGB(205, 221, 248))
@@ -1331,9 +1343,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 16),
 	})
 
-	local viewSection = NativeUi.makePanel(inspectorContent, {
+	local viewSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 142),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = inspectorContent,
 	})
 
 	local viewTitle = makeSectionTitle(viewSection, "View", Color3.fromRGB(205, 221, 248))
@@ -1368,9 +1382,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local filterSection = NativeUi.makePanel(inspectorContent, {
+	local filterSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 126),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = inspectorContent,
 	})
 
 	local filterTitle = makeSectionTitle(filterSection, "Filter", Color3.fromRGB(205, 221, 248))
@@ -1396,9 +1412,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -134, 0, 16),
 	})
 
-	local summarySection = NativeUi.makePanel(inspectorContent, {
+	local summarySection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 128),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = inspectorContent,
 	})
 
 	local summaryTitle = makeSectionTitle(summarySection, "Summary", Color3.fromRGB(205, 221, 248))
@@ -1425,9 +1443,11 @@ local function createGui(state)
 		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
-	local gunsHeader = NativeUi.makePanel(gunsContent, {
+	local gunsHeader = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 82),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = gunsContent,
 	})
 
 	local gunsTitle = NativeUi.makeLabel(gunsHeader, "Guns", {
@@ -1444,9 +1464,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -32, 0, 0),
 	})
 
-	local gunCombatSection = NativeUi.makePanel(gunsContent, {
+	local gunCombatSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 128),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = gunsContent,
 	})
 
 	local gunCombatTitle = makeSectionTitle(gunCombatSection, "Combat", Color3.fromRGB(255, 214, 171))
@@ -1459,9 +1481,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local gunUtilitySection = NativeUi.makePanel(gunsContent, {
+	local gunUtilitySection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 128),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = gunsContent,
 	})
 
 	local gunUtilityTitle = makeSectionTitle(gunUtilitySection, "Handling", Color3.fromRGB(171, 210, 255))
@@ -1474,9 +1498,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local buildingHeader = NativeUi.makePanel(buildingContent, {
+	local buildingHeader = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 82),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = buildingContent,
 	})
 
 	local buildingTitle = NativeUi.makeLabel(buildingHeader, "Building", {
@@ -1493,9 +1519,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -32, 0, 0),
 	})
 
-	local buildPlacementSection = NativeUi.makePanel(buildingContent, {
+	local buildPlacementSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 128),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = buildingContent,
 	})
 
 	local buildPlacementTitle = makeSectionTitle(buildPlacementSection, "Placement", Color3.fromRGB(170, 242, 187))
@@ -1508,9 +1536,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local buildEditSection = NativeUi.makePanel(buildingContent, {
+	local buildEditSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 128),
-		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+		Parent = buildingContent,
 	})
 
 	local buildEditTitle = makeSectionTitle(buildEditSection, "Edit", Color3.fromRGB(205, 221, 248))
