@@ -2446,6 +2446,51 @@ function BytecodeViewer.start(config)
 	local refreshEspPlayersList
 	local highlightInstances = {}
 	local playerCharacterConnections = {}
+	local reconcileObjectHighlights
+	local distanceRefreshAccumulator = 0
+	local lastDistanceRefreshPosition = nil
+	local objectRefreshQueued = false
+	local espObjectCache = {
+		named = {
+			spawnPoint = {
+				targetName = "Spawn Point",
+				rootGetter = function()
+					return Workspace
+				end,
+				carriers = {},
+				dirty = true,
+			},
+			wellPump = {
+				targetName = "Well Pump",
+				rootGetter = function()
+					return Workspace
+				end,
+				carriers = {},
+				dirty = true,
+			},
+			spireWell = {
+				targetName = "SpireOpenLarge1",
+				rootGetter = function()
+					return Workspace:FindFirstChild("Map")
+				end,
+				carriers = {},
+				dirty = true,
+			},
+			well = {
+				targetName = "Top1",
+				rootGetter = function()
+					return Workspace:FindFirstChild("Map")
+				end,
+				carriers = {},
+				dirty = true,
+			},
+		},
+		iridium = {
+			entries = {},
+			dirty = true,
+			attributeConnections = {},
+		},
+	}
 
 	local function getHighlightCarrier(instance)
 		if typeof(instance) ~= "Instance" then
@@ -2507,6 +2552,41 @@ function BytecodeViewer.start(config)
 		return getInstancePosition(character)
 	end
 
+	local function getInstanceKey(instance)
+		if typeof(instance) ~= "Instance" then
+			return tostring(instance)
+		end
+
+		local ok, debugId = pcall(function()
+			return instance:GetDebugId(0)
+		end)
+
+		if ok and type(debugId) == "string" and debugId ~= "" then
+			return debugId
+		end
+
+		return instance:GetFullName()
+	end
+
+	local function disconnectConnectionMap(connectionMap)
+		for key, connection in pairs(connectionMap) do
+			pcall(function()
+				connection:Disconnect()
+			end)
+			connectionMap[key] = nil
+		end
+	end
+
+	local function anyObjectEspEnabled()
+		for _, enabled in pairs(state.espObjectToggles) do
+			if enabled then
+				return true
+			end
+		end
+
+		return false
+	end
+
 	local function removeHighlight(key)
 		local highlight = highlightInstances[key]
 		if highlight ~= nil then
@@ -2542,6 +2622,22 @@ function BytecodeViewer.start(config)
 		highlight.Enabled = true
 	end
 
+	local function scheduleObjectReconcile()
+		if reconcileObjectHighlights == nil or objectRefreshQueued or cleaning or not anyObjectEspEnabled() then
+			return
+		end
+
+		objectRefreshQueued = true
+		task.defer(function()
+			objectRefreshQueued = false
+			if cleaning or refs.main == nil or refs.main.Parent == nil then
+				return
+			end
+
+			reconcileObjectHighlights()
+		end)
+	end
+
 	local function reconcileDesiredHighlights(prefix, desired)
 		for key, spec in pairs(desired) do
 			ensureHighlight(key, spec.target, spec.fillColor, spec.outlineColor)
@@ -2559,7 +2655,7 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	local function collectNamedTargets(root, targetName)
+	local function scanNamedTargets(root, targetName)
 		local targets = {}
 		if typeof(root) ~= "Instance" then
 			return targets
@@ -2579,45 +2675,111 @@ function BytecodeViewer.start(config)
 		return targets
 	end
 
-	local function collectIridiumTargets()
-		local targets = {}
-		local resources = Workspace:FindFirstChild("Resources")
-		if resources == nil then
-			return targets
+	local function markNamedTargetDirty(cacheKey, refreshNow)
+		local entry = espObjectCache.named[cacheKey]
+		if entry == nil then
+			return
 		end
 
-		local seen = {}
-		for _, descendant in ipairs(resources:GetDescendants()) do
-			local fullness = descendant:GetAttribute("CrystalFullness")
-			if type(fullness) == "number" and fullness >= state.iridiumMinFullness then
-				local carrier = getHighlightCarrier(descendant)
-				if carrier ~= nil and not seen[carrier] then
-					seen[carrier] = true
-					table.insert(targets, carrier)
+		entry.dirty = true
+		if refreshNow then
+			scheduleObjectReconcile()
+		end
+	end
+
+	local function markIridiumDirty(refreshNow)
+		espObjectCache.iridium.dirty = true
+		if refreshNow then
+			scheduleObjectReconcile()
+		end
+	end
+
+	local function getNamedTargets(cacheKey)
+		local entry = espObjectCache.named[cacheKey]
+		if entry == nil then
+			return {}
+		end
+
+		if entry.dirty then
+			entry.carriers = scanNamedTargets(entry.rootGetter(), entry.targetName)
+			entry.dirty = false
+		end
+
+		return entry.carriers
+	end
+
+	local function bindIridiumAttribute(descendant)
+		if espObjectCache.iridium.attributeConnections[descendant] ~= nil then
+			return
+		end
+
+		local ok, signal = pcall(function()
+			return descendant:GetAttributeChangedSignal("CrystalFullness")
+		end)
+
+		if ok and signal ~= nil then
+			espObjectCache.iridium.attributeConnections[descendant] = signal:Connect(function()
+				markIridiumDirty(state.espObjectToggles.iridium)
+			end)
+		end
+	end
+
+	local function collectIridiumTargets()
+		if espObjectCache.iridium.dirty then
+			disconnectConnectionMap(espObjectCache.iridium.attributeConnections)
+
+			local grouped = {}
+			local resources = Workspace:FindFirstChild("Resources")
+			if resources ~= nil then
+				for _, descendant in ipairs(resources:GetDescendants()) do
+					local fullness = descendant:GetAttribute("CrystalFullness")
+					if type(fullness) == "number" then
+						bindIridiumAttribute(descendant)
+
+						local carrier = getHighlightCarrier(descendant)
+						if carrier ~= nil then
+							local current = grouped[carrier]
+							if current == nil or fullness > current.fullness then
+								grouped[carrier] = {
+									carrier = carrier,
+									fullness = fullness,
+								}
+							end
+						end
+					end
 				end
+			end
+
+			local entries = {}
+			for _, entry in pairs(grouped) do
+				table.insert(entries, entry)
+			end
+
+			espObjectCache.iridium.entries = entries
+			espObjectCache.iridium.dirty = false
+		end
+
+		local targets = {}
+		for _, entry in ipairs(espObjectCache.iridium.entries) do
+			if entry.carrier.Parent ~= nil and entry.fullness >= state.iridiumMinFullness then
+				table.insert(targets, entry.carrier)
 			end
 		end
 
 		return targets
 	end
 
-	local function collectDistanceTargets(internalName, maxDistance)
+	local function collectDistanceTargets(cacheKey, maxDistance)
 		local targets = {}
-		local map = Workspace:FindFirstChild("Map")
 		local localPosition = getLocalRootPosition()
-		if map == nil or localPosition == nil then
+		if localPosition == nil then
 			return targets
 		end
 
-		local seen = {}
-		for _, descendant in ipairs(map:GetDescendants()) do
-			if descendant.Name == internalName then
-				local carrier = getHighlightCarrier(descendant)
-				local position = getInstancePosition(carrier)
-				if carrier ~= nil and position ~= nil and (position - localPosition).Magnitude <= maxDistance and not seen[carrier] then
-					seen[carrier] = true
-					table.insert(targets, carrier)
-				end
+		for _, carrier in ipairs(getNamedTargets(cacheKey)) do
+			local position = getInstancePosition(carrier)
+			if carrier.Parent ~= nil and position ~= nil and (position - localPosition).Magnitude <= maxDistance then
+				table.insert(targets, carrier)
 			end
 		end
 
@@ -2643,12 +2805,12 @@ function BytecodeViewer.start(config)
 		reconcileDesiredHighlights("player:", desired)
 	end
 
-	local function reconcileObjectHighlights()
+	reconcileObjectHighlights = function()
 		local desired = {}
 
 		if state.espObjectToggles.spawnPoint then
-			for _, target in ipairs(collectNamedTargets(Workspace, "Spawn Point")) do
-				desired["object:spawn:" .. target:GetFullName()] = {
+			for _, target in ipairs(getNamedTargets("spawnPoint")) do
+				desired["object:spawn:" .. getInstanceKey(target)] = {
 					target = target,
 					fillColor = Color3.fromRGB(255, 194, 102),
 					outlineColor = Color3.fromRGB(255, 226, 160),
@@ -2657,8 +2819,8 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.espObjectToggles.wellPump then
-			for _, target in ipairs(collectNamedTargets(Workspace, "Well Pump")) do
-				desired["object:pump:" .. target:GetFullName()] = {
+			for _, target in ipairs(getNamedTargets("wellPump")) do
+				desired["object:pump:" .. getInstanceKey(target)] = {
 					target = target,
 					fillColor = Color3.fromRGB(255, 140, 96),
 					outlineColor = Color3.fromRGB(255, 190, 160),
@@ -2668,7 +2830,7 @@ function BytecodeViewer.start(config)
 
 		if state.espObjectToggles.iridium then
 			for _, target in ipairs(collectIridiumTargets()) do
-				desired["object:iridium:" .. target:GetFullName()] = {
+				desired["object:iridium:" .. getInstanceKey(target)] = {
 					target = target,
 					fillColor = Color3.fromRGB(165, 126, 255),
 					outlineColor = Color3.fromRGB(214, 197, 255),
@@ -2677,8 +2839,8 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.espObjectToggles.spireWell then
-			for _, target in ipairs(collectDistanceTargets("SpireOpenLarge1", state.wellDistance)) do
-				desired["object:spire:" .. target:GetFullName()] = {
+			for _, target in ipairs(collectDistanceTargets("spireWell", state.wellDistance)) do
+				desired["object:spire:" .. getInstanceKey(target)] = {
 					target = target,
 					fillColor = Color3.fromRGB(110, 204, 255),
 					outlineColor = Color3.fromRGB(186, 229, 255),
@@ -2687,8 +2849,8 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.espObjectToggles.well then
-			for _, target in ipairs(collectDistanceTargets("Top1", state.wellDistance)) do
-				desired["object:well:" .. target:GetFullName()] = {
+			for _, target in ipairs(collectDistanceTargets("well", state.wellDistance)) do
+				desired["object:well:" .. getInstanceKey(target)] = {
 					target = target,
 					fillColor = Color3.fromRGB(126, 220, 255),
 					outlineColor = Color3.fromRGB(190, 234, 255),
@@ -3017,8 +3179,31 @@ function BytecodeViewer.start(config)
 
 	local function toggleEspObject(toggleName)
 		state.espObjectToggles[toggleName] = not state.espObjectToggles[toggleName]
+		if toggleName == "spireWell" or toggleName == "well" then
+			distanceRefreshAccumulator = 0
+			lastDistanceRefreshPosition = nil
+		end
 		reconcileObjectHighlights()
 		syncControlState()
+	end
+
+	local function handleEspDescendantMutation(descendant)
+		local name = descendant.Name
+		if name == "Spawn Point" then
+			markNamedTargetDirty("spawnPoint", state.espObjectToggles.spawnPoint)
+		elseif name == "Well Pump" then
+			markNamedTargetDirty("wellPump", state.espObjectToggles.wellPump)
+		elseif name == "SpireOpenLarge1" or name == "Map" then
+			markNamedTargetDirty("spireWell", state.espObjectToggles.spireWell)
+		elseif name == "Top1" or name == "Map" then
+			markNamedTargetDirty("well", state.espObjectToggles.well)
+		end
+
+		if name == "Resources"
+			or descendant:FindFirstAncestor("Resources") ~= nil
+			or type(descendant:GetAttribute("CrystalFullness")) == "number" then
+			markIridiumDirty(state.espObjectToggles.iridium)
+		end
 	end
 
 	trackCleanup(restoreLighting)
@@ -3029,6 +3214,7 @@ function BytecodeViewer.start(config)
 			end)
 			playerCharacterConnections[player] = nil
 		end
+		disconnectConnectionMap(espObjectCache.iridium.attributeConnections)
 		clearAllHighlights()
 	end)
 
@@ -3060,17 +3246,41 @@ function BytecodeViewer.start(config)
 		end
 	end))
 
-	local espRefreshAccumulator = 0
 	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
-		espRefreshAccumulator = espRefreshAccumulator + deltaTime
-		if espRefreshAccumulator < 0.35 then
+		if not (state.espObjectToggles.spireWell or state.espObjectToggles.well) then
+			distanceRefreshAccumulator = 0
+			lastDistanceRefreshPosition = nil
 			return
 		end
 
-		espRefreshAccumulator = 0
-		reconcilePlayerHighlights()
+		distanceRefreshAccumulator = distanceRefreshAccumulator + deltaTime
+		if distanceRefreshAccumulator < 0.4 then
+			return
+		end
+
+		local localPosition = getLocalRootPosition()
+		if localPosition == nil then
+			distanceRefreshAccumulator = 0
+			if lastDistanceRefreshPosition ~= nil then
+				lastDistanceRefreshPosition = nil
+				reconcileObjectHighlights()
+			end
+			return
+		end
+
+		local movedEnough = lastDistanceRefreshPosition == nil
+			or (localPosition - lastDistanceRefreshPosition).Magnitude >= 18
+			or distanceRefreshAccumulator >= 1.2
+		if not movedEnough then
+			return
+		end
+
+		distanceRefreshAccumulator = 0
+		lastDistanceRefreshPosition = localPosition
 		reconcileObjectHighlights()
 	end))
+	trackConnection(Workspace.DescendantAdded:Connect(handleEspDescendantMutation))
+	trackConnection(Workspace.DescendantRemoving:Connect(handleEspDescendantMutation))
 
 	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
 	trackConnection(Players.PlayerAdded:Connect(function(player)
