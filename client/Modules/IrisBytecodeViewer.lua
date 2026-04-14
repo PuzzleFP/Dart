@@ -2249,6 +2249,10 @@ function BytecodeViewer.start(config)
 		syncControlState()
 	end
 
+	local function isAimbotHotkeyDown()
+		return UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+	end
+
 	local function getActiveTargetText()
 		if state.sourceMode == "script" then
 			return state.scriptPath
@@ -3581,24 +3585,6 @@ function BytecodeViewer.start(config)
 		clearAllHighlights()
 	end)
 
-	trackConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed or UserInputService:GetFocusedTextBox() ~= nil then
-			return
-		end
-
-		if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
-			if state.aimbotEnabled then
-				setAimbotHoldActive(true)
-			end
-		end
-	end))
-
-	trackConnection(UserInputService.InputEnded:Connect(function(input)
-		if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
-			setAimbotHoldActive(false)
-		end
-	end))
-
 	trackConnection(UserInputService.JumpRequest:Connect(function()
 		if not state.infiniteJump then
 			return
@@ -3628,7 +3614,12 @@ function BytecodeViewer.start(config)
 	end))
 
 	trackConnection(RunService.RenderStepped:Connect(function()
-		if not state.aimbotEnabled or not state.aimHoldActive or UserInputService:GetFocusedTextBox() ~= nil then
+		local wantsHold = state.aimbotEnabled and UserInputService:GetFocusedTextBox() == nil and isAimbotHotkeyDown()
+		if wantsHold ~= state.aimHoldActive then
+			setAimbotHoldActive(wantsHold)
+		end
+
+		if not state.aimbotEnabled or not wantsHold then
 			return
 		end
 
