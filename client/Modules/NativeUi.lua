@@ -3,22 +3,22 @@ local UserInputService = game:GetService("UserInputService")
 local NativeUi = {}
 
 NativeUi.Theme = {
-	Background = Color3.fromRGB(10, 12, 16),
-	Panel = Color3.fromRGB(16, 18, 24),
-	PanelAlt = Color3.fromRGB(20, 23, 31),
-	Surface = Color3.fromRGB(28, 32, 42),
-	SurfaceHover = Color3.fromRGB(34, 39, 50),
-	SurfaceActive = Color3.fromRGB(42, 48, 62),
-	Accent = Color3.fromRGB(96, 166, 255),
-	AccentHover = Color3.fromRGB(120, 180, 255),
-	AccentActive = Color3.fromRGB(74, 141, 228),
-	Text = Color3.fromRGB(236, 239, 244),
-	TextMuted = Color3.fromRGB(157, 165, 178),
-	TextDim = Color3.fromRGB(107, 116, 129),
-	Border = Color3.fromRGB(42, 48, 62),
-	Success = Color3.fromRGB(122, 192, 146),
-	Error = Color3.fromRGB(235, 111, 111),
-	Shadow = Color3.fromRGB(3, 4, 7),
+	Background = Color3.fromRGB(9, 11, 15),
+	Panel = Color3.fromRGB(15, 18, 24),
+	PanelAlt = Color3.fromRGB(18, 21, 27),
+	Surface = Color3.fromRGB(22, 26, 34),
+	SurfaceHover = Color3.fromRGB(27, 32, 41),
+	SurfaceActive = Color3.fromRGB(31, 38, 49),
+	Accent = Color3.fromRGB(78, 141, 238),
+	AccentHover = Color3.fromRGB(94, 154, 247),
+	AccentActive = Color3.fromRGB(67, 126, 219),
+	Text = Color3.fromRGB(241, 244, 248),
+	TextMuted = Color3.fromRGB(164, 173, 187),
+	TextDim = Color3.fromRGB(107, 116, 130),
+	Border = Color3.fromRGB(31, 37, 47),
+	Success = Color3.fromRGB(108, 176, 136),
+	Error = Color3.fromRGB(223, 101, 101),
+	Shadow = Color3.fromRGB(2, 3, 6),
 }
 
 local buttonRefreshers = setmetatable({}, { __mode = "k" })
@@ -93,8 +93,8 @@ function NativeUi.makePanel(parent, properties)
 		end
 	end
 
-	NativeUi.corner(panel, properties and properties.CornerRadius or 8)
-	NativeUi.stroke(panel, NativeUi.Theme.Border, 1, 0)
+	NativeUi.corner(panel, properties and properties.CornerRadius or 10)
+	NativeUi.stroke(panel, NativeUi.Theme.Border, 1, 0.2)
 	return panel
 end
 
@@ -143,10 +143,10 @@ local function defaultButtonPalette()
 		Base = NativeUi.Theme.Surface,
 		Hover = NativeUi.Theme.SurfaceHover,
 		Pressed = NativeUi.Theme.SurfaceActive,
-		Selected = NativeUi.Theme.Accent,
-		Disabled = Color3.fromRGB(25, 28, 36),
+		Selected = Color3.fromRGB(24, 38, 58),
+		Disabled = Color3.fromRGB(17, 20, 26),
 		Text = NativeUi.Theme.Text,
-		SelectedText = Color3.fromRGB(9, 14, 20),
+		SelectedText = NativeUi.Theme.Text,
 		DisabledText = NativeUi.Theme.TextDim,
 	}
 end
@@ -240,8 +240,8 @@ function NativeUi.makeButton(parent, text, properties)
 		end
 	end
 
-	NativeUi.corner(button, properties and properties.CornerRadius or 8)
-	NativeUi.stroke(button, NativeUi.Theme.Border, 1, 0)
+	NativeUi.corner(button, properties and properties.CornerRadius or 10)
+	NativeUi.stroke(button, NativeUi.Theme.Border, 1, 0.18)
 	NativeUi.bindButtonStyle(button, properties and properties.Palette or nil)
 	return button
 end
@@ -269,8 +269,8 @@ function NativeUi.makeTextBox(parent, text, properties)
 		end
 	end
 
-	NativeUi.corner(box, properties and properties.CornerRadius or 8)
-	NativeUi.stroke(box, NativeUi.Theme.Border, 1, 0)
+	NativeUi.corner(box, properties and properties.CornerRadius or 10)
+	NativeUi.stroke(box, NativeUi.Theme.Border, 1, 0.18)
 	NativeUi.padding(box, 10, 8)
 	return box
 end
@@ -324,7 +324,7 @@ function NativeUi.makeScrollList(parent, properties)
 	end
 
 	NativeUi.corner(scroll, properties.CornerRadius or 10)
-	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0)
+	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0.18)
 
 	local content = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,

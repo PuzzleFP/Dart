@@ -572,18 +572,18 @@ end
 local function makeSectionTitle(parent, text, accentColor)
 	return NativeUi.makeLabel(parent, text, {
 		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamBold,
+		Font = Enum.Font.GothamSemibold,
 		Text = text,
-		TextColor3 = accentColor or NativeUi.Theme.Text,
-		TextSize = 14,
-		Size = UDim2.new(1, 0, 0, 22),
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		Size = UDim2.new(1, 0, 0, 18),
 	})
 end
 
 local function makeBodyLabel(parent, text, properties)
 	local label = NativeUi.makeLabel(parent, text, {
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
+		TextSize = 11,
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		AutomaticSize = Enum.AutomaticSize.Y,
@@ -601,7 +601,7 @@ local function makeOutputViewer(parent)
 	local scroll = NativeUi.create("ScrollingFrame", {
 		Active = true,
 		AutomaticCanvasSize = Enum.AutomaticSize.None,
-		BackgroundColor3 = Color3.fromRGB(16, 20, 28),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
 		Position = UDim2.fromOffset(0, 0),
@@ -612,7 +612,7 @@ local function makeOutputViewer(parent)
 		Parent = parent,
 	})
 	NativeUi.corner(scroll, 10)
-	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0)
+	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0.18)
 
 	local padding = 12
 
@@ -661,7 +661,7 @@ local function makeSliderRow(parent, y, labelText)
 
 	local label = NativeUi.makeLabel(row, labelText, {
 		Font = Enum.Font.GothamSemibold,
-		TextSize = 13,
+		TextSize = 12,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.new(1, -140, 0, 18),
 	})
@@ -678,11 +678,11 @@ local function makeSliderRow(parent, y, labelText)
 	local applyButton = NativeUi.makeButton(row, "Apply", {
 		Position = UDim2.new(1, -52, 0, -2),
 		Size = UDim2.fromOffset(52, 24),
-		TextSize = 11,
+		TextSize = 10,
 	})
 
 	local track = NativeUi.create("Frame", {
-		BackgroundColor3 = Color3.fromRGB(27, 33, 44),
+		BackgroundColor3 = NativeUi.Theme.Surface,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 30),
 		Size = UDim2.new(1, 0, 0, 8),
@@ -700,7 +700,7 @@ local function makeSliderRow(parent, y, labelText)
 	local knob = NativeUi.create("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
-		BackgroundColor3 = Color3.fromRGB(234, 240, 248),
+		BackgroundColor3 = NativeUi.Theme.Text,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0, -7, 0.5, -7),
 		Size = UDim2.fromOffset(14, 14),
@@ -709,7 +709,7 @@ local function makeSliderRow(parent, y, labelText)
 		Parent = track,
 	})
 	NativeUi.corner(knob, 999)
-	NativeUi.stroke(knob, Color3.fromRGB(95, 112, 140), 1, 0)
+	NativeUi.stroke(knob, NativeUi.Theme.Border, 1, 0.1)
 
 	return {
 		row = row,
@@ -730,7 +730,7 @@ local function makeToggleRow(parent, y, labelText, description)
 
 	local title = NativeUi.makeLabel(row, labelText, {
 		Font = Enum.Font.GothamSemibold,
-		TextSize = 13,
+		TextSize = 12,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.new(1, -90, 0, 18),
 	})
@@ -743,7 +743,7 @@ local function makeToggleRow(parent, y, labelText, description)
 	local toggle = NativeUi.makeButton(row, "OFF", {
 		Position = UDim2.new(1, -62, 0, 10),
 		Size = UDim2.fromOffset(62, 26),
-		TextSize = 11,
+		TextSize = 10,
 	})
 
 	return {
@@ -786,117 +786,109 @@ local function createGui(state)
 	local shadow = NativeUi.create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.55,
+		BackgroundTransparency = 0.78,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0.5, 0, 0.5, 10),
-		Size = UDim2.new(1, 28, 1, 28),
+		Position = UDim2.new(0.5, 0, 0.5, 6),
+		Size = UDim2.new(1, 18, 1, 18),
 		ZIndex = -1,
 		Parent = main,
 	})
-	NativeUi.corner(shadow, 20)
+	NativeUi.corner(shadow, 14)
 
-	local navWidth = 166
-	local contentX = 190
+	local navWidth = 156
+	local contentX = 180
+	local navButtonPalette = {
+		Base = NativeUi.Theme.Panel,
+		Hover = NativeUi.Theme.Surface,
+		Pressed = NativeUi.Theme.SurfaceActive,
+		Selected = Color3.fromRGB(24, 38, 58),
+		Disabled = Color3.fromRGB(17, 20, 26),
+		Text = NativeUi.Theme.TextMuted,
+		SelectedText = NativeUi.Theme.Text,
+		DisabledText = NativeUi.Theme.TextDim,
+	}
 
 	local navRail = NativeUi.makePanel(main, {
-		BackgroundColor3 = Color3.fromRGB(12, 14, 19),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.fromOffset(navWidth, 696),
 	})
 
 	local topBar = NativeUi.create("Frame", {
-		BackgroundColor3 = Color3.fromRGB(13, 15, 20),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(contentX, 12),
 		Size = UDim2.new(1, -(contentX + 12), 0, 46),
 		Parent = main,
 	})
 	NativeUi.corner(topBar, 12)
-	NativeUi.stroke(topBar, Color3.fromRGB(58, 70, 88), 1, 0)
+	NativeUi.stroke(topBar, NativeUi.Theme.Border, 1, 0.18)
 
-	local brandMark = NativeUi.create("Frame", {
-		BackgroundColor3 = Color3.fromRGB(245, 247, 251),
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(16, 16),
-		Size = UDim2.fromOffset(20, 20),
-		Parent = navRail,
-	})
-	NativeUi.corner(brandMark, 6)
-
-	local brandCut = NativeUi.create("Frame", {
-		BackgroundColor3 = navRail.BackgroundColor3,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(9, 2),
-		Size = UDim2.fromOffset(9, 7),
-		Parent = brandMark,
-	})
-	NativeUi.corner(brandCut, 4)
-
-	local title = NativeUi.makeLabel(topBar, "Eclipsis", {
+	local title = NativeUi.makeLabel(navRail, "Eclipsis", {
 		Font = Enum.Font.GothamBold,
-		TextSize = 15,
-		Position = UDim2.fromOffset(46, 14),
-		Size = UDim2.fromOffset(108, 18),
-		Parent = navRail,
+		TextSize = 16,
+		Position = UDim2.fromOffset(16, 18),
+		Size = UDim2.new(1, -32, 0, 20),
 	})
 
-	local subtitle = NativeUi.makeLabel(topBar, "Control Suite", {
+	local subtitle = NativeUi.makeLabel(navRail, "Client control suite", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
-		Position = UDim2.fromOffset(46, 32),
-		Size = UDim2.fromOffset(108, 16),
-		Parent = navRail,
+		Position = UDim2.fromOffset(16, 38),
+		Size = UDim2.new(1, -32, 0, 16),
 	})
 
-	local workspaceLabel = NativeUi.makeLabel(topBar, "Operations", {
+	local workspaceLabel = NativeUi.makeLabel(topBar, "Workspace", {
 		Font = Enum.Font.GothamBold,
-		TextSize = 14,
+		TextSize = 13,
 		Position = UDim2.fromOffset(16, 7),
 		Size = UDim2.fromOffset(140, 18),
 	})
 
-	local workspaceHint = NativeUi.makeLabel(topBar, "Main, ESP, Lab, Guns, and Building modules.", {
+	local workspaceHint = NativeUi.makeLabel(topBar, "Focused modules and bytecode tools.", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
 		Position = UDim2.fromOffset(16, 23),
-		Size = UDim2.fromOffset(260, 16),
+		Size = UDim2.fromOffset(220, 16),
 	})
 
 	local mainTabButton = NativeUi.makeButton(navRail, "  Main", {
-		Position = UDim2.fromOffset(12, 98),
+		Position = UDim2.fromOffset(12, 88),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = navButtonPalette,
 	})
 
 	local espTabButton = NativeUi.makeButton(navRail, "  ESP", {
-		Position = UDim2.fromOffset(12, 138),
+		Position = UDim2.fromOffset(12, 126),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = navButtonPalette,
 	})
 
 	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Bytecode", {
-		Position = UDim2.fromOffset(12, 178),
+		Position = UDim2.fromOffset(12, 164),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = navButtonPalette,
 	})
 
 	local buildTabButton = NativeUi.makeButton(navRail, "  Guns / Build", {
-		Position = UDim2.fromOffset(12, 218),
+		Position = UDim2.fromOffset(12, 202),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = navButtonPalette,
 	})
 
-	local navFooter = NativeUi.makeLabel(navRail, "Compact dark shell\nResizable workspaces", {
+	local navFooter = NativeUi.makeLabel(navRail, "Clean dark shell", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.new(0, 14, 1, -58),
-		Size = UDim2.new(1, -28, 0, 34),
+		Position = UDim2.new(0, 16, 1, -32),
+		Size = UDim2.new(1, -32, 0, 16),
 	})
 
 	local suiteStatus = NativeUi.makeLabel(topBar, "Ready", {
@@ -912,6 +904,7 @@ local function createGui(state)
 		Position = UDim2.new(1, -66, 0, 9),
 		Size = UDim2.fromOffset(26, 28),
 		TextSize = 14,
+		Palette = navButtonPalette,
 	})
 
 	local closeButton = NativeUi.makeButton(topBar, "X", {
@@ -919,12 +912,12 @@ local function createGui(state)
 		Size = UDim2.fromOffset(26, 28),
 		TextSize = 12,
 		Palette = {
-			Base = Color3.fromRGB(42, 20, 24),
-			Hover = Color3.fromRGB(72, 30, 34),
-			Pressed = Color3.fromRGB(92, 40, 42),
-			Selected = Color3.fromRGB(255, 118, 118),
-			Text = Color3.fromRGB(238, 222, 222),
-			SelectedText = Color3.fromRGB(21, 7, 7),
+			Base = NativeUi.Theme.Panel,
+			Hover = Color3.fromRGB(44, 24, 28),
+			Pressed = Color3.fromRGB(57, 30, 35),
+			Selected = Color3.fromRGB(72, 38, 43),
+			Text = NativeUi.Theme.TextMuted,
+			SelectedText = NativeUi.Theme.Text,
 		},
 	})
 
@@ -961,7 +954,7 @@ local function createGui(state)
 	})
 
 	local mainControlsPanel = NativeUi.makePanel(mainWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.new(0, 500, 1, 0),
 	})
@@ -969,7 +962,7 @@ local function createGui(state)
 	local mainSplitter = NativeUi.create("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
-		BackgroundColor3 = Color3.fromRGB(38, 46, 58),
+		BackgroundColor3 = NativeUi.Theme.Border,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(508, 0),
 		Size = UDim2.fromOffset(6, 100),
@@ -979,7 +972,7 @@ local function createGui(state)
 	NativeUi.corner(mainSplitter, 999)
 
 	local mainPlayersPanel = NativeUi.makePanel(mainWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(522, 0),
 		Size = UDim2.new(1, -522, 1, 0),
 	})
@@ -1005,7 +998,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
 		ContentPadding = 0,
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
 	local centerControlsScroll, centerControlsContent = NativeUi.makeScrollList(mainCenterColumn, {
@@ -1013,7 +1006,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
 		ContentPadding = 0,
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
 	local heroCard = NativeUi.makePanel(leftControlsContent, {
@@ -1022,8 +1015,8 @@ local function createGui(state)
 	})
 
 	local heroTitle = NativeUi.makeLabel(heroCard, "Main", {
-		Font = Enum.Font.GothamBlack,
-		TextSize = 22,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
 		Position = UDim2.fromOffset(16, 14),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
@@ -1155,11 +1148,11 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -162),
 		Padding = 6,
 		ContentPadding = 8,
-		BackgroundColor3 = Color3.fromRGB(20, 25, 34),
+		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
 
 	local espPlayersPanel = NativeUi.makePanel(espWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(330, 100),
 	})
@@ -1222,17 +1215,17 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -196),
 		Padding = 6,
 		ContentPadding = 8,
-		BackgroundColor3 = Color3.fromRGB(20, 25, 34),
+		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
 
 	local espResourcesPanel = NativeUi.makePanel(espWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(346, 0),
 		Size = UDim2.fromOffset(356, 100),
 	})
 
 	local espWellsPanel = NativeUi.makePanel(espWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(718, 0),
 		Size = UDim2.new(1, -718, 1, 0),
 	})
@@ -1242,7 +1235,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
 		ContentPadding = 0,
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
 	local espWellsScroll, espWellsContent = NativeUi.makeScrollList(espWellsPanel, {
@@ -1250,7 +1243,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
 		ContentPadding = 0,
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
 	local resourcesHeader = NativeUi.makePanel(espResourcesContent, {
@@ -1259,8 +1252,8 @@ local function createGui(state)
 	})
 
 	local resourcesHeaderTitle = NativeUi.makeLabel(resourcesHeader, "Resources", {
-		Font = Enum.Font.GothamBlack,
-		TextSize = 20,
+		Font = Enum.Font.GothamBold,
+		TextSize = 17,
 		Position = UDim2.fromOffset(16, 14),
 		Size = UDim2.new(1, -32, 0, 22),
 	})
@@ -1292,8 +1285,8 @@ local function createGui(state)
 	})
 
 	local wellsHeaderTitle = NativeUi.makeLabel(wellsHeader, "Structures", {
-		Font = Enum.Font.GothamBlack,
-		TextSize = 20,
+		Font = Enum.Font.GothamBold,
+		TextSize = 17,
 		Position = UDim2.fromOffset(16, 14),
 		Size = UDim2.new(1, -32, 0, 22),
 	})
@@ -1318,7 +1311,7 @@ local function createGui(state)
 	local wellDistanceSlider = makeSliderRow(wellsEspSection, 148, "Distance")
 
 	local scriptPanel = NativeUi.makePanel(bytecodeWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(280, 100),
 	})
@@ -1326,7 +1319,7 @@ local function createGui(state)
 	local bytecodeSplitter = NativeUi.create("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
-		BackgroundColor3 = Color3.fromRGB(38, 46, 58),
+		BackgroundColor3 = NativeUi.Theme.Border,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(288, 0),
 		Size = UDim2.fromOffset(6, 100),
@@ -1336,7 +1329,7 @@ local function createGui(state)
 	NativeUi.corner(bytecodeSplitter, 999)
 
 	local outputPanel = NativeUi.makePanel(bytecodeWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(302, 0),
 		Size = UDim2.fromOffset(500, 100),
 	})
@@ -1344,7 +1337,7 @@ local function createGui(state)
 	local inspectorSplitter = NativeUi.create("TextButton", {
 		Active = true,
 		AutoButtonColor = false,
-		BackgroundColor3 = Color3.fromRGB(38, 46, 58),
+		BackgroundColor3 = NativeUi.Theme.Border,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(810, 0),
 		Size = UDim2.fromOffset(6, 100),
@@ -1354,7 +1347,7 @@ local function createGui(state)
 	NativeUi.corner(inspectorSplitter, 999)
 
 	local inspectorPanel = NativeUi.makePanel(bytecodeWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(824, 0),
 		Size = UDim2.new(1, -824, 1, 0),
 	})
@@ -1396,7 +1389,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -120),
 		Padding = 4,
 		ContentPadding = 8,
-		BackgroundColor3 = Color3.fromRGB(20, 25, 34),
+		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
 
 	local outputHeader = NativeUi.create("Frame", {
@@ -1438,7 +1431,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
 		ContentPadding = 0,
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
 	local intelCard = NativeUi.makePanel(inspectorContent, {
@@ -1447,8 +1440,8 @@ local function createGui(state)
 	})
 
 	local intelTitle = NativeUi.makeLabel(intelCard, "Inspector", {
-		Font = Enum.Font.GothamBlack,
-		TextSize = 22,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
 		Position = UDim2.fromOffset(16, 14),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
@@ -1605,13 +1598,13 @@ local function createGui(state)
 	})
 
 	local gunsPanel = NativeUi.makePanel(buildWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.new(0.5, -8, 1, 0),
 	})
 
 	local buildingPanel = NativeUi.makePanel(buildWorkspace, {
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.new(0.5, 8, 0, 0),
 		Size = UDim2.new(0.5, -8, 1, 0),
 	})
@@ -1621,7 +1614,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
 		ContentPadding = 0,
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
 	local buildingScroll, buildingContent = NativeUi.makeScrollList(buildingPanel, {
@@ -1629,7 +1622,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 1, -24),
 		Padding = 10,
 		ContentPadding = 0,
-		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
 
 	local gunsHeader = NativeUi.makePanel(gunsContent, {
@@ -1638,8 +1631,8 @@ local function createGui(state)
 	})
 
 	local gunsTitle = NativeUi.makeLabel(gunsHeader, "Guns", {
-		Font = Enum.Font.GothamBlack,
-		TextSize = 22,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
 		Position = UDim2.fromOffset(16, 14),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
@@ -1687,8 +1680,8 @@ local function createGui(state)
 	})
 
 	local buildingTitle = NativeUi.makeLabel(buildingHeader, "Building", {
-		Font = Enum.Font.GothamBlack,
-		TextSize = 22,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
 		Position = UDim2.fromOffset(16, 14),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
