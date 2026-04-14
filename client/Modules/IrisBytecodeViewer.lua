@@ -654,41 +654,44 @@ local function makeOutputViewer(parent)
 end
 
 local function makeSliderRow(parent, y, labelText)
-	local row = NativeUi.makeRow(parent, 52, {
+	local row = NativeUi.makePanel(parent, {
 		Position = UDim2.new(0, 12, 0, y),
-		Size = UDim2.new(1, -24, 0, 52),
+		Size = UDim2.new(1, -24, 0, 54),
+		BackgroundColor3 = NativeUi.Theme.Surface,
+		CornerRadius = 8,
 	})
 
 	local label = NativeUi.makeLabel(row, labelText, {
 		Font = Enum.Font.GothamSemibold,
 		TextSize = 12,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, -140, 0, 18),
+		Position = UDim2.fromOffset(12, 8),
+		Size = UDim2.new(1, -144, 0, 18),
 	})
 
 	local valueLabel = NativeUi.makeLabel(row, "0", {
 		Font = Enum.Font.Code,
-		TextSize = 12,
+		TextSize = 11,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		Position = UDim2.new(1, -130, 0, 0),
-		Size = UDim2.fromOffset(72, 18),
+		Position = UDim2.new(1, -112, 0, 8),
+		Size = UDim2.fromOffset(42, 18),
 	})
 
-	local applyButton = NativeUi.makeButton(row, "Apply", {
-		Position = UDim2.new(1, -52, 0, -2),
-		Size = UDim2.fromOffset(52, 24),
+	local applyButton = NativeUi.makeButton(row, "Set", {
+		Position = UDim2.new(1, -56, 0, 6),
+		Size = UDim2.fromOffset(44, 22),
 		TextSize = 10,
 	})
 
 	local track = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Surface,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, 0, 0, 30),
-		Size = UDim2.new(1, 0, 0, 8),
+		Position = UDim2.fromOffset(12, 34),
+		Size = UDim2.new(1, -24, 0, 6),
 		Parent = row,
 	})
 	NativeUi.corner(track, 999)
+	NativeUi.stroke(track, NativeUi.Theme.Border, 1, 0.35)
 
 	local fill = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Accent,
@@ -702,8 +705,8 @@ local function makeSliderRow(parent, y, labelText)
 		AutoButtonColor = false,
 		BackgroundColor3 = NativeUi.Theme.Text,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, -7, 0.5, -7),
-		Size = UDim2.fromOffset(14, 14),
+		Position = UDim2.new(0, -6, 0.5, -6),
+		Size = UDim2.fromOffset(12, 12),
 		Text = "",
 		ZIndex = 3,
 		Parent = track,
@@ -723,34 +726,54 @@ local function makeSliderRow(parent, y, labelText)
 end
 
 local function makeToggleRow(parent, y, labelText, description)
-	local row = NativeUi.makeRow(parent, 54, {
+	local row = NativeUi.makePanel(parent, {
 		Position = UDim2.new(0, 12, 0, y),
-		Size = UDim2.new(1, -24, 0, 54),
+		Size = UDim2.new(1, -24, 0, 40),
+		BackgroundColor3 = NativeUi.Theme.Surface,
+		CornerRadius = 8,
 	})
 
 	local title = NativeUi.makeLabel(row, labelText, {
 		Font = Enum.Font.GothamSemibold,
 		TextSize = 12,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, -90, 0, 18),
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, -48, 1, 0),
 	})
 
-	local desc = makeBodyLabel(row, description, {
-		Position = UDim2.fromOffset(0, 22),
-		Size = UDim2.new(1, -90, 0, 0),
+	local toggle = NativeUi.makeButton(row, "", {
+		Position = UDim2.new(1, -30, 0.5, -9),
+		Size = UDim2.fromOffset(18, 18),
+		TextSize = 1,
+		Palette = {
+			Base = NativeUi.Theme.Panel,
+			Hover = NativeUi.Theme.SurfaceHover,
+			Pressed = NativeUi.Theme.SurfaceActive,
+			Selected = NativeUi.Theme.Accent,
+			Disabled = Color3.fromRGB(17, 20, 26),
+			Text = NativeUi.Theme.Text,
+			SelectedText = NativeUi.Theme.Text,
+			DisabledText = NativeUi.Theme.TextDim,
+		},
 	})
+	toggle.Text = ""
 
-	local toggle = NativeUi.makeButton(row, "OFF", {
-		Position = UDim2.new(1, -62, 0, 10),
-		Size = UDim2.fromOffset(62, 26),
-		TextSize = 10,
+	local indicator = NativeUi.create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Color3.fromRGB(245, 248, 252),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(8, 8),
+		Parent = toggle,
 	})
+	NativeUi.corner(indicator, 3)
 
 	return {
 		row = row,
 		title = title,
-		desc = desc,
 		toggle = toggle,
+		indicator = indicator,
+		description = description,
 	}
 end
 
@@ -2251,8 +2274,10 @@ function BytecodeViewer.start(config)
 	end
 
 	local function syncToggleButton(toggleRow, enabled)
-		toggleRow.toggle.Text = enabled and "ON" or "OFF"
 		NativeUi.setButtonSelected(toggleRow.toggle, enabled)
+		if toggleRow.indicator ~= nil then
+			toggleRow.indicator.BackgroundTransparency = enabled and 0 or 1
+		end
 	end
 
 	local function runMainAction(actionName, value)
