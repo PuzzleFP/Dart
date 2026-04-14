@@ -535,6 +535,11 @@ local function makeState(config)
 		infiniteJump = false,
 		noClip = false,
 		fullBright = false,
+		aimbotEnabled = false,
+		aimHoldActive = false,
+		aimTargetPart = "nearest",
+		aimLockedPlayerName = "",
+		aimLockedPartName = "",
 		highlightFillTransparency = 0.65,
 		highlightedPlayers = {},
 		highlightAllPlayers = false,
@@ -1457,7 +1462,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -32, 0, 24),
 	})
 
-	local gunsBody = makeBodyLabel(gunsHeader, "Weapon handling, fire controls, recoil, and combat remotes will live in this column.", {
+	local gunsBody = makeBodyLabel(gunsHeader, "Hold Ctrl to lock the camera onto the target nearest your mouse while the aimbot is enabled.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 42),
@@ -1467,34 +1472,72 @@ local function createGui(state)
 	local gunCombatSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 128),
+		Size = UDim2.new(1, 0, 0, 134),
 		Parent = gunsContent,
 	})
 
-	local gunCombatTitle = makeSectionTitle(gunCombatSection, "Combat", Color3.fromRGB(255, 214, 171))
+	local gunCombatTitle = makeSectionTitle(gunCombatSection, "Aimbot", Color3.fromRGB(255, 214, 171))
 	gunCombatTitle.Position = UDim2.fromOffset(12, 10)
 
-	local gunCombatBody = makeBodyLabel(gunCombatSection, "Reserve this rail for fire cadence, reload handling, spread control, and weapon-state remotes.", {
+	local aimbotToggle = makeToggleRow(gunCombatSection, 40, "Enable Aimbot", "Holds a local lock on the target nearest the mouse while Ctrl is pressed.")
+
+	local gunCombatBody = makeBodyLabel(gunCombatSection, "Only active while Ctrl is held. The lock reacquires if the current target drops out of view.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 42),
+		Position = UDim2.fromOffset(12, 88),
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
 	local gunUtilitySection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 128),
+		Size = UDim2.new(1, 0, 0, 156),
 		Parent = gunsContent,
 	})
 
-	local gunUtilityTitle = makeSectionTitle(gunUtilitySection, "Handling", Color3.fromRGB(171, 210, 255))
+	local gunUtilityTitle = makeSectionTitle(gunUtilitySection, "Target Part", Color3.fromRGB(171, 210, 255))
 	gunUtilityTitle.Position = UDim2.fromOffset(12, 10)
 
-	local gunUtilityBody = makeBodyLabel(gunUtilitySection, "Auxiliary gun tools can sit here once you define ammo, sway, ADS, and equip behavior.", {
+	local aimNearestButton = NativeUi.makeButton(gunUtilitySection, "Nearest", {
+		Position = UDim2.fromOffset(12, 40),
+		Size = UDim2.fromOffset(88, 28),
+		TextSize = 12,
+	})
+
+	local aimHeadButton = NativeUi.makeButton(gunUtilitySection, "Head", {
+		Position = UDim2.fromOffset(108, 40),
+		Size = UDim2.fromOffset(70, 28),
+		TextSize = 12,
+	})
+
+	local aimTorsoButton = NativeUi.makeButton(gunUtilitySection, "Torso", {
+		Position = UDim2.fromOffset(186, 40),
+		Size = UDim2.fromOffset(74, 28),
+		TextSize = 12,
+	})
+
+	local aimArmsButton = NativeUi.makeButton(gunUtilitySection, "Arms", {
+		Position = UDim2.fromOffset(12, 76),
+		Size = UDim2.fromOffset(70, 28),
+		TextSize = 12,
+	})
+
+	local aimLegsButton = NativeUi.makeButton(gunUtilitySection, "Legs", {
+		Position = UDim2.fromOffset(90, 76),
+		Size = UDim2.fromOffset(70, 28),
+		TextSize = 12,
+	})
+
+	local aimLimbsButton = NativeUi.makeButton(gunUtilitySection, "Limbs", {
+		Position = UDim2.fromOffset(168, 76),
+		Size = UDim2.fromOffset(78, 28),
+		TextSize = 12,
+	})
+
+	local aimStatusLabel = makeBodyLabel(gunUtilitySection, "Aimbot disabled", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 42),
+		Position = UDim2.fromOffset(12, 114),
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
@@ -1915,6 +1958,14 @@ local function createGui(state)
 	refs.wellDistanceSlider = wellDistanceSlider
 	refs.refreshStatsButton = refreshStatsButton
 	refs.resetCharacterButton = resetCharacterButton
+	refs.aimbotToggle = aimbotToggle
+	refs.aimNearestButton = aimNearestButton
+	refs.aimHeadButton = aimHeadButton
+	refs.aimTorsoButton = aimTorsoButton
+	refs.aimArmsButton = aimArmsButton
+	refs.aimLegsButton = aimLegsButton
+	refs.aimLimbsButton = aimLimbsButton
+	refs.aimStatusLabel = aimStatusLabel
 	refs.infiniteJumpToggle = infiniteJumpToggle
 	refs.noClipToggle = noClipToggle
 	refs.fullBrightToggle = fullBrightToggle
@@ -1997,6 +2048,7 @@ function BytecodeViewer.start(config)
 	end
 
 	scope[SESSION_KEY] = runCleanup
+	local syncControlState
 
 	local function setSuiteStatus(text, color)
 		refs.suiteStatus.Text = text
@@ -2030,6 +2082,171 @@ function BytecodeViewer.start(config)
 	local function getLocalHumanoid()
 		local character = getLocalCharacter()
 		return character and character:FindFirstChildOfClass("Humanoid") or nil
+	end
+
+	local function getCurrentCamera()
+		return Workspace.CurrentCamera
+	end
+
+	local function shouldSkipAimbotPlayer(player)
+		if player == nil or player == Players.LocalPlayer then
+			return true
+		end
+
+		local localPlayer = Players.LocalPlayer
+		if localPlayer ~= nil and localPlayer.Team ~= nil and player.Team ~= nil and player.Team == localPlayer.Team then
+			return true
+		end
+
+		local character = player.Character
+		if character == nil then
+			return true
+		end
+
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		return humanoid == nil or humanoid.Health <= 0
+	end
+
+	local function appendAimPart(candidates, seen, part)
+		if part == nil or not part:IsA("BasePart") or seen[part] then
+			return
+		end
+
+		seen[part] = true
+		table.insert(candidates, part)
+	end
+
+	local function getAimCandidatesForCharacter(character, mode)
+		local candidates = {}
+		local seen = {}
+
+		local function addByNames(names)
+			for _, name in ipairs(names) do
+				appendAimPart(candidates, seen, character:FindFirstChild(name, true))
+			end
+		end
+
+		if mode == "head" then
+			addByNames({ "Head" })
+		elseif mode == "torso" then
+			addByNames({ "UpperTorso", "Torso", "LowerTorso", "HumanoidRootPart" })
+		elseif mode == "arms" then
+			addByNames({ "LeftHand", "RightHand", "LeftLowerArm", "RightLowerArm", "LeftUpperArm", "RightUpperArm", "Left Arm", "Right Arm" })
+		elseif mode == "legs" then
+			addByNames({ "LeftFoot", "RightFoot", "LeftLowerLeg", "RightLowerLeg", "LeftUpperLeg", "RightUpperLeg", "Left Leg", "Right Leg" })
+		elseif mode == "limbs" then
+			addByNames({
+				"LeftHand", "RightHand", "LeftLowerArm", "RightLowerArm", "LeftUpperArm", "RightUpperArm", "Left Arm", "Right Arm",
+				"LeftFoot", "RightFoot", "LeftLowerLeg", "RightLowerLeg", "LeftUpperLeg", "RightUpperLeg", "Left Leg", "Right Leg",
+			})
+		else
+			addByNames({
+				"Head", "UpperTorso", "Torso", "LowerTorso", "HumanoidRootPart",
+				"LeftHand", "RightHand", "LeftLowerArm", "RightLowerArm", "LeftUpperArm", "RightUpperArm", "Left Arm", "Right Arm",
+				"LeftFoot", "RightFoot", "LeftLowerLeg", "RightLowerLeg", "LeftUpperLeg", "RightUpperLeg", "Left Leg", "Right Leg",
+			})
+		end
+
+		appendAimPart(candidates, seen, character:FindFirstChild("HumanoidRootPart"))
+		return candidates
+	end
+
+	local function getBestAimPartForPlayer(player, mode, mousePosition)
+		local camera = getCurrentCamera()
+		if camera == nil or player == nil or player.Character == nil then
+			return nil, math.huge
+		end
+
+		local bestPart
+		local bestDistance = math.huge
+
+		for _, part in ipairs(getAimCandidatesForCharacter(player.Character, mode)) do
+			local viewportPoint, onScreen = camera:WorldToViewportPoint(part.Position)
+			if onScreen and viewportPoint.Z > 0 then
+				local screenPosition = Vector2.new(viewportPoint.X, viewportPoint.Y)
+				local distance = (screenPosition - mousePosition).Magnitude
+				if distance < bestDistance then
+					bestDistance = distance
+					bestPart = part
+				end
+			end
+		end
+
+		return bestPart, bestDistance
+	end
+
+	local function clearAimbotLock()
+		state.aimLockedPlayerName = ""
+		state.aimLockedPartName = ""
+	end
+
+	local function acquireAimbotTarget()
+		local camera = getCurrentCamera()
+		if camera == nil then
+			clearAimbotLock()
+			return nil, nil
+		end
+
+		local mousePosition = UserInputService:GetMouseLocation()
+		local bestPlayer
+		local bestPart
+		local bestDistance = math.huge
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			if not shouldSkipAimbotPlayer(player) then
+				local part, distance = getBestAimPartForPlayer(player, state.aimTargetPart, mousePosition)
+				if part ~= nil and distance < bestDistance then
+					bestDistance = distance
+					bestPlayer = player
+					bestPart = part
+				end
+			end
+		end
+
+		if bestPlayer ~= nil and bestPart ~= nil then
+			state.aimLockedPlayerName = bestPlayer.Name
+			state.aimLockedPartName = bestPart.Name
+			return bestPlayer, bestPart
+		end
+
+		clearAimbotLock()
+		return nil, nil
+	end
+
+	local function resolveLockedAimbotTarget()
+		if state.aimLockedPlayerName == "" then
+			return acquireAimbotTarget()
+		end
+
+		local player = Players:FindFirstChild(state.aimLockedPlayerName)
+		if shouldSkipAimbotPlayer(player) then
+			return acquireAimbotTarget()
+		end
+
+		local mousePosition = UserInputService:GetMouseLocation()
+		local part = getBestAimPartForPlayer(player, state.aimTargetPart, mousePosition)
+		if part == nil then
+			return acquireAimbotTarget()
+		end
+
+		state.aimLockedPartName = part.Name
+		return player, part
+	end
+
+	local function setAimbotHoldActive(active)
+		local nextValue = active == true
+		if state.aimHoldActive == nextValue then
+			return
+		end
+
+		state.aimHoldActive = nextValue
+		if nextValue then
+			acquireAimbotTarget()
+		else
+			clearAimbotLock()
+		end
+
+		syncControlState()
 	end
 
 	local function getActiveTargetText()
@@ -2502,6 +2719,7 @@ function BytecodeViewer.start(config)
 	local refreshEspPlayersList
 	local highlightInstances = {}
 	local playerCharacterConnections = {}
+	local playerTeamConnections = {}
 	local reconcileObjectHighlights
 	local distanceRefreshAccumulator = 0
 	local lastDistanceRefreshPosition = nil
@@ -2853,6 +3071,59 @@ function BytecodeViewer.start(config)
 		return baseColor:Lerp(Color3.new(1, 1, 1), 0.08), baseColor:Lerp(Color3.new(1, 1, 1), 0.34)
 	end
 
+	local function resolveTeamAttributeColor(value)
+		if typeof(value) == "BrickColor" then
+			return value.Color
+		end
+
+		if typeof(value) == "Color3" then
+			return value
+		end
+
+		if type(value) == "string" and value ~= "" then
+			local ok, brickColor = pcall(function()
+				return BrickColor.new(value)
+			end)
+			if ok and brickColor ~= nil then
+				return brickColor.Color
+			end
+		end
+
+		return nil
+	end
+
+	local function readInstanceTeamColor(instance)
+		if typeof(instance) ~= "Instance" then
+			return nil
+		end
+
+		return resolveTeamAttributeColor(instance:GetAttribute("Team"))
+	end
+
+	local function getStructureHighlightColors(target, defaultFill, defaultOutline)
+		local color = readInstanceTeamColor(target)
+		local current = target
+		while color == nil and typeof(current) == "Instance" and current.Parent ~= nil and current ~= Workspace do
+			current = current.Parent
+			color = readInstanceTeamColor(current)
+		end
+
+		if color == nil and typeof(target) == "Instance" and target:IsA("Model") then
+			for _, descendant in ipairs(target:GetDescendants()) do
+				color = readInstanceTeamColor(descendant)
+				if color ~= nil then
+					break
+				end
+			end
+		end
+
+		if color == nil then
+			return defaultFill, defaultOutline
+		end
+
+		return color:Lerp(Color3.new(1, 1, 1), 0.12), color:Lerp(Color3.new(1, 1, 1), 0.36)
+	end
+
 	local function reconcilePlayerHighlights()
 		local desired = {}
 
@@ -2878,20 +3149,22 @@ function BytecodeViewer.start(config)
 
 		if state.espObjectToggles.spawnPoint then
 			for _, target in ipairs(getNamedTargets("spawnPoint")) do
+				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(255, 194, 102), Color3.fromRGB(255, 226, 160))
 				desired["object:spawn:" .. getInstanceKey(target)] = {
 					target = target,
-					fillColor = Color3.fromRGB(255, 194, 102),
-					outlineColor = Color3.fromRGB(255, 226, 160),
+					fillColor = fillColor,
+					outlineColor = outlineColor,
 				}
 			end
 		end
 
 		if state.espObjectToggles.wellPump then
 			for _, target in ipairs(getNamedTargets("wellPump")) do
+				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(255, 140, 96), Color3.fromRGB(255, 190, 160))
 				desired["object:pump:" .. getInstanceKey(target)] = {
 					target = target,
-					fillColor = Color3.fromRGB(255, 140, 96),
-					outlineColor = Color3.fromRGB(255, 190, 160),
+					fillColor = fillColor,
+					outlineColor = outlineColor,
 				}
 			end
 		end
@@ -2908,20 +3181,22 @@ function BytecodeViewer.start(config)
 
 		if state.espObjectToggles.spireWell then
 			for _, target in ipairs(collectDistanceTargets("spireWell", state.wellDistance)) do
+				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(110, 204, 255), Color3.fromRGB(186, 229, 255))
 				desired["object:spire:" .. getInstanceKey(target)] = {
 					target = target,
-					fillColor = Color3.fromRGB(110, 204, 255),
-					outlineColor = Color3.fromRGB(186, 229, 255),
+					fillColor = fillColor,
+					outlineColor = outlineColor,
 				}
 			end
 		end
 
 		if state.espObjectToggles.well then
 			for _, target in ipairs(collectDistanceTargets("well", state.wellDistance)) do
+				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(126, 220, 255), Color3.fromRGB(190, 234, 255))
 				desired["object:well:" .. getInstanceKey(target)] = {
 					target = target,
-					fillColor = Color3.fromRGB(126, 220, 255),
-					outlineColor = Color3.fromRGB(190, 234, 255),
+					fillColor = fillColor,
+					outlineColor = outlineColor,
 				}
 			end
 		end
@@ -2956,6 +3231,21 @@ function BytecodeViewer.start(config)
 		end)
 	end
 
+	local function ensurePlayerTeamConnection(player)
+		if playerTeamConnections[player] ~= nil then
+			return
+		end
+
+		playerTeamConnections[player] = {
+			player:GetPropertyChangedSignal("Team"):Connect(function()
+				reconcilePlayerHighlights()
+			end),
+			player:GetPropertyChangedSignal("TeamColor"):Connect(function()
+				reconcilePlayerHighlights()
+			end),
+		}
+	end
+
 	refreshPlayersList = function()
 		return
 	end
@@ -2981,6 +3271,7 @@ function BytecodeViewer.start(config)
 		for _, player in ipairs(players) do
 			if player ~= Players.LocalPlayer then
 				ensurePlayerCharacterConnection(player)
+				ensurePlayerTeamConnection(player)
 
 				local searchable = player.Name .. " " .. (player.DisplayName or "")
 				if containsFilter(searchable, state.espPlayerFilterText) then
@@ -3023,7 +3314,6 @@ function BytecodeViewer.start(config)
 	end
 
 	local renderTreeView
-	local syncControlState
 
 	local function renderTreeNode(node)
 		local row = NativeUi.makeRow(refs.treeContent, 24)
@@ -3152,11 +3442,18 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.infiniteJumpToggle, state.infiniteJump)
 		syncToggleButton(refs.noClipToggle, state.noClip)
 		syncToggleButton(refs.fullBrightToggle, state.fullBright)
+		syncToggleButton(refs.aimbotToggle, state.aimbotEnabled)
 		syncToggleButton(refs.spawnPointToggle, state.espObjectToggles.spawnPoint)
 		syncToggleButton(refs.wellPumpToggle, state.espObjectToggles.wellPump)
 		syncToggleButton(refs.iridiumToggle, state.espObjectToggles.iridium)
 		syncToggleButton(refs.spireWellToggle, state.espObjectToggles.spireWell)
 		syncToggleButton(refs.wellToggle, state.espObjectToggles.well)
+		NativeUi.setButtonSelected(refs.aimNearestButton, state.aimTargetPart == "nearest")
+		NativeUi.setButtonSelected(refs.aimHeadButton, state.aimTargetPart == "head")
+		NativeUi.setButtonSelected(refs.aimTorsoButton, state.aimTargetPart == "torso")
+		NativeUi.setButtonSelected(refs.aimArmsButton, state.aimTargetPart == "arms")
+		NativeUi.setButtonSelected(refs.aimLegsButton, state.aimTargetPart == "legs")
+		NativeUi.setButtonSelected(refs.aimLimbsButton, state.aimTargetPart == "limbs")
 		refs.minimizeButton.Text = state.isMinimized and "+" or "-"
 		NativeUi.setButtonSelected(refs.minimizeButton, state.isMinimized)
 		NativeUi.setButtonSelected(refs.highlightAllPlayersButton, state.highlightAllPlayers)
@@ -3172,6 +3469,15 @@ function BytecodeViewer.start(config)
 		refs.espSelectedPlayersLabel.Text = state.highlightAllPlayers
 			and "Highlighted: all players"
 			or ("Highlighted: %d"):format(countHighlightedPlayers())
+		if not state.aimbotEnabled then
+			refs.aimStatusLabel.Text = "Aimbot disabled"
+		elseif state.aimHoldActive and state.aimLockedPlayerName ~= "" then
+			refs.aimStatusLabel.Text = ("Locked: %s [%s]"):format(state.aimLockedPlayerName, state.aimLockedPartName ~= "" and state.aimLockedPartName or state.aimTargetPart)
+		elseif state.aimHoldActive then
+			refs.aimStatusLabel.Text = "Holding Ctrl, no target"
+		else
+			refs.aimStatusLabel.Text = "Hold Ctrl to lock nearest target"
+		end
 		if state.isMinimized then
 			refs.suiteStatus.Text = "Minimized"
 			refs.suiteStatus.TextColor3 = NativeUi.Theme.TextMuted
@@ -3205,6 +3511,24 @@ function BytecodeViewer.start(config)
 			setMainStatus(tostring(result), NativeUi.Theme.Error)
 		end
 
+		syncControlState()
+	end
+
+	local function toggleAimbot()
+		state.aimbotEnabled = not state.aimbotEnabled
+		if not state.aimbotEnabled then
+			setAimbotHoldActive(false)
+		else
+			syncControlState()
+		end
+	end
+
+	local function setAimTargetMode(mode)
+		state.aimTargetPart = mode
+		clearAimbotLock()
+		if state.aimHoldActive then
+			acquireAimbotTarget()
+		end
 		syncControlState()
 	end
 
@@ -3245,9 +3569,35 @@ function BytecodeViewer.start(config)
 			end)
 			playerCharacterConnections[player] = nil
 		end
+		for player, connectionGroup in pairs(playerTeamConnections) do
+			for _, connection in pairs(connectionGroup) do
+				pcall(function()
+					connection:Disconnect()
+				end)
+			end
+			playerTeamConnections[player] = nil
+		end
 		disconnectConnectionMap(espObjectCache.iridium.attributeConnections)
 		clearAllHighlights()
 	end)
+
+	trackConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or UserInputService:GetFocusedTextBox() ~= nil then
+			return
+		end
+
+		if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
+			if state.aimbotEnabled then
+				setAimbotHoldActive(true)
+			end
+		end
+	end))
+
+	trackConnection(UserInputService.InputEnded:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
+			setAimbotHoldActive(false)
+		end
+	end))
 
 	trackConnection(UserInputService.JumpRequest:Connect(function()
 		if not state.infiniteJump then
@@ -3275,6 +3625,24 @@ function BytecodeViewer.start(config)
 				descendant.CanCollide = false
 			end
 		end
+	end))
+
+	trackConnection(RunService.RenderStepped:Connect(function()
+		if not state.aimbotEnabled or not state.aimHoldActive or UserInputService:GetFocusedTextBox() ~= nil then
+			return
+		end
+
+		local camera = getCurrentCamera()
+		if camera == nil then
+			return
+		end
+
+		local _, targetPart = resolveLockedAimbotTarget()
+		if targetPart == nil then
+			return
+		end
+
+		camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
 	end))
 
 	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
@@ -3316,6 +3684,7 @@ function BytecodeViewer.start(config)
 	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
 	trackConnection(Players.PlayerAdded:Connect(function(player)
 		ensurePlayerCharacterConnection(player)
+		ensurePlayerTeamConnection(player)
 		refreshEspPlayersList()
 		reconcilePlayerHighlights()
 	end))
@@ -3331,6 +3700,15 @@ function BytecodeViewer.start(config)
 				connection:Disconnect()
 			end)
 			playerCharacterConnections[player] = nil
+		end
+		local connectionGroup = playerTeamConnections[player]
+		if connectionGroup ~= nil then
+			for _, teamConnection in pairs(connectionGroup) do
+				pcall(function()
+					teamConnection:Disconnect()
+				end)
+			end
+			playerTeamConnections[player] = nil
 		end
 
 		removeHighlight("player:" .. player.Name)
@@ -3485,6 +3863,27 @@ function BytecodeViewer.start(config)
 		else
 			setMainStatus(tostring(result), NativeUi.Theme.Error)
 		end
+	end))
+	trackConnection(refs.aimbotToggle.toggle.MouseButton1Click:Connect(function()
+		toggleAimbot()
+	end))
+	trackConnection(refs.aimNearestButton.MouseButton1Click:Connect(function()
+		setAimTargetMode("nearest")
+	end))
+	trackConnection(refs.aimHeadButton.MouseButton1Click:Connect(function()
+		setAimTargetMode("head")
+	end))
+	trackConnection(refs.aimTorsoButton.MouseButton1Click:Connect(function()
+		setAimTargetMode("torso")
+	end))
+	trackConnection(refs.aimArmsButton.MouseButton1Click:Connect(function()
+		setAimTargetMode("arms")
+	end))
+	trackConnection(refs.aimLegsButton.MouseButton1Click:Connect(function()
+		setAimTargetMode("legs")
+	end))
+	trackConnection(refs.aimLimbsButton.MouseButton1Click:Connect(function()
+		setAimTargetMode("limbs")
 	end))
 	trackConnection(refs.infiniteJumpToggle.toggle.MouseButton1Click:Connect(function()
 		toggleFeature("infiniteJump")
