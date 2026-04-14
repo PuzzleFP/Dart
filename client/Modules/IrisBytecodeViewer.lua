@@ -748,7 +748,7 @@ local function makeToggleRow(parent, y, labelText, description)
 			Base = NativeUi.Theme.Panel,
 			Hover = NativeUi.Theme.SurfaceHover,
 			Pressed = NativeUi.Theme.SurfaceActive,
-			Selected = NativeUi.Theme.Accent,
+			Selected = NativeUi.Theme.Success,
 			Disabled = Color3.fromRGB(17, 20, 26),
 			Text = NativeUi.Theme.Text,
 			SelectedText = NativeUi.Theme.Text,
@@ -824,7 +824,7 @@ local function createGui(state)
 		Base = NativeUi.Theme.Panel,
 		Hover = NativeUi.Theme.Surface,
 		Pressed = NativeUi.Theme.SurfaceActive,
-		Selected = Color3.fromRGB(24, 38, 58),
+		Selected = NativeUi.Theme.SurfaceActive,
 		Disabled = Color3.fromRGB(17, 20, 26),
 		Text = NativeUi.Theme.TextMuted,
 		SelectedText = NativeUi.Theme.Text,
@@ -2131,7 +2131,10 @@ function BytecodeViewer.start(config)
 	local function syncToggleButton(toggleRow, enabled)
 		NativeUi.setButtonSelected(toggleRow.toggle, enabled)
 		if toggleRow.indicator ~= nil then
-			toggleRow.indicator.BackgroundTransparency = enabled and 0 or 1
+			NativeUi.tween(toggleRow.indicator, 0.12, {
+				BackgroundTransparency = enabled and 0 or 1,
+				Size = enabled and UDim2.fromOffset(8, 8) or UDim2.fromOffset(6, 6),
+			})
 		end
 	end
 

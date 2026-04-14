@@ -1,27 +1,30 @@
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local NativeUi = {}
 
 NativeUi.Theme = {
-	Background = Color3.fromRGB(9, 11, 15),
-	Panel = Color3.fromRGB(15, 18, 24),
-	PanelAlt = Color3.fromRGB(18, 21, 27),
-	Surface = Color3.fromRGB(22, 26, 34),
-	SurfaceHover = Color3.fromRGB(27, 32, 41),
-	SurfaceActive = Color3.fromRGB(31, 38, 49),
-	Accent = Color3.fromRGB(78, 141, 238),
-	AccentHover = Color3.fromRGB(94, 154, 247),
-	AccentActive = Color3.fromRGB(67, 126, 219),
-	Text = Color3.fromRGB(241, 244, 248),
-	TextMuted = Color3.fromRGB(164, 173, 187),
-	TextDim = Color3.fromRGB(107, 116, 130),
-	Border = Color3.fromRGB(31, 37, 47),
-	Success = Color3.fromRGB(108, 176, 136),
+	Background = Color3.fromRGB(11, 12, 15),
+	Panel = Color3.fromRGB(17, 19, 22),
+	PanelAlt = Color3.fromRGB(21, 23, 27),
+	Surface = Color3.fromRGB(26, 29, 33),
+	SurfaceHover = Color3.fromRGB(31, 34, 39),
+	SurfaceActive = Color3.fromRGB(37, 41, 47),
+	Accent = Color3.fromRGB(110, 177, 135),
+	AccentHover = Color3.fromRGB(124, 191, 148),
+	AccentActive = Color3.fromRGB(95, 158, 117),
+	Text = Color3.fromRGB(237, 240, 244),
+	TextMuted = Color3.fromRGB(171, 177, 186),
+	TextDim = Color3.fromRGB(113, 120, 129),
+	Border = Color3.fromRGB(40, 44, 50),
+	Success = Color3.fromRGB(132, 203, 156),
 	Error = Color3.fromRGB(223, 101, 101),
 	Shadow = Color3.fromRGB(2, 3, 6),
 }
 
 local buttonRefreshers = setmetatable({}, { __mode = "k" })
+local buttonTweens = setmetatable({}, { __mode = "k" })
+local activeTweens = setmetatable({}, { __mode = "k" })
 
 function NativeUi.create(className, properties)
 	local instance = Instance.new(className)
@@ -143,12 +146,28 @@ local function defaultButtonPalette()
 		Base = NativeUi.Theme.Surface,
 		Hover = NativeUi.Theme.SurfaceHover,
 		Pressed = NativeUi.Theme.SurfaceActive,
-		Selected = Color3.fromRGB(24, 38, 58),
+		Selected = NativeUi.Theme.SurfaceActive,
 		Disabled = Color3.fromRGB(17, 20, 26),
 		Text = NativeUi.Theme.Text,
 		SelectedText = NativeUi.Theme.Text,
 		DisabledText = NativeUi.Theme.TextDim,
 	}
+end
+
+function NativeUi.tween(instance, duration, properties)
+	if instance == nil or properties == nil then
+		return nil
+	end
+
+	local existingTween = activeTweens[instance]
+	if existingTween ~= nil then
+		existingTween:Cancel()
+	end
+
+	local tween = TweenService:Create(instance, TweenInfo.new(duration or 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties)
+	activeTweens[instance] = tween
+	tween:Play()
+	return tween
 end
 
 local function refreshButtonVisual(button)
@@ -157,22 +176,41 @@ local function refreshButtonVisual(button)
 		return
 	end
 
+	local backgroundColor
+	local textColor
+
 	if button:GetAttribute("Pressed") then
-		button.BackgroundColor3 = palette.Pressed
-		button.TextColor3 = palette.Text
+		backgroundColor = palette.Pressed
+		textColor = palette.Text
 	elseif button:GetAttribute("Disabled") then
-		button.BackgroundColor3 = palette.Disabled or NativeUi.Theme.PanelAlt
-		button.TextColor3 = palette.DisabledText or NativeUi.Theme.TextDim
+		backgroundColor = palette.Disabled or NativeUi.Theme.PanelAlt
+		textColor = palette.DisabledText or NativeUi.Theme.TextDim
 	elseif button:GetAttribute("Selected") then
-		button.BackgroundColor3 = palette.Selected
-		button.TextColor3 = palette.SelectedText
+		backgroundColor = palette.Selected
+		textColor = palette.SelectedText
 	elseif button:GetAttribute("Hovered") then
-		button.BackgroundColor3 = palette.Hover
-		button.TextColor3 = palette.Text
+		backgroundColor = palette.Hover
+		textColor = palette.Text
 	else
-		button.BackgroundColor3 = palette.Base
-		button.TextColor3 = palette.Text
+		backgroundColor = palette.Base
+		textColor = palette.Text
 	end
+
+	if button.BackgroundColor3 == backgroundColor and button.TextColor3 == textColor then
+		return
+	end
+
+	local existingTween = buttonTweens[button]
+	if existingTween ~= nil then
+		existingTween:Cancel()
+	end
+
+	local tween = TweenService:Create(button, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundColor3 = backgroundColor,
+		TextColor3 = textColor,
+	})
+	buttonTweens[button] = tween
+	tween:Play()
 end
 
 function NativeUi.bindButtonStyle(button, palette)
