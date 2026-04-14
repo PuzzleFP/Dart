@@ -514,6 +514,7 @@ local function makeState(config)
 		filterText = "",
 		treeFilterText = "",
 		playerFilterText = "",
+		espPlayerFilterText = "",
 		selectedPlayerName = Players.LocalPlayer and Players.LocalPlayer.Name or "",
 		selectedScriptPath = nil,
 		scriptBrowserTree = {},
@@ -530,9 +531,22 @@ local function makeState(config)
 		windowMaxSize = nil,
 		isMinimized = false,
 		restoredSize = nil,
+		espPlayersWidth = 330,
 		infiniteJump = false,
 		noClip = false,
 		fullBright = false,
+		highlightFillTransparency = 0.65,
+		highlightedPlayers = {},
+		highlightAllPlayers = false,
+		espObjectToggles = {
+			spawnPoint = false,
+			wellPump = false,
+			iridium = false,
+			spireWell = false,
+			well = false,
+		},
+		iridiumMinFullness = 0.5,
+		wellDistance = 600,
 		lightingSnapshot = nil,
 		walkSpeedValue = 16,
 		jumpPowerValue = 50,
@@ -824,20 +838,26 @@ local function createGui(state)
 	})
 
 	local mainTabButton = NativeUi.makeButton(topBar, "Main", {
-		Position = UDim2.fromOffset(320, 9),
-		Size = UDim2.fromOffset(74, 28),
+		Position = UDim2.fromOffset(300, 9),
+		Size = UDim2.fromOffset(64, 28),
 		TextSize = 12,
 	})
 
-	local bytecodeTabButton = NativeUi.makeButton(topBar, "Lab", {
-		Position = UDim2.fromOffset(402, 9),
+	local espTabButton = NativeUi.makeButton(topBar, "ESP", {
+		Position = UDim2.fromOffset(372, 9),
 		Size = UDim2.fromOffset(70, 28),
 		TextSize = 12,
 	})
 
-	local profilesTabButton = NativeUi.makeButton(topBar, "Profiles", {
-		Position = UDim2.fromOffset(480, 9),
-		Size = UDim2.fromOffset(82, 28),
+	local bytecodeTabButton = NativeUi.makeButton(topBar, "Lab", {
+		Position = UDim2.fromOffset(450, 9),
+		Size = UDim2.fromOffset(64, 28),
+		TextSize = 12,
+	})
+
+	local buildTabButton = NativeUi.makeButton(topBar, "Guns+Build", {
+		Position = UDim2.fromOffset(522, 9),
+		Size = UDim2.fromOffset(98, 28),
 		TextSize = 12,
 	})
 
@@ -878,6 +898,14 @@ local function createGui(state)
 		Parent = main,
 	})
 
+	local espWorkspace = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(12, 70),
+		Size = UDim2.new(1, -24, 1, -82),
+		Parent = main,
+	})
+
 	local bytecodeWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -886,7 +914,7 @@ local function createGui(state)
 		Parent = main,
 	})
 
-	local profilesWorkspace = NativeUi.create("Frame", {
+	local buildWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(12, 70),
@@ -1036,6 +1064,132 @@ local function createGui(state)
 		ContentPadding = 8,
 		BackgroundColor3 = Color3.fromRGB(20, 25, 34),
 	})
+
+	local espPlayersPanel = NativeUi.makePanel(espWorkspace, {
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(330, 100),
+	})
+
+	local espPlayersHeader = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 0, 122),
+		Parent = espPlayersPanel,
+	})
+
+	local espPlayersTitle = makeSectionTitle(espPlayersHeader, "Players", Color3.fromRGB(171, 210, 255))
+	espPlayersTitle.Position = UDim2.fromOffset(0, 0)
+
+	local espPlayersBody = makeBodyLabel(espPlayersHeader, "Click a player to add or remove a highlight. Toggle all players to lock the individual list and mark everyone at once.", {
+		Position = UDim2.fromOffset(0, 22),
+		Size = UDim2.new(1, 0, 0, 0),
+	})
+
+	local highlightAllPlayersButton = NativeUi.makeButton(espPlayersHeader, "Highlight All Players", {
+		Position = UDim2.fromOffset(0, 66),
+		Size = UDim2.fromOffset(150, 28),
+		TextSize = 11,
+		Palette = {
+			Base = NativeUi.Theme.Surface,
+			Hover = NativeUi.Theme.SurfaceHover,
+			Pressed = NativeUi.Theme.SurfaceActive,
+			Selected = Color3.fromRGB(92, 182, 124),
+			Disabled = Color3.fromRGB(25, 28, 36),
+			Text = NativeUi.Theme.Text,
+			SelectedText = Color3.fromRGB(8, 18, 10),
+			DisabledText = NativeUi.Theme.TextDim,
+		},
+	})
+
+	local clearPlayerHighlightsButton = NativeUi.makeButton(espPlayersHeader, "Clear", {
+		Position = UDim2.fromOffset(158, 66),
+		Size = UDim2.fromOffset(60, 28),
+		TextSize = 11,
+	})
+
+	local espSelectedPlayersLabel = NativeUi.makeLabel(espPlayersHeader, "Highlighted: 0", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(0, 98),
+		Size = UDim2.new(1, 0, 0, 16),
+	})
+
+	local espPlayerSearchBox = NativeUi.makeTextBox(espPlayersPanel, "", {
+		PlaceholderText = "Filter players",
+		Position = UDim2.fromOffset(12, 144),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	local espPlayerScroll, espPlayerContent = NativeUi.makeScrollList(espPlayersPanel, {
+		Position = UDim2.fromOffset(12, 184),
+		Size = UDim2.new(1, -24, 1, -196),
+		Padding = 6,
+		ContentPadding = 8,
+		BackgroundColor3 = Color3.fromRGB(20, 25, 34),
+	})
+
+	local espObjectsPanel = NativeUi.makePanel(espWorkspace, {
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+		Position = UDim2.fromOffset(346, 0),
+		Size = UDim2.new(1, -346, 1, 0),
+	})
+
+	local espObjectsScroll, espObjectsContent = NativeUi.makeScrollList(espObjectsPanel, {
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 1, -24),
+		Padding = 10,
+		ContentPadding = 0,
+		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
+	})
+
+	local espHeroPanel = NativeUi.makePanel(espObjectsContent, {
+		Size = UDim2.new(1, 0, 0, 82),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local espHeroTitle = NativeUi.makeLabel(espHeroPanel, "ESP", {
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		Position = UDim2.fromOffset(16, 14),
+		Size = UDim2.new(1, -32, 0, 24),
+	})
+
+	local espHeroBody = makeBodyLabel(espHeroPanel, "Player, resource, and structure highlights live here. Fill transparency is fixed to 0.65.", {
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 44),
+		Size = UDim2.new(1, -32, 0, 0),
+	})
+
+	local resourceEspSection = NativeUi.makePanel(espObjectsContent, {
+		Size = UDim2.new(1, 0, 0, 244),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local resourceEspTitle = makeSectionTitle(resourceEspSection, "Resources", Color3.fromRGB(205, 221, 248))
+	resourceEspTitle.Position = UDim2.fromOffset(12, 10)
+
+	local spawnPointToggle = makeToggleRow(resourceEspSection, 40, "Spawn Point", "Highlights any instance named Spawn Point in the workspace.")
+	local wellPumpToggle = makeToggleRow(resourceEspSection, 94, "Well Pump", "Highlights any instance named Well Pump in the workspace.")
+	local iridiumToggle = makeToggleRow(resourceEspSection, 148, "Iridium Crystals", "Filters Workspace.Resources by CrystalFullness and highlights crystals at or above the threshold.")
+
+	local iridiumSlider = makeSliderRow(resourceEspSection, 202, "Minimum Fullness")
+
+	local wellsEspSection = NativeUi.makePanel(espObjectsContent, {
+		Size = UDim2.new(1, 0, 0, 192),
+		BackgroundColor3 = NativeUi.Theme.PanelAlt,
+	})
+
+	local wellsEspTitle = makeSectionTitle(wellsEspSection, "Wells", Color3.fromRGB(205, 221, 248))
+	wellsEspTitle.Position = UDim2.fromOffset(12, 10)
+
+	local spireWellToggle = makeToggleRow(wellsEspSection, 40, "Spire Well", "Maps to SpireOpenLarge1 in Workspace.Map and only shows entries within the selected distance.")
+	local wellToggle = makeToggleRow(wellsEspSection, 94, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
+	local wellDistanceSlider = makeSliderRow(wellsEspSection, 148, "Distance")
 
 	local scriptPanel = NativeUi.makePanel(bytecodeWorkspace, {
 		BackgroundColor3 = Color3.fromRGB(18, 23, 31),
@@ -1324,27 +1478,27 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local profilesPanel = NativeUi.makePanel(profilesWorkspace, {
+	local buildPanel = NativeUi.makePanel(buildWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.PanelAlt,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.new(1, 0, 1, 0),
 	})
 
-	local profilesTitle = NativeUi.makeLabel(profilesPanel, "Profiles", {
+	local buildTitle = NativeUi.makeLabel(buildPanel, "Guns & Building", {
 		Font = Enum.Font.GothamBlack,
 		TextSize = 24,
 		Position = UDim2.fromOffset(18, 18),
 		Size = UDim2.new(1, -36, 0, 28),
 	})
 
-	local profilesBody = makeBodyLabel(profilesPanel, "Keep this page lean. Use it later for presets, saved module states, and paid layouts once the game-side contract is stable.", {
+	local buildBody = makeBodyLabel(buildPanel, "This stays quiet until you explain the building and weapon mechanics. The tab is in place so we can wire those systems without disturbing Main, ESP, or Lab.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 13,
 		Position = UDim2.fromOffset(18, 58),
 		Size = UDim2.new(1, -36, 0, 0),
 	})
 
-	local profilesHint = makeBodyLabel(profilesPanel, "This tab is intentionally quiet for now so the suite stays focused on Main and Lab.", {
+	local buildHint = makeBodyLabel(buildPanel, "Next pass can turn this into the dedicated build editor once you give the remote contract and placement rules.", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 12,
 		Position = UDim2.fromOffset(18, 110),
@@ -1572,8 +1726,9 @@ local function createGui(state)
 		bottomRightResizeHandle.Position = UDim2.new(1, -26, 1, -22)
 
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		espWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		bytecodeWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		profilesWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 
 		state.mainControlsWidth = clamp(state.mainControlsWidth, 420, math.max(520, workspaceWidth - 280))
 		mainControlsPanel.Size = UDim2.fromOffset(state.mainControlsWidth, workspaceHeight)
@@ -1581,6 +1736,14 @@ local function createGui(state)
 		mainSplitter.Size = UDim2.fromOffset(splitterWidth, workspaceHeight)
 		mainPlayersPanel.Position = UDim2.fromOffset(state.mainControlsWidth + panelGap, 0)
 		mainPlayersPanel.Size = UDim2.fromOffset(workspaceWidth - state.mainControlsWidth - panelGap, workspaceHeight)
+
+		state.espPlayersWidth = clamp(state.espPlayersWidth, 280, math.max(320, workspaceWidth - 360))
+		espPlayersPanel.Size = UDim2.fromOffset(state.espPlayersWidth, workspaceHeight)
+		espObjectsPanel.Position = UDim2.fromOffset(state.espPlayersWidth + panelGap, 0)
+		espObjectsPanel.Size = UDim2.fromOffset(workspaceWidth - state.espPlayersWidth - panelGap, workspaceHeight)
+		espPlayerSearchBox.Size = UDim2.new(1, -24, 0, 30)
+		espPlayerScroll.Size = UDim2.new(1, -24, 1, -196)
+		espObjectsScroll.Size = UDim2.new(1, -24, 1, -24)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
 		local maxInspector = math.max(280, workspaceWidth - state.bytecodeSidebarWidth - 420)
@@ -1640,8 +1803,9 @@ local function createGui(state)
 	refs.closeButton = closeButton
 	refs.suiteStatus = suiteStatus
 	refs.mainTabButton = mainTabButton
+	refs.espTabButton = espTabButton
 	refs.bytecodeTabButton = bytecodeTabButton
-	refs.profilesTabButton = profilesTabButton
+	refs.buildTabButton = buildTabButton
 	refs.mainSplitter = mainSplitter
 	refs.bytecodeSplitter = bytecodeSplitter
 	refs.inspectorSplitter = inspectorSplitter
@@ -1651,12 +1815,23 @@ local function createGui(state)
 	refs.bottomResizeHandle = bottomResizeHandle
 	refs.bottomRightResizeHandle = bottomRightResizeHandle
 	refs.mainWorkspace = mainWorkspace
+	refs.espWorkspace = espWorkspace
 	refs.bytecodeWorkspace = bytecodeWorkspace
-	refs.profilesWorkspace = profilesWorkspace
+	refs.buildWorkspace = buildWorkspace
 	refs.mainStatusLabel = mainStatusLabel
 	refs.selectedPlayerLabel = selectedPlayerLabel
 	refs.playerSearchBox = playerSearchBox
 	refs.playerContent = playerContent
+	refs.espSelectedPlayersLabel = espSelectedPlayersLabel
+	refs.espPlayerSearchBox = espPlayerSearchBox
+	refs.espPlayerContent = espPlayerContent
+	refs.highlightAllPlayersButton = highlightAllPlayersButton
+	refs.clearPlayerHighlightsButton = clearPlayerHighlightsButton
+	refs.spawnPointToggle = spawnPointToggle
+	refs.wellPumpToggle = wellPumpToggle
+	refs.iridiumToggle = iridiumToggle
+	refs.spireWellToggle = spireWellToggle
+	refs.wellToggle = wellToggle
 	refs.scriptCountLabel = scriptCountLabel
 	refs.treeSearchBox = treeSearchBox
 	refs.treeContent = treeContent
@@ -1685,6 +1860,8 @@ local function createGui(state)
 	refs.jumpSlider = jumpSlider
 	refs.hipSlider = hipSlider
 	refs.gravitySlider = gravitySlider
+	refs.iridiumSlider = iridiumSlider
+	refs.wellDistanceSlider = wellDistanceSlider
 	refs.refreshStatsButton = refreshStatsButton
 	refs.resetCharacterButton = resetCharacterButton
 	refs.infiniteJumpToggle = infiniteJumpToggle
@@ -2253,7 +2430,303 @@ function BytecodeViewer.start(config)
 		state.gravityValue = value
 	end)
 
-	local function refreshPlayersList()
+	local iridiumSlider = bindSlider(refs.iridiumSlider, 0, 1, state.iridiumMinFullness, 0.05, function(value)
+		return string.format("%.2f", value)
+	end, function(value)
+		state.iridiumMinFullness = value
+	end)
+
+	local wellDistanceSlider = bindSlider(refs.wellDistanceSlider, 50, 2000, state.wellDistance, 25, function(value)
+		return tostring(math.floor(value + 0.5))
+	end, function(value)
+		state.wellDistance = value
+	end)
+
+	local refreshPlayersList
+	local refreshEspPlayersList
+	local highlightInstances = {}
+	local playerCharacterConnections = {}
+
+	local function getHighlightCarrier(instance)
+		if typeof(instance) ~= "Instance" then
+			return nil
+		end
+
+		if instance:IsA("Model") or instance:IsA("BasePart") then
+			return instance
+		end
+
+		return instance:FindFirstAncestorWhichIsA("Model") or instance:FindFirstAncestorWhichIsA("BasePart")
+	end
+
+	local function getInstancePosition(instance)
+		if typeof(instance) ~= "Instance" then
+			return nil
+		end
+
+		if instance:IsA("BasePart") then
+			return instance.Position
+		end
+
+		if instance:IsA("Model") then
+			if instance.PrimaryPart then
+				return instance.PrimaryPart.Position
+			end
+
+			local ok, pivot = pcall(function()
+				return instance:GetPivot()
+			end)
+
+			if ok and pivot then
+				return pivot.Position
+			end
+
+			local part = instance:FindFirstChildWhichIsA("BasePart", true)
+			return part and part.Position or nil
+		end
+
+		local carrier = getHighlightCarrier(instance)
+		if carrier ~= nil and carrier ~= instance then
+			return getInstancePosition(carrier)
+		end
+
+		return nil
+	end
+
+	local function getLocalRootPosition()
+		local character = getLocalCharacter()
+		if character == nil then
+			return nil
+		end
+
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		if rootPart and rootPart:IsA("BasePart") then
+			return rootPart.Position
+		end
+
+		return getInstancePosition(character)
+	end
+
+	local function removeHighlight(key)
+		local highlight = highlightInstances[key]
+		if highlight ~= nil then
+			highlightInstances[key] = nil
+			pcall(function()
+				highlight:Destroy()
+			end)
+		end
+	end
+
+	local function ensureHighlight(key, target, fillColor, outlineColor)
+		local carrier = getHighlightCarrier(target)
+		if carrier == nil or carrier.Parent == nil then
+			removeHighlight(key)
+			return
+		end
+
+		local highlight = highlightInstances[key]
+		if highlight == nil or highlight.Parent ~= carrier then
+			removeHighlight(key)
+			highlight = Instance.new("Highlight")
+			highlight.Name = "DartEspHighlight"
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.FillTransparency = state.highlightFillTransparency
+			highlight.OutlineTransparency = 0
+			highlight.Parent = carrier
+			highlight.Adornee = carrier
+			highlightInstances[key] = highlight
+		end
+
+		highlight.FillColor = fillColor
+		highlight.OutlineColor = outlineColor or fillColor
+		highlight.Enabled = true
+	end
+
+	local function reconcileDesiredHighlights(prefix, desired)
+		for key, spec in pairs(desired) do
+			ensureHighlight(key, spec.target, spec.fillColor, spec.outlineColor)
+		end
+
+		local toRemove = {}
+		for key in pairs(highlightInstances) do
+			if string.sub(key, 1, #prefix) == prefix and desired[key] == nil then
+				table.insert(toRemove, key)
+			end
+		end
+
+		for _, key in ipairs(toRemove) do
+			removeHighlight(key)
+		end
+	end
+
+	local function collectNamedTargets(root, targetName)
+		local targets = {}
+		if typeof(root) ~= "Instance" then
+			return targets
+		end
+
+		local seen = {}
+		for _, descendant in ipairs(root:GetDescendants()) do
+			if descendant.Name == targetName then
+				local carrier = getHighlightCarrier(descendant)
+				if carrier ~= nil and not seen[carrier] then
+					seen[carrier] = true
+					table.insert(targets, carrier)
+				end
+			end
+		end
+
+		return targets
+	end
+
+	local function collectIridiumTargets()
+		local targets = {}
+		local resources = Workspace:FindFirstChild("Resources")
+		if resources == nil then
+			return targets
+		end
+
+		local seen = {}
+		for _, descendant in ipairs(resources:GetDescendants()) do
+			local fullness = descendant:GetAttribute("CrystalFullness")
+			if type(fullness) == "number" and fullness >= state.iridiumMinFullness then
+				local carrier = getHighlightCarrier(descendant)
+				if carrier ~= nil and not seen[carrier] then
+					seen[carrier] = true
+					table.insert(targets, carrier)
+				end
+			end
+		end
+
+		return targets
+	end
+
+	local function collectDistanceTargets(internalName, maxDistance)
+		local targets = {}
+		local map = Workspace:FindFirstChild("Map")
+		local localPosition = getLocalRootPosition()
+		if map == nil or localPosition == nil then
+			return targets
+		end
+
+		local seen = {}
+		for _, descendant in ipairs(map:GetDescendants()) do
+			if descendant.Name == internalName then
+				local carrier = getHighlightCarrier(descendant)
+				local position = getInstancePosition(carrier)
+				if carrier ~= nil and position ~= nil and (position - localPosition).Magnitude <= maxDistance and not seen[carrier] then
+					seen[carrier] = true
+					table.insert(targets, carrier)
+				end
+			end
+		end
+
+		return targets
+	end
+
+	local function reconcilePlayerHighlights()
+		local desired = {}
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= Players.LocalPlayer then
+				local shouldHighlight = state.highlightAllPlayers or state.highlightedPlayers[player.Name] == true
+				if shouldHighlight and player.Character ~= nil then
+					desired["player:" .. player.Name] = {
+						target = player.Character,
+						fillColor = state.highlightAllPlayers and Color3.fromRGB(122, 192, 146) or NativeUi.Theme.Accent,
+						outlineColor = state.highlightAllPlayers and Color3.fromRGB(162, 225, 181) or Color3.fromRGB(164, 209, 255),
+					}
+				end
+			end
+		end
+
+		reconcileDesiredHighlights("player:", desired)
+	end
+
+	local function reconcileObjectHighlights()
+		local desired = {}
+
+		if state.espObjectToggles.spawnPoint then
+			for _, target in ipairs(collectNamedTargets(Workspace, "Spawn Point")) do
+				desired["object:spawn:" .. target:GetFullName()] = {
+					target = target,
+					fillColor = Color3.fromRGB(255, 194, 102),
+					outlineColor = Color3.fromRGB(255, 226, 160),
+				}
+			end
+		end
+
+		if state.espObjectToggles.wellPump then
+			for _, target in ipairs(collectNamedTargets(Workspace, "Well Pump")) do
+				desired["object:pump:" .. target:GetFullName()] = {
+					target = target,
+					fillColor = Color3.fromRGB(255, 140, 96),
+					outlineColor = Color3.fromRGB(255, 190, 160),
+				}
+			end
+		end
+
+		if state.espObjectToggles.iridium then
+			for _, target in ipairs(collectIridiumTargets()) do
+				desired["object:iridium:" .. target:GetFullName()] = {
+					target = target,
+					fillColor = Color3.fromRGB(165, 126, 255),
+					outlineColor = Color3.fromRGB(214, 197, 255),
+				}
+			end
+		end
+
+		if state.espObjectToggles.spireWell then
+			for _, target in ipairs(collectDistanceTargets("SpireOpenLarge1", state.wellDistance)) do
+				desired["object:spire:" .. target:GetFullName()] = {
+					target = target,
+					fillColor = Color3.fromRGB(110, 204, 255),
+					outlineColor = Color3.fromRGB(186, 229, 255),
+				}
+			end
+		end
+
+		if state.espObjectToggles.well then
+			for _, target in ipairs(collectDistanceTargets("Top1", state.wellDistance)) do
+				desired["object:well:" .. target:GetFullName()] = {
+					target = target,
+					fillColor = Color3.fromRGB(126, 220, 255),
+					outlineColor = Color3.fromRGB(190, 234, 255),
+				}
+			end
+		end
+
+		reconcileDesiredHighlights("object:", desired)
+	end
+
+	local function clearAllHighlights()
+		local toRemove = {}
+		for key in pairs(highlightInstances) do
+			table.insert(toRemove, key)
+		end
+
+		for _, key in ipairs(toRemove) do
+			removeHighlight(key)
+		end
+	end
+
+	local function ensurePlayerCharacterConnection(player)
+		if playerCharacterConnections[player] ~= nil then
+			return
+		end
+
+		playerCharacterConnections[player] = player.CharacterAdded:Connect(function()
+			reconcilePlayerHighlights()
+			if refreshPlayersList then
+				refreshPlayersList()
+			end
+			if refreshEspPlayersList then
+				refreshEspPlayersList()
+			end
+		end)
+	end
+
+	refreshPlayersList = function()
 		NativeUi.clear(refs.playerContent)
 
 		local players = Players:GetPlayers()
@@ -2263,6 +2736,7 @@ function BytecodeViewer.start(config)
 
 		local shown = 0
 		for _, player in ipairs(players) do
+			ensurePlayerCharacterConnection(player)
 			local searchable = player.Name .. " " .. (player.DisplayName or "")
 			if containsFilter(searchable, state.playerFilterText) then
 				shown = shown + 1
@@ -2283,6 +2757,68 @@ function BytecodeViewer.start(config)
 
 		if shown == 0 then
 			NativeUi.makeLabel(refs.playerContent, "No players match the current filter.", {
+				TextColor3 = NativeUi.Theme.TextMuted,
+				TextWrapped = true,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				AutomaticSize = Enum.AutomaticSize.Y,
+				Size = UDim2.new(1, 0, 0, 0),
+			})
+		end
+	end
+
+	local function countHighlightedPlayers()
+		local total = 0
+		for _ in pairs(state.highlightedPlayers) do
+			total = total + 1
+		end
+
+		return total
+	end
+
+	refreshEspPlayersList = function()
+		NativeUi.clear(refs.espPlayerContent)
+
+		local players = Players:GetPlayers()
+		table.sort(players, function(left, right)
+			return string.lower(left.Name) < string.lower(right.Name)
+		end)
+
+		local shown = 0
+		for _, player in ipairs(players) do
+			if player ~= Players.LocalPlayer then
+				ensurePlayerCharacterConnection(player)
+
+				local searchable = player.Name .. " " .. (player.DisplayName or "")
+				if containsFilter(searchable, state.espPlayerFilterText) then
+					shown = shown + 1
+					local button = NativeUi.makeButton(refs.espPlayerContent, player.DisplayName ~= player.Name and (player.DisplayName .. " @" .. player.Name) or player.Name, {
+						Size = UDim2.new(1, 0, 0, 30),
+						TextSize = 12,
+						TextXAlignment = Enum.TextXAlignment.Left,
+					})
+					NativeUi.setButtonSelected(button, state.highlightedPlayers[player.Name] == true and not state.highlightAllPlayers)
+					NativeUi.setButtonDisabled(button, state.highlightAllPlayers)
+
+					button.MouseButton1Click:Connect(function()
+						if state.highlightAllPlayers then
+							return
+						end
+
+						if state.highlightedPlayers[player.Name] == true then
+							state.highlightedPlayers[player.Name] = nil
+						else
+							state.highlightedPlayers[player.Name] = true
+						end
+
+						reconcilePlayerHighlights()
+						refreshEspPlayersList()
+					end)
+				end
+			end
+		end
+
+		if shown == 0 then
+			NativeUi.makeLabel(refs.espPlayerContent, "No players match the current filter.", {
 				TextColor3 = NativeUi.Theme.TextMuted,
 				TextWrapped = true,
 				TextYAlignment = Enum.TextYAlignment.Top,
@@ -2393,8 +2929,9 @@ function BytecodeViewer.start(config)
 	syncControlState = function()
 		local bodyVisible = not state.isMinimized
 		refs.mainWorkspace.Visible = bodyVisible and state.activeTab == "main"
+		refs.espWorkspace.Visible = bodyVisible and state.activeTab == "esp"
 		refs.bytecodeWorkspace.Visible = bodyVisible and state.activeTab == "bytecode"
-		refs.profilesWorkspace.Visible = bodyVisible and state.activeTab == "profiles"
+		refs.buildWorkspace.Visible = bodyVisible and state.activeTab == "build"
 		refs.mainSplitter.Visible = bodyVisible and state.activeTab == "main"
 		refs.bytecodeSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.inspectorSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
@@ -2405,8 +2942,9 @@ function BytecodeViewer.start(config)
 		refs.bottomRightResizeHandle.Visible = not state.isMinimized
 
 		NativeUi.setButtonSelected(refs.mainTabButton, state.activeTab == "main")
+		NativeUi.setButtonSelected(refs.espTabButton, state.activeTab == "esp")
 		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
-		NativeUi.setButtonSelected(refs.profilesTabButton, state.activeTab == "profiles")
+		NativeUi.setButtonSelected(refs.buildTabButton, state.activeTab == "build")
 		NativeUi.setButtonSelected(refs.scriptModeButton, state.sourceMode == "script")
 		NativeUi.setButtonSelected(refs.fileModeButton, state.sourceMode == "file")
 		NativeUi.setButtonSelected(refs.binaryButton, state.inputFormat == "binary")
@@ -2419,8 +2957,14 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.infiniteJumpToggle, state.infiniteJump)
 		syncToggleButton(refs.noClipToggle, state.noClip)
 		syncToggleButton(refs.fullBrightToggle, state.fullBright)
+		syncToggleButton(refs.spawnPointToggle, state.espObjectToggles.spawnPoint)
+		syncToggleButton(refs.wellPumpToggle, state.espObjectToggles.wellPump)
+		syncToggleButton(refs.iridiumToggle, state.espObjectToggles.iridium)
+		syncToggleButton(refs.spireWellToggle, state.espObjectToggles.spireWell)
+		syncToggleButton(refs.wellToggle, state.espObjectToggles.well)
 		refs.minimizeButton.Text = state.isMinimized and "+" or "-"
 		NativeUi.setButtonSelected(refs.minimizeButton, state.isMinimized)
+		NativeUi.setButtonSelected(refs.highlightAllPlayersButton, state.highlightAllPlayers)
 
 		refs.binaryButton.Visible = state.sourceMode == "file"
 		refs.hexButton.Visible = state.sourceMode == "file"
@@ -2429,8 +2973,12 @@ function BytecodeViewer.start(config)
 		refs.filterBox.Text = state.filterText
 		refs.treeSearchBox.Text = state.treeFilterText
 		refs.playerSearchBox.Text = state.playerFilterText
+		refs.espPlayerSearchBox.Text = state.espPlayerFilterText
 		refs.activeTargetLabel.Text = ("Active target: %s"):format(getActiveTargetText() ~= "" and getActiveTargetText() or "-")
 		refs.selectedPlayerLabel.Text = ("Selected: %s"):format(state.selectedPlayerName ~= "" and state.selectedPlayerName or "-")
+		refs.espSelectedPlayersLabel.Text = state.highlightAllPlayers
+			and "Highlighted: all players"
+			or ("Highlighted: %d"):format(countHighlightedPlayers())
 		if state.isMinimized then
 			refs.suiteStatus.Text = "Minimized"
 			refs.suiteStatus.TextColor3 = NativeUi.Theme.TextMuted
@@ -2467,7 +3015,22 @@ function BytecodeViewer.start(config)
 		syncControlState()
 	end
 
+	local function toggleEspObject(toggleName)
+		state.espObjectToggles[toggleName] = not state.espObjectToggles[toggleName]
+		reconcileObjectHighlights()
+		syncControlState()
+	end
+
 	trackCleanup(restoreLighting)
+	trackCleanup(function()
+		for player, connection in pairs(playerCharacterConnections) do
+			pcall(function()
+				connection:Disconnect()
+			end)
+			playerCharacterConnections[player] = nil
+		end
+		clearAllHighlights()
+	end)
 
 	trackConnection(UserInputService.JumpRequest:Connect(function()
 		if not state.infiniteJump then
@@ -2497,12 +3060,42 @@ function BytecodeViewer.start(config)
 		end
 	end))
 
+	local espRefreshAccumulator = 0
+	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
+		espRefreshAccumulator = espRefreshAccumulator + deltaTime
+		if espRefreshAccumulator < 0.35 then
+			return
+		end
+
+		espRefreshAccumulator = 0
+		reconcilePlayerHighlights()
+		reconcileObjectHighlights()
+	end))
+
 	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
+	trackConnection(Players.PlayerAdded:Connect(function(player)
+		ensurePlayerCharacterConnection(player)
+		refreshEspPlayersList()
+		reconcilePlayerHighlights()
+	end))
 	trackConnection(Players.PlayerRemoving:Connect(function(player)
 		if state.selectedPlayerName == player.Name then
 			state.selectedPlayerName = Players.LocalPlayer and Players.LocalPlayer.Name or ""
 		end
+
+		state.highlightedPlayers[player.Name] = nil
+		local connection = playerCharacterConnections[player]
+		if connection ~= nil then
+			pcall(function()
+				connection:Disconnect()
+			end)
+			playerCharacterConnections[player] = nil
+		end
+
+		removeHighlight("player:" .. player.Name)
 		refreshPlayersList()
+		refreshEspPlayersList()
+		reconcilePlayerHighlights()
 	end))
 
 	trackConnection(refs.closeButton.MouseButton1Click:Connect(runCleanup))
@@ -2514,12 +3107,16 @@ function BytecodeViewer.start(config)
 		state.activeTab = "main"
 		syncControlState()
 	end))
+	trackConnection(refs.espTabButton.MouseButton1Click:Connect(function()
+		state.activeTab = "esp"
+		syncControlState()
+	end))
 	trackConnection(refs.bytecodeTabButton.MouseButton1Click:Connect(function()
 		state.activeTab = "bytecode"
 		syncControlState()
 	end))
-	trackConnection(refs.profilesTabButton.MouseButton1Click:Connect(function()
-		state.activeTab = "profiles"
+	trackConnection(refs.buildTabButton.MouseButton1Click:Connect(function()
+		state.activeTab = "build"
 		syncControlState()
 	end))
 	trackConnection(refs.refreshTreeButton.MouseButton1Click:Connect(function()
@@ -2599,9 +3196,26 @@ function BytecodeViewer.start(config)
 		state.playerFilterText = refs.playerSearchBox.Text
 		refreshPlayersList()
 	end))
+	trackConnection(refs.espPlayerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		state.espPlayerFilterText = refs.espPlayerSearchBox.Text
+		refreshEspPlayersList()
+	end))
 	trackConnection(refs.filterBox:GetPropertyChangedSignal("Text"):Connect(function()
 		state.filterText = refs.filterBox.Text
 		renderOutputView()
+	end))
+	trackConnection(refs.highlightAllPlayersButton.MouseButton1Click:Connect(function()
+		state.highlightAllPlayers = not state.highlightAllPlayers
+		reconcilePlayerHighlights()
+		refreshEspPlayersList()
+		syncControlState()
+	end))
+	trackConnection(refs.clearPlayerHighlightsButton.MouseButton1Click:Connect(function()
+		state.highlightedPlayers = {}
+		state.highlightAllPlayers = false
+		reconcilePlayerHighlights()
+		refreshEspPlayersList()
+		syncControlState()
 	end))
 	trackConnection(refs.walkSlider.applyButton.MouseButton1Click:Connect(function()
 		applyNumericAction("setWalkSpeed", math.floor(walkSpeedSlider.getValue() + 0.5), "WalkSpeed")
@@ -2640,14 +3254,44 @@ function BytecodeViewer.start(config)
 	trackConnection(refs.fullBrightToggle.toggle.MouseButton1Click:Connect(function()
 		toggleFeature("fullBright")
 	end))
+	trackConnection(refs.spawnPointToggle.toggle.MouseButton1Click:Connect(function()
+		toggleEspObject("spawnPoint")
+	end))
+	trackConnection(refs.wellPumpToggle.toggle.MouseButton1Click:Connect(function()
+		toggleEspObject("wellPump")
+	end))
+	trackConnection(refs.iridiumToggle.toggle.MouseButton1Click:Connect(function()
+		toggleEspObject("iridium")
+	end))
+	trackConnection(refs.spireWellToggle.toggle.MouseButton1Click:Connect(function()
+		toggleEspObject("spireWell")
+	end))
+	trackConnection(refs.wellToggle.toggle.MouseButton1Click:Connect(function()
+		toggleEspObject("well")
+	end))
+	trackConnection(refs.iridiumSlider.applyButton.MouseButton1Click:Connect(function()
+		state.iridiumMinFullness = iridiumSlider.getValue()
+		reconcileObjectHighlights()
+		syncControlState()
+	end))
+	trackConnection(refs.wellDistanceSlider.applyButton.MouseButton1Click:Connect(function()
+		state.wellDistance = math.floor(wellDistanceSlider.getValue() + 0.5)
+		reconcileObjectHighlights()
+		syncControlState()
+	end))
 
 	refreshMainFields()
 	walkSpeedSlider.setValue(state.walkSpeedValue)
 	jumpPowerSlider.setValue(state.jumpPowerValue)
 	hipHeightSlider.setValue(state.hipHeightValue)
 	gravitySlider.setValue(state.gravityValue)
+	iridiumSlider.setValue(state.iridiumMinFullness)
+	wellDistanceSlider.setValue(state.wellDistance)
 	refreshPlayersList()
+	refreshEspPlayersList()
 	refreshScriptBrowser()
+	reconcilePlayerHighlights()
+	reconcileObjectHighlights()
 	syncControlState()
 	renderTreeView()
 	renderOutputView()

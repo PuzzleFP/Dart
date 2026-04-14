@@ -144,8 +144,10 @@ local function defaultButtonPalette()
 		Hover = NativeUi.Theme.SurfaceHover,
 		Pressed = NativeUi.Theme.SurfaceActive,
 		Selected = NativeUi.Theme.Accent,
+		Disabled = Color3.fromRGB(25, 28, 36),
 		Text = NativeUi.Theme.Text,
 		SelectedText = Color3.fromRGB(9, 14, 20),
+		DisabledText = NativeUi.Theme.TextDim,
 	}
 end
 
@@ -158,6 +160,9 @@ local function refreshButtonVisual(button)
 	if button:GetAttribute("Pressed") then
 		button.BackgroundColor3 = palette.Pressed
 		button.TextColor3 = palette.Text
+	elseif button:GetAttribute("Disabled") then
+		button.BackgroundColor3 = palette.Disabled or NativeUi.Theme.PanelAlt
+		button.TextColor3 = palette.DisabledText or NativeUi.Theme.TextDim
 	elseif button:GetAttribute("Selected") then
 		button.BackgroundColor3 = palette.Selected
 		button.TextColor3 = palette.SelectedText
@@ -176,6 +181,7 @@ function NativeUi.bindButtonStyle(button, palette)
 	button:SetAttribute("Hovered", false)
 	button:SetAttribute("Pressed", false)
 	button:SetAttribute("Selected", false)
+	button:SetAttribute("Disabled", false)
 	buttonRefreshers[button] = resolved
 
 	button.MouseEnter:Connect(function()
@@ -204,6 +210,12 @@ end
 
 function NativeUi.setButtonSelected(button, selected)
 	button:SetAttribute("Selected", selected == true)
+	refreshButtonVisual(button)
+end
+
+function NativeUi.setButtonDisabled(button, disabled)
+	button:SetAttribute("Disabled", disabled == true)
+	button.Active = disabled ~= true
 	refreshButtonVisual(button)
 end
 
