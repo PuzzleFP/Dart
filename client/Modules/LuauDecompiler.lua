@@ -840,6 +840,35 @@ local function summarizeUnsupported(context)
 	return "-- unsupported opcodes: " .. table.concat(names, ", ")
 end
 
+local function copyStatements(statements)
+	local copy = table.create(#statements)
+	for index, statement in ipairs(statements) do
+		copy[index] = statement
+	end
+
+	return copy
+end
+
+local function trimTrailingSyntheticReturn(statements)
+	while #statements > 0 and statements[#statements] == "return" do
+		table.remove(statements)
+	end
+end
+
+local function appendStatementLines(lines, statements, indent)
+	local prefix = string.rep("    ", indent or 0)
+
+	for _, statement in ipairs(statements) do
+		for line in tostring(statement):gmatch("([^\n]*)\n?") do
+			if line == "" and statement:sub(-1) ~= "\n" then
+				break
+			end
+
+			table.insert(lines, prefix .. line)
+		end
+	end
+end
+
 function LuauDecompiler.decompileProto(proto, options)
 	options = options or {}
 
@@ -864,6 +893,26 @@ function LuauDecompiler.decompileProto(proto, options)
 		end
 	end
 
+	local statements = copyStatements(context.statements)
+	if options.trimSyntheticReturn ~= false then
+		trimTrailingSyntheticReturn(statements)
+	end
+
+	if #statements == 0 then
+		statements = { "-- no executable statements" }
+	end
+
+	if options.asTopLevel then
+		local lines = {}
+		local unsupportedSummary = summarizeUnsupported(context)
+		if unsupportedSummary ~= nil then
+			table.insert(lines, unsupportedSummary)
+		end
+
+		appendStatementLines(lines, statements, 0)
+		return table.concat(lines, "\n")
+	end
+
 	local lines = {
 		("function proto_%d(%s)"):format(proto.index or 0, buildParameterList(proto)),
 	}
@@ -873,15 +922,7 @@ function LuauDecompiler.decompileProto(proto, options)
 		table.insert(lines, "    " .. unsupportedSummary)
 	end
 
-	for _, statement in ipairs(context.statements) do
-		for line in tostring(statement):gmatch("([^\n]*)\n?") do
-			if line == "" and statement:sub(-1) ~= "\n" then
-				break
-			end
-
-			table.insert(lines, "    " .. line)
-		end
-	end
+	appendStatementLines(lines, statements, 1)
 
 	table.insert(lines, "end")
 	return table.concat(lines, "\n")
@@ -895,9 +936,51 @@ function LuauDecompiler.decompileChunk(chunk, options)
 		"-- best-effort output; complex control flow is emitted as pc comments",
 	}
 
-	for _, proto in ipairs(chunk.protos or {}) do
+	local protos = chunk.protos or {}
+	local mainProtoIndex = chunk.mainProtoIndex
+
+	if options.topLevelMain ~= false and mainProtoIndex ~= nil then
+		local mainProto = protos[mainProtoIndex + 1]
+		if mainProto ~= nil then
+			table.insert(lines, "")
+			table.insert(lines, "-- Main")
+			table.insert(lines, LuauDecompiler.decompileProto(mainProto, {
+				asTopLevel = true,
+				showUnsupported = options.showUnsupported,
+				trimSyntheticReturn = options.trimSyntheticReturn,
+			}))
+		end
+	end
+
+	local helperHeaderAdded = false
+	for _, proto in ipairs(protos) do
+		if not (options.topLevelMain ~= false and mainProtoIndex ~= nil and proto.index == mainProtoIndex) then
+			if not helperHeaderAdded then
+				table.insert(lines, "")
+				table.insert(lines, "-- Protos")
+				helperHeaderAdded = true
+			end
+
+			table.insert(lines, "")
+			table.insert(lines, LuauDecompiler.decompileProto(proto, options))
+		end
+	end
+
+	if options.topLevelMain == false then
+		lines = {
+			"-- LuauDecompiler v2",
+			"-- best-effort output; complex control flow is emitted as pc comments",
+		}
+
+		for _, proto in ipairs(protos) do
+			table.insert(lines, "")
+			table.insert(lines, LuauDecompiler.decompileProto(proto, options))
+		end
+	end
+
+	if #protos == 0 then
 		table.insert(lines, "")
-		table.insert(lines, LuauDecompiler.decompileProto(proto, options))
+		table.insert(lines, "-- no protos decoded")
 	end
 
 	return table.concat(lines, "\n")
