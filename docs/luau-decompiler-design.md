@@ -27,6 +27,16 @@ The first structuring pass is intentionally conservative:
 - A conditional loop guard whose body ends with `JUMPBACK` / `JUMPX` to the guard is recovered as `while ... do`.
 - Any shape that does not match these patterns is kept as opcode/pc comments until a later high-IR pass can prove it safe.
 
+## Current Name Recovery
+
+The name recovery pass uses bytecode/debug metadata plus conservative heuristics:
+
+- `game:GetService("Players")` style assignments become local aliases such as `Players`.
+- `require(...:WaitForChild("ModuleName"))` assignments become local aliases such as `ModuleName`.
+- Returned metatable-style module tables are detected from `table.__index = table`.
+- If bytecode has no local name for the returned module table, a module alias is inferred from repeated PascalCase string prefixes such as `DynamicThumbstickAction` and `DynamicThumbstickFrame`.
+- Top-level closure assignments to that table are emitted as named functions. Methods with an implicit first `self` parameter are emitted with `:` syntax.
+
 ## Regression Loop
 
 For every reference pair:

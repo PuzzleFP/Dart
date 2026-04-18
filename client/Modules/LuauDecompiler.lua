@@ -189,6 +189,21 @@ local function isIdentifier(text)
 	return type(text) == "string" and text:match("^[A-Za-z_][A-Za-z0-9_]*$") ~= nil and not LUA_KEYWORDS[text]
 end
 
+local function sanitizeIdentifier(text, fallback)
+	text = tostring(text or "")
+	text = text:gsub("[^A-Za-z0-9_]", "")
+
+	if text:match("^[0-9]") then
+		text = "_" .. text
+	end
+
+	if not isIdentifier(text) then
+		return fallback
+	end
+
+	return text
+end
+
 local function quoteString(text)
 	return string.format("%q", tostring(text))
 end
@@ -297,7 +312,7 @@ local function instructionEndPc(instruction)
 end
 
 local function makeContext(proto, options)
-	return {
+	local context = {
 		proto = proto,
 		options = options or {},
 		registers = {},
@@ -305,9 +320,16 @@ local function makeContext(proto, options)
 		statements = {},
 		unsupported = {},
 		closureAssignments = {},
+		usedAliases = {},
 		pendingClosure = nil,
 		openResult = nil,
 	}
+
+	for _, alias in pairs(context.options.registerAliases or {}) do
+		context.usedAliases[alias] = true
+	end
+
+	return context
 end
 
 local function emit(context, statement)
@@ -352,10 +374,19 @@ local function rawRegisterName(index)
 	return ("r%d"):format(index)
 end
 
+local function getRegisterAlias(context, index)
+	local aliases = context.options and context.options.registerAliases
+	if aliases and aliases[index] ~= nil then
+		return aliases[index]
+	end
+
+	return nil
+end
+
 local function getRegister(context, index)
 	local value = context.registers[index]
 	if value == nil then
-		return rawRegisterName(index)
+		return getRegisterAlias(context, index) or rawRegisterName(index)
 	end
 
 	return expressionText(value)
@@ -364,13 +395,18 @@ end
 local function getRegisterValue(context, index)
 	local value = context.registers[index]
 	if value == nil then
-		return makeTextValue(rawRegisterName(index))
+		return makeTextValue(getRegisterAlias(context, index) or rawRegisterName(index))
 	end
 
 	return value
 end
 
 local function getWritableRegister(context, index, pc)
+	local alias = getRegisterAlias(context, index)
+	if alias ~= nil then
+		return alias, false
+	end
+
 	local localName = getLocalNameAtPc(context.proto, index, pc)
 	if localName ~= nil then
 		return localName, true
@@ -393,13 +429,71 @@ local function setRegister(context, index, value, options)
 	end
 end
 
+local function replaceRegisterName(text, rawName, alias)
+	local pattern = "%f[%w_]" .. rawName .. "%f[^%w_]"
+	return (text:gsub(pattern, alias))
+end
+
+local function applyRegisterAlias(context, index, alias, options)
+	options = options or {}
+
+	alias = sanitizeIdentifier(alias, nil)
+	if alias == nil then
+		return nil
+	end
+
+	local rawName = rawRegisterName(index)
+	if rawName == alias then
+		return alias
+	end
+
+	for statementIndex, statement in ipairs(context.statements) do
+		local replaced = replaceRegisterName(statement, rawName, alias)
+		if options.localizeAssignment and not context.declaredLocals[alias] and replaced:match("^" .. alias .. "%s*=") then
+			replaced = "local " .. replaced
+			context.declaredLocals[alias] = true
+		end
+
+		context.statements[statementIndex] = replaced
+	end
+
+	context.registers[index] = makeTextValue(alias)
+	context.usedAliases[alias] = true
+	return alias
+end
+
+local function inferAliasFromExpression(expression)
+	local serviceName = expression:match('^game:GetService%("([A-Za-z_][A-Za-z0-9_]*)"%)$')
+	if serviceName ~= nil then
+		return sanitizeIdentifier(serviceName, nil)
+	end
+
+	local requiredName = expression:match('^require%(.+:WaitForChild%("([A-Za-z_][A-Za-z0-9_]*)"%)%)$')
+	if requiredName ~= nil then
+		return sanitizeIdentifier(requiredName, nil)
+	end
+
+	return nil
+end
+
 local function assignRegister(context, index, expression, pc)
 	local target, isLocal = getWritableRegister(context, index, pc)
-	setRegister(context, index, target)
 	local renderedExpression = renderExpression(expression, 0)
+	local inferredAlias
+
+	if not isLocal and context.options.inferAliases ~= false then
+		inferredAlias = inferAliasFromExpression(renderedExpression)
+		if inferredAlias ~= nil and not context.usedAliases[inferredAlias] then
+			target = inferredAlias
+			isLocal = true
+		end
+	end
+
+	setRegister(context, index, target)
 
 	if isLocal and not context.declaredLocals[target] then
 		context.declaredLocals[target] = true
+		context.usedAliases[target] = true
 		emit(context, ("local %s = %s"):format(target, renderedExpression))
 		return
 	end
@@ -917,17 +1011,23 @@ local function handleInstruction(context, instruction)
 	elseif name == "SETTABLEKS" or name == "SETUDATAKS" then
 		local baseValue = context.registers[fields.B]
 		local sourceValue = getRegisterValue(context, fields.A)
+		local keyName = getConstantName(proto, aux and aux.constantIndex)
 		if type(baseValue) == "table" and baseValue.kind == "table" then
 			setTableEntry(baseValue, keyExpressionFromConstant(getConstant(proto, aux and aux.constantIndex)), sourceValue)
+		elseif keyName == "__index" and fields.A == fields.B and context.options.inferModuleTableAliases ~= false then
+			local alias = applyRegisterAlias(context, fields.B, context.options.moduleAlias or "ModuleTable", {
+				localizeAssignment = true,
+			}) or getRegister(context, fields.B)
+			emit(context, ("%s.__index = %s"):format(alias, alias))
 		elseif context.options.captureClosureAssignments and type(sourceValue) == "table" and sourceValue.kind == "closure" then
 			table.insert(context.closureAssignments, {
-				target = memberAccess(getRegister(context, fields.B), getConstantName(proto, aux and aux.constantIndex)),
+				target = memberAccess(getRegister(context, fields.B), keyName),
 				protoIndex = sourceValue.protoIndex,
 				captures = cloneCaptures(sourceValue.captures),
 			})
 		else
 			emit(context, ("%s = %s"):format(
-				memberAccess(getRegister(context, fields.B), getConstantName(proto, aux and aux.constantIndex)),
+				memberAccess(getRegister(context, fields.B), keyName),
 				renderExpression(sourceValue, 0)
 			))
 		end
@@ -1187,11 +1287,14 @@ local function decompileStructuredProto(context)
 	return true
 end
 
-local function buildParameterList(proto)
+local function buildParameterList(proto, options)
+	options = options or {}
+
 	local params = {}
 	local count = proto.numParams or proto.params or 0
+	local startIndex = options.dropFirstParam and 1 or 0
 
-	for index = 0, count - 1 do
+	for index = startIndex, count - 1 do
 		local name = getLocalNameAtPc(proto, index, 0) or ("arg%d"):format(index + 1)
 		table.insert(params, name)
 	end
@@ -1293,6 +1396,67 @@ local function buildUpvalueAliases(captures)
 	return aliases
 end
 
+local function addModuleAliasCandidate(candidates, text)
+	text = tostring(text or "")
+
+	local suffixes = {
+		"Action",
+		"Frame",
+		"Gui",
+		"GUI",
+		"Controller",
+		"Button",
+		"Container",
+		"Handler",
+		"Manager",
+	}
+
+	for _, suffix in ipairs(suffixes) do
+		local candidate = text:match("^([A-Z][A-Za-z0-9_]+)" .. suffix .. "$")
+		candidate = sanitizeIdentifier(candidate, nil)
+		if candidate ~= nil and #candidate >= 3 then
+			candidates[candidate] = (candidates[candidate] or 0) + 1
+		end
+	end
+end
+
+local function inferModuleAliasFromChunk(chunk)
+	local candidates = {}
+
+	for _, value in ipairs(chunk.strings or {}) do
+		addModuleAliasCandidate(candidates, value)
+	end
+
+	for _, proto in ipairs(chunk.protos or {}) do
+		for _, constant in ipairs(proto.constants or {}) do
+			if constant.kind == "string" then
+				addModuleAliasCandidate(candidates, constant.value)
+			end
+		end
+	end
+
+	local bestAlias
+	local bestScore = 0
+	for alias, count in pairs(candidates) do
+		local score = (count * 1000) + #alias
+		if count >= 2 and score > bestScore then
+			bestAlias = alias
+			bestScore = score
+		end
+	end
+
+	return bestAlias
+end
+
+local function buildFunctionDeclarationTarget(target, proto)
+	local receiver, method = tostring(target or ""):match("^(.+)%.([A-Za-z_][A-Za-z0-9_]*)$")
+	if receiver ~= nil and method ~= "new" and (proto.numParams or 0) > 0 then
+		return ("%s:%s"):format(receiver, method), true
+	end
+
+	return target, false
+end
+
 local function analyzeProto(proto, options)
 	options = options or {}
 
@@ -1338,7 +1502,7 @@ function LuauDecompiler.decompileProto(proto, options)
 	end
 
 	local lines = {
-		("function %s(%s)"):format(options.functionName or ("proto_%d"):format(proto.index or 0), buildParameterList(proto)),
+		("function %s(%s)"):format(options.functionName or ("proto_%d"):format(proto.index or 0), buildParameterList(proto, options)),
 	}
 
 	local unsupportedSummary = summarizeUnsupported(context)
@@ -1363,6 +1527,7 @@ function LuauDecompiler.decompileChunk(chunk, options)
 	local protos = chunk.protos or {}
 	local mainProtoIndex = chunk.mainProtoIndex
 	local assignedClosureProtos = {}
+	local moduleAlias = options.moduleAlias or inferModuleAliasFromChunk(chunk)
 
 	if options.topLevelMain ~= false and mainProtoIndex ~= nil then
 		local mainProto = protos[mainProtoIndex + 1]
@@ -1370,6 +1535,7 @@ function LuauDecompiler.decompileChunk(chunk, options)
 			local mainContext = analyzeProto(mainProto, {
 				asTopLevel = true,
 				captureClosureAssignments = options.inlineAssignedClosures ~= false,
+				moduleAlias = moduleAlias,
 				showUnsupported = options.showUnsupported,
 				trimSyntheticReturn = options.trimSyntheticReturn,
 				upvalueAliases = options.upvalueAliases,
@@ -1398,10 +1564,14 @@ function LuauDecompiler.decompileChunk(chunk, options)
 					local childProto = assignment.protoIndex ~= nil and protos[assignment.protoIndex + 1] or nil
 					if childProto ~= nil and isFunctionDeclarationTarget(assignment.target) then
 						assignedClosureProtos[assignment.protoIndex] = true
+						local functionName, dropFirstParam = buildFunctionDeclarationTarget(assignment.target, childProto)
+						local registerAliases = dropFirstParam and { [0] = "self" } or nil
 
 						table.insert(mainLines, "")
 						table.insert(mainLines, LuauDecompiler.decompileProto(childProto, {
-							functionName = assignment.target,
+							dropFirstParam = dropFirstParam,
+							functionName = functionName,
+							registerAliases = registerAliases,
 							upvalueAliases = buildUpvalueAliases(assignment.captures),
 							showUnsupported = options.showUnsupported,
 							trimSyntheticReturn = options.trimSyntheticReturn,
