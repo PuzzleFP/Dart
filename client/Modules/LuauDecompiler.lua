@@ -254,6 +254,7 @@ local function makeContext(proto, options)
 		declaredLocals = {},
 		statements = {},
 		unsupported = {},
+		openResult = nil,
 	}
 end
 
@@ -263,6 +264,18 @@ local function emit(context, statement)
 	end
 end
 
+local renderExpression
+
+local function makeTextValue(text, options)
+	options = options or {}
+	return {
+		kind = "text",
+		text = tostring(text),
+		pure = options.pure ~= false,
+		multret = options.multret == true,
+	}
+end
+
 local function expressionText(value)
 	if type(value) == "table" and value.text then
 		return value.text
@@ -270,6 +283,10 @@ local function expressionText(value)
 
 	if type(value) == "table" and value.kind == "method" then
 		return ("%s.%s"):format(value.target or "<?>", value.method or "<?>")
+	end
+
+	if type(value) == "table" and value.kind == "table" then
+		return value.name or renderExpression(value, 0)
 	end
 
 	return tostring(value)
@@ -288,6 +305,15 @@ local function getRegister(context, index)
 	return expressionText(value)
 end
 
+local function getRegisterValue(context, index)
+	local value = context.registers[index]
+	if value == nil then
+		return makeTextValue(rawRegisterName(index))
+	end
+
+	return value
+end
+
 local function getWritableRegister(context, index, pc)
 	local localName = getLocalNameAtPc(context.proto, index, pc)
 	if localName ~= nil then
@@ -297,32 +323,39 @@ local function getWritableRegister(context, index, pc)
 	return rawRegisterName(index), false
 end
 
-local function setRegister(context, index, text, options)
+local function setRegister(context, index, value, options)
 	options = options or {}
-	context.registers[index] = {
-		text = text,
-		pure = options.pure ~= false,
-	}
+
+	if context.openResult ~= nil and index >= context.openResult.base then
+		context.openResult = nil
+	end
+
+	if type(value) == "table" then
+		context.registers[index] = value
+	else
+		context.registers[index] = makeTextValue(value, options)
+	end
 end
 
 local function assignRegister(context, index, expression, pc)
 	local target, isLocal = getWritableRegister(context, index, pc)
 	setRegister(context, index, target)
+	local renderedExpression = renderExpression(expression, 0)
 
 	if isLocal and not context.declaredLocals[target] then
 		context.declaredLocals[target] = true
-		emit(context, ("local %s = %s"):format(target, expression))
+		emit(context, ("local %s = %s"):format(target, renderedExpression))
 		return
 	end
 
-	emit(context, ("%s = %s"):format(target, expression))
+	emit(context, ("%s = %s"):format(target, renderedExpression))
 end
 
 local function buildCallExpression(callee, args)
 	if type(callee) == "table" and callee.kind == "method" then
 		local normalizedArgs = {}
 		for index, value in ipairs(args) do
-			normalizedArgs[index] = value
+			normalizedArgs[index] = renderExpression(value, 0)
 		end
 
 		if normalizedArgs[1] == callee.target then
@@ -332,23 +365,32 @@ local function buildCallExpression(callee, args)
 		return ("%s:%s(%s)"):format(callee.target, callee.method, table.concat(normalizedArgs, ", "))
 	end
 
-	return ("%s(%s)"):format(expressionText(callee), table.concat(args, ", "))
+	local renderedArgs = {}
+	for index, value in ipairs(args) do
+		renderedArgs[index] = renderExpression(value, 0)
+	end
+
+	return ("%s(%s)"):format(expressionText(callee), table.concat(renderedArgs, ", "))
 end
 
 local function collectCallArgs(context, baseRegister, fieldB)
 	local args = {}
 
 	if fieldB == 0 then
-		local scan = baseRegister + 1
-		while context.registers[scan] ~= nil do
-			table.insert(args, getRegister(context, scan))
-			scan = scan + 1
+		local openResult = context.openResult
+		if openResult ~= nil and openResult.base >= baseRegister + 1 then
+			for register = baseRegister + 1, openResult.base - 1 do
+				table.insert(args, getRegisterValue(context, register))
+			end
+
+			table.insert(args, openResult.value)
 		end
+
 		return args
 	end
 
 	for offset = 1, fieldB - 1 do
-		table.insert(args, getRegister(context, baseRegister + offset))
+		table.insert(args, getRegisterValue(context, baseRegister + offset))
 	end
 
 	return args
@@ -360,12 +402,23 @@ local function collectReturnValues(context, baseRegister, fieldB)
 	end
 
 	if fieldB == 0 then
-		return { "..." }
+		local openResult = context.openResult
+		if openResult ~= nil and openResult.base >= baseRegister then
+			local values = {}
+			for register = baseRegister, openResult.base - 1 do
+				table.insert(values, getRegisterValue(context, register))
+			end
+
+			table.insert(values, openResult.value)
+			return values
+		end
+
+		return { makeTextValue("...") }
 	end
 
 	local values = {}
 	for offset = 0, fieldB - 2 do
-		table.insert(values, getRegister(context, baseRegister + offset))
+		table.insert(values, getRegisterValue(context, baseRegister + offset))
 	end
 
 	return values
@@ -379,47 +432,122 @@ local function getClosureExpression(protoIndex)
 	return ("proto_%d"):format(protoIndex)
 end
 
-local function tableConstantToExpression(proto, constant)
-	if constant == nil then
-		return "{}"
-	end
-
-	if constant.kind == "table" then
-		local parts = {}
-		for _, keyIndex in ipairs(constant.keys or {}) do
-			local key = getConstant(proto, keyIndex)
-			if key and key.kind == "string" then
-				if isIdentifier(key.value) then
-					table.insert(parts, ("%s = nil"):format(key.value))
-				else
-					table.insert(parts, ("[%s] = nil"):format(quoteString(key.value)))
-				end
-			else
-				table.insert(parts, ("[%s] = nil"):format(constantToExpression(key)))
-			end
+local function keyExpressionFromConstant(constant)
+	if constant and constant.kind == "string" then
+		if isIdentifier(constant.value) then
+			return constant.value
 		end
 
-		return ("{ %s }"):format(table.concat(parts, ", "))
+		return ("[%s]"):format(quoteString(constant.value))
+	end
+
+	return ("[%s]"):format(constantToExpression(constant))
+end
+
+local function makeTableNode()
+	return {
+		kind = "table",
+		entries = {},
+		entryMap = {},
+	}
+end
+
+local function setTableEntry(node, keyText, value, options)
+	options = options or {}
+
+	local entry = node.entryMap[keyText]
+	if entry == nil then
+		entry = {
+			keyText = keyText,
+			value = value,
+			array = options.array == true,
+		}
+		node.entryMap[keyText] = entry
+		table.insert(node.entries, entry)
+		return
+	end
+
+	entry.value = value
+	entry.array = options.array == true
+end
+
+local function tableNodeFromConstant(proto, constant)
+	local node = makeTableNode()
+
+	if constant == nil then
+		return node
 	end
 
 	if constant.kind == "tableWithConstants" then
-		local parts = {}
 		for _, entry in ipairs(constant.entries or {}) do
 			local key = getConstant(proto, entry.key)
 			local value = getConstant(proto, entry.constantIndex)
-			local valueExpression = constantToExpression(value)
-
-			if key and key.kind == "string" and isIdentifier(key.value) then
-				table.insert(parts, ("%s = %s"):format(key.value, valueExpression))
-			else
-				table.insert(parts, ("[%s] = %s"):format(constantToExpression(key), valueExpression))
-			end
+			setTableEntry(node, keyExpressionFromConstant(key), makeTextValue(constantToExpression(value)))
 		end
-
-		return ("{ %s }"):format(table.concat(parts, ", "))
 	end
 
-	return "{}"
+	return node
+end
+
+local function renderTableNode(node, indent)
+	if node.name ~= nil then
+		return node.name
+	end
+
+	if #node.entries == 0 then
+		return "{}"
+	end
+
+	local currentIndent = string.rep("\t", indent or 0)
+	local childIndent = string.rep("\t", (indent or 0) + 1)
+	local lines = {
+		"{",
+	}
+
+	for _, entry in ipairs(node.entries) do
+		local renderedValue = renderExpression(entry.value, (indent or 0) + 1)
+		if entry.array then
+			table.insert(lines, ("%s%s,"):format(childIndent, renderedValue))
+		else
+			table.insert(lines, ("%s%s = %s,"):format(childIndent, entry.keyText, renderedValue))
+		end
+	end
+
+	table.insert(lines, currentIndent .. "}")
+	return table.concat(lines, "\n")
+end
+
+renderExpression = function(value, indent)
+	if type(value) == "table" and value.kind == "table" then
+		return renderTableNode(value, indent or 0)
+	end
+
+	return expressionText(value)
+end
+
+local function materializeRegister(context, index, pc)
+	local value = context.registers[index]
+	if type(value) ~= "table" or value.kind ~= "table" then
+		return getRegister(context, index)
+	end
+
+	if value.name ~= nil then
+		return value.name
+	end
+
+	local target, isLocal = getWritableRegister(context, index, pc)
+	local renderedTable = renderTableNode(value, 0)
+	value.name = target
+
+	if isLocal and not context.declaredLocals[target] then
+		context.declaredLocals[target] = true
+		emit(context, ("local %s = %s"):format(target, renderedTable))
+	else
+		emit(context, ("%s = %s"):format(target, renderedTable))
+	end
+
+	setRegister(context, index, target)
+	return target
 end
 
 local function emitUnsupported(context, instruction)
@@ -508,7 +636,7 @@ local function handleInstruction(context, instruction)
 		local upvalue = proto.upvalues and proto.upvalues[fields.B + 1]
 		setRegister(context, fields.A, upvalue and upvalue.name or ("upvalue_%d"):format(fields.B))
 	elseif name == "MOVE" then
-		setRegister(context, fields.A, getRegister(context, fields.B))
+		setRegister(context, fields.A, getRegisterValue(context, fields.B))
 	elseif name == "LOADK" then
 		setRegister(context, fields.A, constantToExpression(getConstant(proto, fields.D)))
 	elseif name == "LOADKX" then
@@ -520,13 +648,24 @@ local function handleInstruction(context, instruction)
 	elseif name == "LOADB" then
 		setRegister(context, fields.A, tostring(fields.B ~= 0))
 	elseif name == "GETTABLEKS" or name == "GETUDATAKS" then
-		setRegister(context, fields.A, memberAccess(getRegister(context, fields.B), getConstantName(proto, aux and aux.constantIndex)))
+		local baseText = type(context.registers[fields.B]) == "table" and context.registers[fields.B].kind == "table"
+			and materializeRegister(context, fields.B, instruction.pc)
+			or getRegister(context, fields.B)
+		setRegister(context, fields.A, memberAccess(baseText, getConstantName(proto, aux and aux.constantIndex)))
 	elseif name == "GETTABLEN" then
-		setRegister(context, fields.A, ("%s[%d]"):format(getRegister(context, fields.B), fields.C + 1))
+		local baseText = type(context.registers[fields.B]) == "table" and context.registers[fields.B].kind == "table"
+			and materializeRegister(context, fields.B, instruction.pc)
+			or getRegister(context, fields.B)
+		setRegister(context, fields.A, ("%s[%d]"):format(baseText, fields.C + 1))
 	elseif name == "GETTABLE" then
-		setRegister(context, fields.A, ("%s[%s]"):format(getRegister(context, fields.B), getRegister(context, fields.C)))
+		local baseText = type(context.registers[fields.B]) == "table" and context.registers[fields.B].kind == "table"
+			and materializeRegister(context, fields.B, instruction.pc)
+			or getRegister(context, fields.B)
+		setRegister(context, fields.A, ("%s[%s]"):format(baseText, getRegister(context, fields.C)))
 	elseif name == "NAMECALL" or name == "NAMECALLUDATA" then
-		local target = getRegister(context, fields.B)
+		local target = type(context.registers[fields.B]) == "table" and context.registers[fields.B].kind == "table"
+			and materializeRegister(context, fields.B, instruction.pc)
+			or getRegister(context, fields.B)
 		context.registers[fields.A] = {
 			kind = "method",
 			target = target,
@@ -534,22 +673,57 @@ local function handleInstruction(context, instruction)
 		}
 		setRegister(context, fields.A + 1, target)
 	elseif name == "SETGLOBAL" then
-		emit(context, ("%s = %s"):format(constantToExpression(getConstant(proto, aux and aux.constantIndex)), getRegister(context, fields.A)))
+		emit(context, ("%s = %s"):format(
+			constantToExpression(getConstant(proto, aux and aux.constantIndex)),
+			renderExpression(getRegisterValue(context, fields.A), 0)
+		))
 	elseif name == "SETUPVAL" then
 		local upvalue = proto.upvalues and proto.upvalues[fields.B + 1]
-		emit(context, ("%s = %s"):format(upvalue and upvalue.name or ("upvalue_%d"):format(fields.B), getRegister(context, fields.A)))
+		emit(context, ("%s = %s"):format(upvalue and upvalue.name or ("upvalue_%d"):format(fields.B), renderExpression(getRegisterValue(context, fields.A), 0)))
 	elseif name == "SETTABLEKS" or name == "SETUDATAKS" then
-		emit(context, ("%s = %s"):format(memberAccess(getRegister(context, fields.B), getConstantName(proto, aux and aux.constantIndex)), getRegister(context, fields.A)))
+		local baseValue = context.registers[fields.B]
+		if type(baseValue) == "table" and baseValue.kind == "table" then
+			setTableEntry(baseValue, keyExpressionFromConstant(getConstant(proto, aux and aux.constantIndex)), getRegisterValue(context, fields.A))
+		else
+			emit(context, ("%s = %s"):format(
+				memberAccess(getRegister(context, fields.B), getConstantName(proto, aux and aux.constantIndex)),
+				renderExpression(getRegisterValue(context, fields.A), 0)
+			))
+		end
 	elseif name == "SETTABLEN" then
-		emit(context, ("%s[%d] = %s"):format(getRegister(context, fields.B), fields.C + 1, getRegister(context, fields.A)))
+		local baseValue = context.registers[fields.B]
+		if type(baseValue) == "table" and baseValue.kind == "table" then
+			setTableEntry(baseValue, tostring(fields.C + 1), getRegisterValue(context, fields.A), { array = true })
+		else
+			emit(context, ("%s[%d] = %s"):format(getRegister(context, fields.B), fields.C + 1, renderExpression(getRegisterValue(context, fields.A), 0)))
+		end
 	elseif name == "SETTABLE" then
-		emit(context, ("%s[%s] = %s"):format(getRegister(context, fields.B), getRegister(context, fields.C), getRegister(context, fields.A)))
+		local baseValue = context.registers[fields.B]
+		if type(baseValue) == "table" and baseValue.kind == "table" then
+			setTableEntry(baseValue, ("[%s]"):format(getRegister(context, fields.C)), getRegisterValue(context, fields.A))
+		else
+			emit(context, ("%s[%s] = %s"):format(getRegister(context, fields.B), getRegister(context, fields.C), renderExpression(getRegisterValue(context, fields.A), 0)))
+		end
 	elseif name == "NEWTABLE" then
-		setRegister(context, fields.A, "{}")
+		setRegister(context, fields.A, makeTableNode())
 	elseif name == "DUPTABLE" then
-		setRegister(context, fields.A, tableConstantToExpression(proto, getConstant(proto, fields.D)))
+		setRegister(context, fields.A, tableNodeFromConstant(proto, getConstant(proto, fields.D)))
 	elseif name == "SETLIST" then
-		emit(context, ("-- table insert list into %s starting at %s"):format(getRegister(context, fields.A), tostring(aux and aux.tableIndex or "?")))
+		local baseValue = context.registers[fields.A]
+		if type(baseValue) == "table" and baseValue.kind == "table" then
+			local startIndex = aux and aux.tableIndex or 1
+			if fields.C == 0 and context.openResult ~= nil and context.openResult.base == fields.B then
+				setTableEntry(baseValue, tostring(startIndex), context.openResult.value, { array = true })
+			else
+				for offset = 0, math.max(0, fields.C - 1) do
+					setTableEntry(baseValue, tostring(startIndex + offset), getRegisterValue(context, fields.B + offset), { array = true })
+				end
+			end
+			context.openResult = nil
+		else
+			emit(context, ("-- table insert list into %s starting at %s"):format(getRegister(context, fields.A), tostring(aux and aux.tableIndex or "?")))
+			context.openResult = nil
+		end
 	elseif name == "NEWCLOSURE" then
 		setRegister(context, fields.A, getClosureExpression(fields.D))
 	elseif name == "DUPCLOSURE" then
@@ -557,7 +731,14 @@ local function handleInstruction(context, instruction)
 		local protoIndex = constant and constant.protoIndex or fields.D
 		setRegister(context, fields.A, getClosureExpression(protoIndex))
 	elseif name == "GETVARARGS" then
-		setRegister(context, fields.A, "...")
+		local value = makeTextValue("...", { multret = fields.B == 0 })
+		setRegister(context, fields.A, value)
+		if fields.B == 0 then
+			context.openResult = {
+				base = fields.A,
+				value = value,
+			}
+		end
 	elseif BINARY_OPERATORS[name] ~= nil then
 		setRegister(context, fields.A, ("(%s %s %s)"):format(getRegister(context, fields.B), BINARY_OPERATORS[name], getRegister(context, fields.C)))
 	elseif BINARY_K_OPERATORS[name] ~= nil then
@@ -582,13 +763,20 @@ local function handleInstruction(context, instruction)
 		local callExpression = buildCallExpression(callee, args)
 
 		if fields.C == 1 then
+			context.openResult = nil
 			emit(context, callExpression)
 		elseif fields.C == 0 then
-			setRegister(context, fields.A, callExpression)
-			emit(context, callExpression)
+			local value = makeTextValue(callExpression, { multret = true })
+			setRegister(context, fields.A, value)
+			context.openResult = {
+				base = fields.A,
+				value = value,
+			}
 		elseif fields.C == 2 then
+			context.openResult = nil
 			assignRegister(context, fields.A, callExpression, instruction.pc)
 		else
+			context.openResult = nil
 			local targets = {}
 			for offset = 0, fields.C - 2 do
 				local target = getWritableRegister(context, fields.A + offset, instruction.pc)
@@ -602,7 +790,11 @@ local function handleInstruction(context, instruction)
 		if #values == 0 then
 			emit(context, "return")
 		else
-			emit(context, "return " .. table.concat(values, ", "))
+			local renderedValues = {}
+			for index, value in ipairs(values) do
+				renderedValues[index] = renderExpression(value, 0)
+			end
+			emit(context, "return " .. table.concat(renderedValues, ", "))
 		end
 	elseif name:sub(1, 4) == "JUMP" then
 		emitJump(context, instruction)
@@ -611,7 +803,8 @@ local function handleInstruction(context, instruction)
 	elseif name:sub(1, 8) == "FASTCALL" or name == "NATIVECALL" then
 		emit(context, ("--[[ %s intrinsic call hint ]]"):format(name))
 	elseif name == "CAPTURE" then
-		emit(context, ("--[[ capture %s %s ]]"):format(tostring(fields.B), getRegister(context, fields.C)))
+		local captureText = materializeRegister(context, fields.C, instruction.pc)
+		emit(context, ("--[[ capture %s %s ]]"):format(tostring(fields.B), captureText))
 	else
 		emitUnsupported(context, instruction)
 	end
@@ -681,7 +874,13 @@ function LuauDecompiler.decompileProto(proto, options)
 	end
 
 	for _, statement in ipairs(context.statements) do
-		table.insert(lines, "    " .. statement)
+		for line in tostring(statement):gmatch("([^\n]*)\n?") do
+			if line == "" and statement:sub(-1) ~= "\n" then
+				break
+			end
+
+			table.insert(lines, "    " .. line)
+		end
 	end
 
 	table.insert(lines, "end")
