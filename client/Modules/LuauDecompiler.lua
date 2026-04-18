@@ -125,6 +125,12 @@ local COMPARE_OPERATORS = {
 	JUMPIFNOTLT = ">=",
 }
 
+local CAPTURE_TYPES = {
+	[0] = "VAL",
+	[1] = "REF",
+	[2] = "UPVAL",
+}
+
 local LUA_KEYWORDS = {
 	["and"] = true,
 	["break"] = true,
@@ -803,8 +809,17 @@ local function handleInstruction(context, instruction)
 	elseif name:sub(1, 8) == "FASTCALL" or name == "NATIVECALL" then
 		emit(context, ("--[[ %s intrinsic call hint ]]"):format(name))
 	elseif name == "CAPTURE" then
-		local captureText = materializeRegister(context, fields.C, instruction.pc)
-		emit(context, ("--[[ capture %s %s ]]"):format(tostring(fields.B), captureText))
+		local captureType = CAPTURE_TYPES[fields.A] or tostring(fields.A)
+		local captureText
+
+		if fields.A == 2 then
+			local upvalue = proto.upvalues and proto.upvalues[fields.B + 1]
+			captureText = upvalue and upvalue.name or ("upvalue_%d"):format(fields.B)
+		else
+			captureText = materializeRegister(context, fields.B, instruction.pc)
+		end
+
+		emit(context, ("--[[ capture %s %s ]]"):format(captureType, captureText))
 	else
 		emitUnsupported(context, instruction)
 	end
