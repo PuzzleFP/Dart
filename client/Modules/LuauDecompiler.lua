@@ -225,6 +225,16 @@ local function getConstantName(proto, index)
 	return ("k%d"):format(index or -1)
 end
 
+local function getUpvalueName(context, index)
+	local aliases = context.options and context.options.upvalueAliases
+	if aliases and aliases[index] ~= nil then
+		return aliases[index]
+	end
+
+	local upvalue = context.proto.upvalues and context.proto.upvalues[index + 1]
+	return upvalue and upvalue.name or ("upvalue_%d"):format(index)
+end
+
 local function memberAccess(base, key)
 	if isIdentifier(key) then
 		return ("%s.%s"):format(base, key)
@@ -260,6 +270,8 @@ local function makeContext(proto, options)
 		declaredLocals = {},
 		statements = {},
 		unsupported = {},
+		closureAssignments = {},
+		pendingClosure = nil,
 		openResult = nil,
 	}
 end
@@ -293,6 +305,10 @@ local function expressionText(value)
 
 	if type(value) == "table" and value.kind == "table" then
 		return value.name or renderExpression(value, 0)
+	end
+
+	if type(value) == "table" and value.kind == "closure" then
+		return ("proto_%d"):format(value.protoIndex or -1)
 	end
 
 	return tostring(value)
@@ -430,12 +446,23 @@ local function collectReturnValues(context, baseRegister, fieldB)
 	return values
 end
 
-local function getClosureExpression(protoIndex)
-	if protoIndex == nil then
-		return "function(...) --[[ unknown proto ]] end"
-	end
+local function makeClosureValue(protoIndex)
+	return {
+		kind = "closure",
+		protoIndex = protoIndex,
+		captures = {},
+	}
+end
 
-	return ("proto_%d"):format(protoIndex)
+local function cloneCaptures(captures)
+	local result = {}
+	for index, capture in ipairs(captures or {}) do
+		result[index] = {
+			type = capture.type,
+			source = capture.source,
+		}
+	end
+	return result
 end
 
 local function keyExpressionFromConstant(constant)
@@ -630,6 +657,10 @@ local function handleInstruction(context, instruction)
 	local fields = instruction.fields
 	local aux = instruction.decodedAux
 
+	if name ~= "CAPTURE" and name ~= "NEWCLOSURE" and name ~= "DUPCLOSURE" then
+		context.pendingClosure = nil
+	end
+
 	if name == "NOP" or name == "BREAK" or name == "COVERAGE" or name == "PREPVARARGS" or name == "CLOSEUPVALS" then
 		return
 	end
@@ -639,8 +670,7 @@ local function handleInstruction(context, instruction)
 	elseif name == "GETGLOBAL" then
 		setRegister(context, fields.A, constantToExpression(getConstant(proto, aux and aux.constantIndex)))
 	elseif name == "GETUPVAL" then
-		local upvalue = proto.upvalues and proto.upvalues[fields.B + 1]
-		setRegister(context, fields.A, upvalue and upvalue.name or ("upvalue_%d"):format(fields.B))
+		setRegister(context, fields.A, getUpvalueName(context, fields.B))
 	elseif name == "MOVE" then
 		setRegister(context, fields.A, getRegisterValue(context, fields.B))
 	elseif name == "LOADK" then
@@ -684,16 +714,22 @@ local function handleInstruction(context, instruction)
 			renderExpression(getRegisterValue(context, fields.A), 0)
 		))
 	elseif name == "SETUPVAL" then
-		local upvalue = proto.upvalues and proto.upvalues[fields.B + 1]
-		emit(context, ("%s = %s"):format(upvalue and upvalue.name or ("upvalue_%d"):format(fields.B), renderExpression(getRegisterValue(context, fields.A), 0)))
+		emit(context, ("%s = %s"):format(getUpvalueName(context, fields.B), renderExpression(getRegisterValue(context, fields.A), 0)))
 	elseif name == "SETTABLEKS" or name == "SETUDATAKS" then
 		local baseValue = context.registers[fields.B]
+		local sourceValue = getRegisterValue(context, fields.A)
 		if type(baseValue) == "table" and baseValue.kind == "table" then
-			setTableEntry(baseValue, keyExpressionFromConstant(getConstant(proto, aux and aux.constantIndex)), getRegisterValue(context, fields.A))
+			setTableEntry(baseValue, keyExpressionFromConstant(getConstant(proto, aux and aux.constantIndex)), sourceValue)
+		elseif context.options.captureClosureAssignments and type(sourceValue) == "table" and sourceValue.kind == "closure" then
+			table.insert(context.closureAssignments, {
+				target = memberAccess(getRegister(context, fields.B), getConstantName(proto, aux and aux.constantIndex)),
+				protoIndex = sourceValue.protoIndex,
+				captures = cloneCaptures(sourceValue.captures),
+			})
 		else
 			emit(context, ("%s = %s"):format(
 				memberAccess(getRegister(context, fields.B), getConstantName(proto, aux and aux.constantIndex)),
-				renderExpression(getRegisterValue(context, fields.A), 0)
+				renderExpression(sourceValue, 0)
 			))
 		end
 	elseif name == "SETTABLEN" then
@@ -731,11 +767,15 @@ local function handleInstruction(context, instruction)
 			context.openResult = nil
 		end
 	elseif name == "NEWCLOSURE" then
-		setRegister(context, fields.A, getClosureExpression(fields.D))
+		local closure = makeClosureValue(fields.D)
+		setRegister(context, fields.A, closure)
+		context.pendingClosure = closure
 	elseif name == "DUPCLOSURE" then
 		local constant = getConstant(proto, fields.D)
 		local protoIndex = constant and constant.protoIndex or fields.D
-		setRegister(context, fields.A, getClosureExpression(protoIndex))
+		local closure = makeClosureValue(protoIndex)
+		setRegister(context, fields.A, closure)
+		context.pendingClosure = closure
 	elseif name == "GETVARARGS" then
 		local value = makeTextValue("...", { multret = fields.B == 0 })
 		setRegister(context, fields.A, value)
@@ -813,13 +853,21 @@ local function handleInstruction(context, instruction)
 		local captureText
 
 		if fields.A == 2 then
-			local upvalue = proto.upvalues and proto.upvalues[fields.B + 1]
-			captureText = upvalue and upvalue.name or ("upvalue_%d"):format(fields.B)
+			captureText = getUpvalueName(context, fields.B)
 		else
 			captureText = materializeRegister(context, fields.B, instruction.pc)
 		end
 
-		emit(context, ("--[[ capture %s %s ]]"):format(captureType, captureText))
+		if context.pendingClosure ~= nil then
+			table.insert(context.pendingClosure.captures, {
+				type = captureType,
+				source = captureText,
+			})
+		end
+
+		if context.options.showCaptureComments then
+			emit(context, ("--[[ capture %s %s ]]"):format(captureType, captureText))
+		end
 	else
 		emitUnsupported(context, instruction)
 	end
@@ -884,7 +932,54 @@ local function appendStatementLines(lines, statements, indent)
 	end
 end
 
-function LuauDecompiler.decompileProto(proto, options)
+local function buildRenderableStatements(context, options)
+	local statements = copyStatements(context.statements)
+	if options.trimSyntheticReturn ~= false then
+		trimTrailingSyntheticReturn(statements)
+	end
+
+	if #statements == 0 then
+		statements = { "-- no executable statements" }
+	end
+
+	return statements
+end
+
+local function appendTopLevelContext(lines, context, options)
+	local unsupportedSummary = summarizeUnsupported(context)
+	if unsupportedSummary ~= nil then
+		table.insert(lines, unsupportedSummary)
+	end
+
+	appendStatementLines(lines, buildRenderableStatements(context, options), 0)
+end
+
+local function isFunctionDeclarationTarget(target)
+	if type(target) ~= "string" then
+		return false
+	end
+
+	local first = true
+	for part in target:gmatch("[^.]+") do
+		if not isIdentifier(part) then
+			return false
+		end
+
+		first = false
+	end
+
+	return first == false
+end
+
+local function buildUpvalueAliases(captures)
+	local aliases = {}
+	for index, capture in ipairs(captures or {}) do
+		aliases[index - 1] = capture.source
+	end
+	return aliases
+end
+
+local function analyzeProto(proto, options)
 	options = options or {}
 
 	local context = makeContext(proto, options)
@@ -908,28 +1003,26 @@ function LuauDecompiler.decompileProto(proto, options)
 		end
 	end
 
-	local statements = copyStatements(context.statements)
-	if options.trimSyntheticReturn ~= false then
-		trimTrailingSyntheticReturn(statements)
-	end
+	return context
+end
 
-	if #statements == 0 then
-		statements = { "-- no executable statements" }
-	end
+function LuauDecompiler.analyzeProto(proto, options)
+	return analyzeProto(proto, options)
+end
+
+function LuauDecompiler.decompileProto(proto, options)
+	options = options or {}
+
+	local context = analyzeProto(proto, options)
 
 	if options.asTopLevel then
 		local lines = {}
-		local unsupportedSummary = summarizeUnsupported(context)
-		if unsupportedSummary ~= nil then
-			table.insert(lines, unsupportedSummary)
-		end
-
-		appendStatementLines(lines, statements, 0)
+		appendTopLevelContext(lines, context, options)
 		return table.concat(lines, "\n")
 	end
 
 	local lines = {
-		("function proto_%d(%s)"):format(proto.index or 0, buildParameterList(proto)),
+		("function %s(%s)"):format(options.functionName or ("proto_%d"):format(proto.index or 0), buildParameterList(proto)),
 	}
 
 	local unsupportedSummary = summarizeUnsupported(context)
@@ -937,7 +1030,7 @@ function LuauDecompiler.decompileProto(proto, options)
 		table.insert(lines, "    " .. unsupportedSummary)
 	end
 
-	appendStatementLines(lines, statements, 1)
+	appendStatementLines(lines, buildRenderableStatements(context, options), 1)
 
 	table.insert(lines, "end")
 	return table.concat(lines, "\n")
@@ -953,23 +1046,66 @@ function LuauDecompiler.decompileChunk(chunk, options)
 
 	local protos = chunk.protos or {}
 	local mainProtoIndex = chunk.mainProtoIndex
+	local assignedClosureProtos = {}
 
 	if options.topLevelMain ~= false and mainProtoIndex ~= nil then
 		local mainProto = protos[mainProtoIndex + 1]
 		if mainProto ~= nil then
-			table.insert(lines, "")
-			table.insert(lines, "-- Main")
-			table.insert(lines, LuauDecompiler.decompileProto(mainProto, {
+			local mainContext = analyzeProto(mainProto, {
 				asTopLevel = true,
+				captureClosureAssignments = options.inlineAssignedClosures ~= false,
 				showUnsupported = options.showUnsupported,
 				trimSyntheticReturn = options.trimSyntheticReturn,
-			}))
+				upvalueAliases = options.upvalueAliases,
+			})
+
+			table.insert(lines, "")
+			table.insert(lines, "-- Main")
+			local mainLines = {}
+			local unsupportedSummary = summarizeUnsupported(mainContext)
+			if unsupportedSummary ~= nil then
+				table.insert(mainLines, unsupportedSummary)
+			end
+
+			local mainStatements = buildRenderableStatements(mainContext, {
+				trimSyntheticReturn = options.trimSyntheticReturn,
+			})
+			local trailingReturn = nil
+			if #mainStatements > 0 and tostring(mainStatements[#mainStatements]):match("^return") then
+				trailingReturn = table.remove(mainStatements)
+			end
+
+			appendStatementLines(mainLines, mainStatements, 0)
+
+			if options.inlineAssignedClosures ~= false then
+				for _, assignment in ipairs(mainContext.closureAssignments) do
+					local childProto = assignment.protoIndex ~= nil and protos[assignment.protoIndex + 1] or nil
+					if childProto ~= nil and isFunctionDeclarationTarget(assignment.target) then
+						assignedClosureProtos[assignment.protoIndex] = true
+
+						table.insert(mainLines, "")
+						table.insert(mainLines, LuauDecompiler.decompileProto(childProto, {
+							functionName = assignment.target,
+							upvalueAliases = buildUpvalueAliases(assignment.captures),
+							showUnsupported = options.showUnsupported,
+							trimSyntheticReturn = options.trimSyntheticReturn,
+						}))
+					end
+				end
+			end
+
+			if trailingReturn ~= nil then
+				table.insert(mainLines, "")
+				appendStatementLines(mainLines, { trailingReturn }, 0)
+			end
+
+			table.insert(lines, table.concat(mainLines, "\n"))
 		end
 	end
 
 	local helperHeaderAdded = false
 	for _, proto in ipairs(protos) do
-		if not (options.topLevelMain ~= false and mainProtoIndex ~= nil and proto.index == mainProtoIndex) then
+		if not assignedClosureProtos[proto.index] and not (options.topLevelMain ~= false and mainProtoIndex ~= nil and proto.index == mainProtoIndex) then
 			if not helperHeaderAdded then
 				table.insert(lines, "")
 				table.insert(lines, "-- Protos")
