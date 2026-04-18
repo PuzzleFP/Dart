@@ -100,6 +100,7 @@ local BytecodeViewer = {}
 local started = false
 local GUI_NAME = "EclipsisControlGui"
 local SESSION_KEY = "__DartViewerCleanup"
+local MAX_AIM_MOUSE_STEP = 120
 
 local function trimText(text)
 	return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -2209,12 +2210,12 @@ function BytecodeViewer.start(config)
 			return nil
 		end
 
-		local viewportPoint, onScreen = camera:WorldToViewportPoint(part.Position)
-		if not onScreen or viewportPoint.Z <= 0 then
+		local screenPoint, onScreen = camera:WorldToScreenPoint(part.Position)
+		if not onScreen or screenPoint.Z <= 0 then
 			return nil
 		end
 
-		return Vector2.new(viewportPoint.X, viewportPoint.Y)
+		return Vector2.new(screenPoint.X, screenPoint.Y)
 	end
 
 	local function getBestAimPartForPlayer(player, mode, mousePosition)
@@ -2334,9 +2335,13 @@ function BytecodeViewer.start(config)
 		return scope.mousemoveabs or scope.mousemoveabsolute, scope.mousemoverel or scope.mousemoverelative
 	end
 
+	local function getRelativeMouseMoveFunction()
+		local _, moveRel = getMouseMoveFunctions()
+		return moveRel
+	end
+
 	local function canMoveMouseCursor()
-		local moveAbs, moveRel = getMouseMoveFunctions()
-		return type(moveAbs) == "function" or type(moveRel) == "function"
+		return type(getRelativeMouseMoveFunction()) == "function"
 	end
 
 	local function moveMouseToScreenPosition(screenPosition)
@@ -2344,17 +2349,23 @@ function BytecodeViewer.start(config)
 			return false
 		end
 
-		local moveAbs, moveRel = getMouseMoveFunctions()
-		if type(moveAbs) == "function" then
-			moveAbs(roundNumber(screenPosition.X), roundNumber(screenPosition.Y))
-			return true
-		end
-
+		local moveRel = getRelativeMouseMoveFunction()
 		if type(moveRel) == "function" then
 			local mousePosition = UserInputService:GetMouseLocation()
+			local delta = screenPosition - mousePosition
+			local magnitude = delta.Magnitude
+
+			if magnitude < 1 then
+				return true
+			end
+
+			if magnitude > MAX_AIM_MOUSE_STEP then
+				delta = delta.Unit * MAX_AIM_MOUSE_STEP
+			end
+
 			moveRel(
-				roundNumber(screenPosition.X - mousePosition.X),
-				roundNumber(screenPosition.Y - mousePosition.Y)
+				roundNumber(delta.X),
+				roundNumber(delta.Y)
 			)
 			return true
 		end
@@ -3625,7 +3636,7 @@ function BytecodeViewer.start(config)
 		if not state.aimbotEnabled then
 			refs.aimStatusLabel.Text = "Aimbot disabled"
 		elseif not canMoveMouseCursor() then
-			refs.aimStatusLabel.Text = "Mouse move API unavailable"
+			refs.aimStatusLabel.Text = "Relative mouse move API unavailable"
 		elseif state.aimHoldActive and state.aimLockedPlayerName ~= "" then
 			refs.aimStatusLabel.Text = ("Locked: %s [%s]"):format(state.aimLockedPlayerName, state.aimLockedPartName ~= "" and state.aimLockedPartName or state.aimTargetPart)
 		elseif state.aimHoldActive then
