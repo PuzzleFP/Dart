@@ -119,6 +119,33 @@ local function splitLines(text)
 	return lines
 end
 
+local function writeClipboard(text)
+	local writer
+
+	if type(setclipboard) == "function" then
+		writer = setclipboard
+	elseif type(toclipboard) == "function" then
+		writer = toclipboard
+	elseif type(set_clipboard) == "function" then
+		writer = set_clipboard
+	elseif type(writeclipboard) == "function" then
+		writer = writeclipboard
+	elseif type(syn) == "table" and type(syn.write_clipboard) == "function" then
+		writer = syn.write_clipboard
+	end
+
+	if writer == nil then
+		return false, "Clipboard API unavailable in this executor"
+	end
+
+	local ok, result = pcall(writer, tostring(text or ""))
+	if not ok then
+		return false, result
+	end
+
+	return true
+end
+
 local function containsFilter(text, filterText)
 	if filterText == "" then
 		return true
@@ -1227,6 +1254,21 @@ local function createGui(state)
 
 	local outputTitle = makeSectionTitle(outputHeader, "Output", Color3.fromRGB(255, 224, 171))
 	outputTitle.Position = UDim2.fromOffset(0, 0)
+	outputTitle.Size = UDim2.new(1, -218, 0, 20)
+
+	local copyOpcodesButton = NativeUi.makeButton(outputHeader, "Copy Opcodes", {
+		Position = UDim2.new(1, -210, 0, 0),
+		Size = UDim2.fromOffset(100, 24),
+		TextSize = 11,
+		CornerRadius = 8,
+	})
+
+	local copyDecompileButton = NativeUi.makeButton(outputHeader, "Copy Decompile", {
+		Position = UDim2.new(1, -104, 0, 0),
+		Size = UDim2.fromOffset(104, 24),
+		TextSize = 11,
+		CornerRadius = 8,
+	})
 
 	local outputSourceLabel = NativeUi.makeLabel(outputHeader, "No target loaded", {
 		Font = Enum.Font.Code,
@@ -1939,6 +1981,8 @@ local function createGui(state)
 	refs.outputSourceLabel = outputSourceLabel
 	refs.outputSummaryLabel = outputSummaryLabel
 	refs.outputCodeLabel = outputCodeLabel
+	refs.copyOpcodesButton = copyOpcodesButton
+	refs.copyDecompileButton = copyDecompileButton
 	refs.syncOutputCanvas = syncOutputCanvas
 	refs.inspectorStatusLabel = inspectorStatusLabel
 	refs.chunkSummaryLabel = chunkSummaryLabel
@@ -2496,21 +2540,28 @@ function BytecodeViewer.start(config)
 		refs.applyLayout()
 	end
 
-	local function collectOutputText()
+	local function collectOutputTextForMode(viewMode)
 		if state.lastResult == nil then
 			return ""
 		end
 
-		local outputText
-		if state.viewMode == "code" then
-			outputText = formatCodeView(state.lastResult.chunk, state.showRawOpcodes)
-		elseif state.viewMode == "decompile" then
-			outputText = LuauDecompiler.decompileChunk(state.lastResult.chunk)
-		elseif state.viewMode == "flow" then
-			outputText = LuauControlFlow.formatAnalysis(LuauControlFlow.analyzeChunk(state.lastResult.chunk))
-		else
-			outputText = formatDataView(state.lastResult.chunk)
+		if viewMode == "code" then
+			return formatCodeView(state.lastResult.chunk, state.showRawOpcodes)
 		end
+
+		if viewMode == "decompile" then
+			return LuauDecompiler.decompileChunk(state.lastResult.chunk)
+		end
+
+		if viewMode == "flow" then
+			return LuauControlFlow.formatAnalysis(LuauControlFlow.analyzeChunk(state.lastResult.chunk))
+		end
+
+		return formatDataView(state.lastResult.chunk)
+	end
+
+	local function collectOutputText()
+		local outputText = collectOutputTextForMode(state.viewMode)
 
 		if state.filterText == "" then
 			return outputText
@@ -2524,6 +2575,34 @@ function BytecodeViewer.start(config)
 		end
 
 		return table.concat(filtered, "\n")
+	end
+
+	local function copyOutputMode(viewMode, label)
+		if state.lastResult == nil then
+			setStatus("Nothing loaded to copy", NativeUi.Theme.Error)
+			return
+		end
+
+		local ok, outputText = pcall(function()
+			return collectOutputTextForMode(viewMode)
+		end)
+
+		if not ok then
+			setStatus(("Copy failed: %s"):format(tostring(outputText)), NativeUi.Theme.Error)
+			return
+		end
+
+		if outputText == "" then
+			setStatus(("No %s output to copy"):format(label), NativeUi.Theme.Error)
+			return
+		end
+
+		local copied, copyError = writeClipboard(outputText)
+		if copied then
+			setStatus(("Copied %s"):format(label), NativeUi.Theme.Success)
+		else
+			setStatus(tostring(copyError), NativeUi.Theme.Error)
+		end
 	end
 
 	local function renderOutputView()
@@ -3510,6 +3589,8 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonSelected(refs.dataViewButton, state.viewMode == "data")
 		NativeUi.setButtonSelected(refs.flowViewButton, state.viewMode == "flow")
 		NativeUi.setButtonSelected(refs.rawOpcodesButton, state.showRawOpcodes)
+		NativeUi.setButtonDisabled(refs.copyOpcodesButton, state.lastResult == nil)
+		NativeUi.setButtonDisabled(refs.copyDecompileButton, state.lastResult == nil)
 
 		syncToggleButton(refs.infiniteJumpToggle, state.infiniteJump)
 		syncToggleButton(refs.noClipToggle, state.noClip)
@@ -3826,6 +3907,12 @@ function BytecodeViewer.start(config)
 	trackConnection(refs.refreshViewButton.MouseButton1Click:Connect(function()
 		state.filterText = refs.filterBox.Text
 		renderOutputView()
+	end))
+	trackConnection(refs.copyOpcodesButton.MouseButton1Click:Connect(function()
+		copyOutputMode("code", "opcodes")
+	end))
+	trackConnection(refs.copyDecompileButton.MouseButton1Click:Connect(function()
+		copyOutputMode("decompile", "decompile")
 	end))
 	trackConnection(refs.scriptModeButton.MouseButton1Click:Connect(function()
 		state.sourceMode = "script"
