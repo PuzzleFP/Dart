@@ -204,6 +204,19 @@ local function sanitizeIdentifier(text, fallback)
 	return text
 end
 
+local function getUsefulDebugName(proto)
+	local name = proto and proto.debugName
+	if type(name) ~= "string" or name == "" or name == "<anonymous>" then
+		return nil
+	end
+
+	return sanitizeIdentifier(name, nil)
+end
+
+local function getProtoFunctionName(proto)
+	return getUsefulDebugName(proto) or ("proto_%d"):format(proto.index or 0)
+end
+
 local function quoteString(text)
 	return string.format("%q", tostring(text))
 end
@@ -1450,8 +1463,18 @@ end
 
 local function buildFunctionDeclarationTarget(target, proto)
 	local receiver, method = tostring(target or ""):match("^(.+)%.([A-Za-z_][A-Za-z0-9_]*)$")
+	local debugName = getUsefulDebugName(proto)
+
 	if receiver ~= nil and method ~= "new" and (proto.numParams or 0) > 0 then
+		if debugName ~= nil and (method:match("^k%d+$") or method:match("^proto_%d+$")) then
+			method = debugName
+		end
+
 		return ("%s:%s"):format(receiver, method), true
+	end
+
+	if receiver ~= nil and debugName ~= nil and (method:match("^k%d+$") or method:match("^proto_%d+$")) then
+		return ("%s.%s"):format(receiver, debugName), false
 	end
 
 	return target, false
@@ -1502,7 +1525,7 @@ function LuauDecompiler.decompileProto(proto, options)
 	end
 
 	local lines = {
-		("function %s(%s)"):format(options.functionName or ("proto_%d"):format(proto.index or 0), buildParameterList(proto, options)),
+		("function %s(%s)"):format(options.functionName or getProtoFunctionName(proto), buildParameterList(proto, options)),
 	}
 
 	local unsupportedSummary = summarizeUnsupported(context)
