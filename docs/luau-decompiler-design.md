@@ -18,6 +18,15 @@ The decompiler should be driven by Luau's real bytecode/compiler source, not by 
 5. Lift medium IR into high IR with structured `if`, `while`, `for`, function, and method forms.
 6. Emit readable Luau from high IR.
 
+## Current CFG Recovery
+
+The first structuring pass is intentionally conservative:
+
+- Forward conditional jumps are recovered as `if ... then` regions when the target lands after the fallthrough body.
+- Forward conditional jumps followed by a terminal forward `JUMP` are recovered as `if ... then ... else ... end`.
+- A conditional loop guard whose body ends with `JUMPBACK` / `JUMPX` to the guard is recovered as `while ... do`.
+- Any shape that does not match these patterns is kept as opcode/pc comments until a later high-IR pass can prove it safe.
+
 ## Regression Loop
 
 For every reference pair:

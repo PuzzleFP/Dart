@@ -125,6 +125,36 @@ local COMPARE_OPERATORS = {
 	JUMPIFNOTLT = ">=",
 }
 
+local INVERSE_OPERATORS = {
+	["=="] = "~=",
+	["~="] = "==",
+	["<="] = ">",
+	[">"] = "<=",
+	["<"] = ">=",
+	[">="] = "<",
+}
+
+local CONDITIONAL_JUMPS = {
+	JUMPIF = true,
+	JUMPIFNOT = true,
+	JUMPIFEQ = true,
+	JUMPIFLE = true,
+	JUMPIFLT = true,
+	JUMPIFNOTEQ = true,
+	JUMPIFNOTLE = true,
+	JUMPIFNOTLT = true,
+	JUMPXEQKNIL = true,
+	JUMPXEQKB = true,
+	JUMPXEQKN = true,
+	JUMPXEQKS = true,
+}
+
+local UNCONDITIONAL_JUMPS = {
+	JUMP = true,
+	JUMPBACK = true,
+	JUMPX = true,
+}
+
 local CAPTURE_TYPES = {
 	[0] = "VAL",
 	[1] = "REF",
@@ -260,6 +290,10 @@ local function getLocalNameAtPc(proto, register, pc)
 	end
 
 	return nil
+end
+
+local function instructionEndPc(instruction)
+	return instruction.pc + (instruction.length or 1)
 end
 
 local function makeContext(proto, options)
@@ -651,6 +685,171 @@ local function emitJump(context, instruction)
 	emitUnsupported(context, instruction)
 end
 
+local function inverseOperator(operator)
+	return INVERSE_OPERATORS[operator] or operator
+end
+
+local function negateExpression(expression)
+	expression = tostring(expression)
+	if expression:match("^[A-Za-z_][A-Za-z0-9_%.:%[%]\"']*$") then
+		return "not " .. expression
+	end
+
+	return "not (" .. expression .. ")"
+end
+
+local function conditionForJump(context, instruction, invert)
+	local name = instruction.name
+	local fields = instruction.fields
+	local aux = instruction.decodedAux
+	local operator = COMPARE_OPERATORS[name]
+
+	if name == "JUMPIF" then
+		local expression = getRegister(context, fields.A)
+		return invert and negateExpression(expression) or expression
+	end
+
+	if name == "JUMPIFNOT" then
+		local expression = getRegister(context, fields.A)
+		return invert and expression or negateExpression(expression)
+	end
+
+	if operator ~= nil then
+		if invert then
+			operator = inverseOperator(operator)
+		end
+
+		return ("%s %s %s"):format(
+			getRegister(context, fields.A),
+			operator,
+			getRegister(context, aux and aux.register or -1)
+		)
+	end
+
+	if name == "JUMPXEQKNIL" then
+		local operatorText = aux and aux.notFlag and "~=" or "=="
+		if invert then
+			operatorText = inverseOperator(operatorText)
+		end
+
+		return ("%s %s nil"):format(getRegister(context, fields.A), operatorText)
+	end
+
+	if name == "JUMPXEQKB" then
+		local operatorText = aux and aux.notFlag and "~=" or "=="
+		if invert then
+			operatorText = inverseOperator(operatorText)
+		end
+
+		return ("%s %s %s"):format(getRegister(context, fields.A), operatorText, tostring(aux and aux.value))
+	end
+
+	if name == "JUMPXEQKN" or name == "JUMPXEQKS" then
+		local operatorText = aux and aux.notFlag and "~=" or "=="
+		if invert then
+			operatorText = inverseOperator(operatorText)
+		end
+
+		return ("%s %s %s"):format(
+			getRegister(context, fields.A),
+			operatorText,
+			constantToExpression(getConstant(context.proto, aux and aux.constantIndex))
+		)
+	end
+
+	local fallback = ("pc_%d_condition"):format(instruction.pc or 0)
+	return invert and negateExpression(fallback) or fallback
+end
+
+local function indexInstructions(instructions)
+	local pcToIndex = {}
+	for index, instruction in ipairs(instructions) do
+		pcToIndex[instruction.pc] = index
+	end
+	return pcToIndex
+end
+
+local function findInstructionBeforePc(instructions, pcToIndex, pc, lowerIndex)
+	local index = pcToIndex[pc]
+	if index == nil then
+		return nil, nil
+	end
+
+	for candidateIndex = index - 1, lowerIndex or 1, -1 do
+		local candidate = instructions[candidateIndex]
+		if candidate ~= nil then
+			return candidate, candidateIndex
+		end
+	end
+
+	return nil, nil
+end
+
+local function indexAtOrAfterPc(instructions, pcToIndex, pc)
+	local direct = pcToIndex[pc]
+	if direct ~= nil then
+		return direct
+	end
+
+	for index, instruction in ipairs(instructions) do
+		if instruction.pc >= pc then
+			return index
+		end
+	end
+
+	return #instructions + 1
+end
+
+local function canStructureTarget(instruction, endPc)
+	local targetPc = instruction.jumpTargetPc
+	return targetPc ~= nil and targetPc > instructionEndPc(instruction) and targetPc <= endPc
+end
+
+local function appendIndentedLines(lines, statements, indent)
+	local prefix = string.rep("    ", indent or 0)
+
+	if statements == nil or #statements == 0 then
+		table.insert(lines, prefix .. "-- empty")
+		return
+	end
+
+	for _, statement in ipairs(statements) do
+		for line in tostring(statement):gmatch("([^\n]*)\n?") do
+			if line == "" and statement:sub(-1) ~= "\n" then
+				break
+			end
+
+			table.insert(lines, prefix .. line)
+		end
+	end
+end
+
+local function makeIfStatement(condition, thenStatements, elseStatements)
+	local lines = {
+		("if %s then"):format(condition),
+	}
+
+	appendIndentedLines(lines, thenStatements, 1)
+
+	if elseStatements ~= nil then
+		table.insert(lines, "else")
+		appendIndentedLines(lines, elseStatements, 1)
+	end
+
+	table.insert(lines, "end")
+	return table.concat(lines, "\n")
+end
+
+local function makeWhileStatement(condition, bodyStatements)
+	local lines = {
+		("while %s do"):format(condition),
+	}
+
+	appendIndentedLines(lines, bodyStatements, 1)
+	table.insert(lines, "end")
+	return table.concat(lines, "\n")
+end
+
 local function handleInstruction(context, instruction)
 	local proto = context.proto
 	local name = instruction.name
@@ -873,6 +1072,121 @@ local function handleInstruction(context, instruction)
 	end
 end
 
+local decompileStructuredRange
+
+local function cloneMap(map)
+	local copy = {}
+	for key, value in pairs(map or {}) do
+		copy[key] = value
+	end
+	return copy
+end
+
+local function emitWithStatementSink(context, sink, callback)
+	local previousStatements = context.statements
+	context.statements = sink
+
+	local ok, result = pcall(callback)
+	context.statements = previousStatements
+
+	if not ok then
+		error(result, 0)
+	end
+
+	return result
+end
+
+local function decompileChildRange(context, instructions, pcToIndex, startPc, endPc)
+	local statements = {}
+	local registers = cloneMap(context.registers)
+	local declaredLocals = cloneMap(context.declaredLocals)
+	local pendingClosure = context.pendingClosure
+	local openResult = context.openResult
+
+	local ok, result = pcall(emitWithStatementSink, context, statements, function()
+		decompileStructuredRange(context, instructions, pcToIndex, startPc, endPc)
+	end)
+
+	context.registers = registers
+	context.declaredLocals = declaredLocals
+	context.pendingClosure = pendingClosure
+	context.openResult = openResult
+
+	if not ok then
+		error(result, 0)
+	end
+
+	return statements
+end
+
+local function tryEmitStructuredConditional(context, instructions, pcToIndex, index, endPc)
+	local instruction = instructions[index]
+	if instruction == nil or not CONDITIONAL_JUMPS[instruction.name] or not canStructureTarget(instruction, endPc) then
+		return nil
+	end
+
+	local nextPc = instructionEndPc(instruction)
+	local targetPc = instruction.jumpTargetPc
+	local lastBeforeTarget = findInstructionBeforePc(instructions, pcToIndex, targetPc, index + 1)
+
+	if lastBeforeTarget ~= nil and (lastBeforeTarget.name == "JUMPBACK" or lastBeforeTarget.name == "JUMPX") and lastBeforeTarget.jumpTargetPc == instruction.pc then
+		local condition = conditionForJump(context, instruction, true)
+		local body = decompileChildRange(context, instructions, pcToIndex, nextPc, lastBeforeTarget.pc)
+		emit(context, makeWhileStatement(condition, body))
+		return indexAtOrAfterPc(instructions, pcToIndex, targetPc)
+	end
+
+	if lastBeforeTarget ~= nil and UNCONDITIONAL_JUMPS[lastBeforeTarget.name] and lastBeforeTarget.jumpTargetPc ~= nil and lastBeforeTarget.jumpTargetPc > targetPc and lastBeforeTarget.jumpTargetPc <= endPc then
+		local condition = conditionForJump(context, instruction, true)
+		local thenBody = decompileChildRange(context, instructions, pcToIndex, nextPc, lastBeforeTarget.pc)
+		local elseBody = decompileChildRange(context, instructions, pcToIndex, targetPc, lastBeforeTarget.jumpTargetPc)
+		emit(context, makeIfStatement(condition, thenBody, elseBody))
+		return indexAtOrAfterPc(instructions, pcToIndex, lastBeforeTarget.jumpTargetPc)
+	end
+
+	local condition = conditionForJump(context, instruction, true)
+	local body = decompileChildRange(context, instructions, pcToIndex, nextPc, targetPc)
+	emit(context, makeIfStatement(condition, body))
+	return indexAtOrAfterPc(instructions, pcToIndex, targetPc)
+end
+
+decompileStructuredRange = function(context, instructions, pcToIndex, startPc, endPc)
+	local index = pcToIndex[startPc]
+	if index == nil then
+		return
+	end
+
+	while index <= #instructions do
+		local instruction = instructions[index]
+		if instruction == nil or instruction.pc >= endPc then
+			break
+		end
+
+		local nextIndex = tryEmitStructuredConditional(context, instructions, pcToIndex, index, endPc)
+		if nextIndex ~= nil and nextIndex > index then
+			index = nextIndex
+		else
+			handleInstruction(context, instruction)
+			index = index + 1
+		end
+	end
+end
+
+local function decompileStructuredProto(context)
+	local instructions = context.proto.disassembly and context.proto.disassembly.instructions or {}
+	if #instructions == 0 then
+		return false
+	end
+
+	local pcToIndex = indexInstructions(instructions)
+	local startPc = instructions[1].pc
+	local lastInstruction = instructions[#instructions]
+	local endPc = instructionEndPc(lastInstruction)
+
+	decompileStructuredRange(context, instructions, pcToIndex, startPc, endPc)
+	return true
+end
+
 local function buildParameterList(proto)
 	local params = {}
 	local count = proto.numParams or proto.params or 0
@@ -985,8 +1299,10 @@ local function analyzeProto(proto, options)
 	local context = makeContext(proto, options)
 
 	if proto.disassembly and proto.disassembly.instructions then
-		for _, instruction in ipairs(proto.disassembly.instructions) do
-			handleInstruction(context, instruction)
+		if options.structuredControlFlow == false or not decompileStructuredProto(context) then
+			for _, instruction in ipairs(proto.disassembly.instructions) do
+				handleInstruction(context, instruction)
+			end
 		end
 	end
 
@@ -1041,7 +1357,7 @@ function LuauDecompiler.decompileChunk(chunk, options)
 
 	local lines = {
 		"-- LuauDecompiler v2",
-		"-- best-effort output; complex control flow is emitted as pc comments",
+		"-- best-effort output; simple control flow is structured, complex flow remains pc comments",
 	}
 
 	local protos = chunk.protos or {}
@@ -1120,7 +1436,7 @@ function LuauDecompiler.decompileChunk(chunk, options)
 	if options.topLevelMain == false then
 		lines = {
 			"-- LuauDecompiler v2",
-			"-- best-effort output; complex control flow is emitted as pc comments",
+			"-- best-effort output; simple control flow is structured, complex flow remains pc comments",
 		}
 
 		for _, proto in ipairs(protos) do
