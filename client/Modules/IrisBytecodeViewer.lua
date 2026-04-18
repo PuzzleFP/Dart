@@ -1351,7 +1351,7 @@ local function createGui(state)
 	local viewSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 142),
+		Size = UDim2.new(1, 0, 0, 176),
 		Parent = inspectorContent,
 	})
 
@@ -1376,13 +1376,19 @@ local function createGui(state)
 		TextSize = 12,
 	})
 
+	local flowViewButton = NativeUi.makeButton(viewSection, "Flow", {
+		Position = UDim2.fromOffset(254, 42),
+		Size = UDim2.fromOffset(64, 28),
+		TextSize = 12,
+	})
+
 	local rawOpcodesButton = NativeUi.makeButton(viewSection, "Raw Opcodes", {
 		Position = UDim2.fromOffset(12, 82),
 		Size = UDim2.fromOffset(116, 28),
 		TextSize = 12,
 	})
 
-	local viewHint = makeBodyLabel(viewSection, "Code is the fast default. Decompile is heuristic v1 and will stay conservative around control flow.", {
+	local viewHint = makeBodyLabel(viewSection, "Flow builds CFG/basic blocks. Decompile v2 is still conservative around structured if/loop recovery.", {
 		Position = UDim2.fromOffset(12, 116),
 		Size = UDim2.new(1, -24, 0, 0),
 	})
@@ -1947,6 +1953,7 @@ local function createGui(state)
 	refs.codeViewButton = codeViewButton
 	refs.decompileViewButton = decompileViewButton
 	refs.dataViewButton = dataViewButton
+	refs.flowViewButton = flowViewButton
 	refs.rawOpcodesButton = rawOpcodesButton
 	refs.filterBox = filterBox
 	refs.refreshViewButton = refreshViewButton
@@ -1984,6 +1991,7 @@ function BytecodeViewer.start(config)
 	local state = makeState(config)
 	local refs = createGui(state)
 	local LuauDecompiler = loadRemoteModule("LuauDecompiler")
+	local LuauControlFlow = loadRemoteModule("LuauControlFlow")
 	local scope = getGlobalScope()
 	local cleanupTasks = {}
 	local cleaning = false
@@ -2498,6 +2506,8 @@ function BytecodeViewer.start(config)
 			outputText = formatCodeView(state.lastResult.chunk, state.showRawOpcodes)
 		elseif state.viewMode == "decompile" then
 			outputText = LuauDecompiler.decompileChunk(state.lastResult.chunk)
+		elseif state.viewMode == "flow" then
+			outputText = LuauControlFlow.formatAnalysis(LuauControlFlow.analyzeChunk(state.lastResult.chunk))
 		else
 			outputText = formatDataView(state.lastResult.chunk)
 		end
@@ -3498,6 +3508,7 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonSelected(refs.codeViewButton, state.viewMode == "code")
 		NativeUi.setButtonSelected(refs.decompileViewButton, state.viewMode == "decompile")
 		NativeUi.setButtonSelected(refs.dataViewButton, state.viewMode == "data")
+		NativeUi.setButtonSelected(refs.flowViewButton, state.viewMode == "flow")
 		NativeUi.setButtonSelected(refs.rawOpcodesButton, state.showRawOpcodes)
 
 		syncToggleButton(refs.infiniteJumpToggle, state.infiniteJump)
@@ -3844,6 +3855,11 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.dataViewButton.MouseButton1Click:Connect(function()
 		state.viewMode = "data"
+		syncControlState()
+		renderOutputView()
+	end))
+	trackConnection(refs.flowViewButton.MouseButton1Click:Connect(function()
+		state.viewMode = "flow"
 		syncControlState()
 		renderOutputView()
 	end))
