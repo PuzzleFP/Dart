@@ -1205,10 +1205,14 @@ local function createGui(state)
 	local main = NativeUi.makePanel(screenGui, {
 		Name = "Main",
 		BackgroundColor3 = NativeUi.Theme.Background,
+		BackgroundTransparency = 1,
 		Position = UDim2.new(0.5, -620, 0.5, -360),
 		Size = UDim2.fromOffset(1240, 720),
 		ClipsDescendants = true,
 	})
+	if main:FindFirstChildOfClass("UIStroke") ~= nil then
+		main:FindFirstChildOfClass("UIStroke").Transparency = 1
+	end
 
 	local shadow = NativeUi.create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1221,6 +1225,7 @@ local function createGui(state)
 		Parent = main,
 	})
 	NativeUi.corner(shadow, 14)
+	shadow.Visible = false
 
 	local navWidth = 156
 	local contentX = 180
@@ -1361,49 +1366,49 @@ local function createGui(state)
 	local mainWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 60),
-		Size = UDim2.new(1, -(contentX + 12), 1, -72),
-		Parent = main,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		Parent = workspaceShell,
 	})
 
 	local espWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 60),
-		Size = UDim2.new(1, -(contentX + 12), 1, -72),
-		Parent = main,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		Parent = workspaceShell,
 	})
 
 	local spyWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 60),
-		Size = UDim2.new(1, -(contentX + 12), 1, -72),
-		Parent = main,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		Parent = workspaceShell,
 	})
 
 	local bytecodeWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 60),
-		Size = UDim2.new(1, -(contentX + 12), 1, -72),
-		Parent = main,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		Parent = workspaceShell,
 	})
 
 	local gunsWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 60),
-		Size = UDim2.new(1, -(contentX + 12), 1, -72),
-		Parent = main,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		Parent = workspaceShell,
 	})
 
 	local buildWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 60),
-		Size = UDim2.new(1, -(contentX + 12), 1, -72),
-		Parent = main,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		Parent = workspaceShell,
 	})
 
 	local mainScroll, mainContent = NativeUi.makeScrollList(mainWorkspace, {
@@ -2274,11 +2279,17 @@ local function createGui(state)
 		workspaceShell.Position = UDim2.fromOffset(contentX, 60)
 		workspaceShell.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 
+		mainWorkspace.Position = UDim2.fromOffset(0, 0)
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		espWorkspace.Position = UDim2.fromOffset(0, 0)
 		espWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		spyWorkspace.Position = UDim2.fromOffset(0, 0)
 		spyWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		bytecodeWorkspace.Position = UDim2.fromOffset(0, 0)
 		bytecodeWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		gunsWorkspace.Position = UDim2.fromOffset(0, 0)
 		gunsWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		buildWorkspace.Position = UDim2.fromOffset(0, 0)
 		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		mainScroll.Size = UDim2.new(1, -24, 1, -24)
 
