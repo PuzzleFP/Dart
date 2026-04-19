@@ -110,8 +110,10 @@ local GUI_NAME = "EclipsisControlGui"
 local SESSION_KEY = "__DartViewerCleanup"
 local MAX_AIM_MOUSE_STEP = 120
 local GC_SCRIPT_PATH_PREFIX = "__gc_script:"
-local GC_SCAN_LIMIT = 12000
+local GC_SCAN_LIMIT = 3000
 local gcScriptRegistry = setmetatable({}, { __mode = "v" })
+local gcScriptBrowserRoot = nil
+local dynamicWorkspaceScripts = setmetatable({}, { __mode = "k" })
 local WORKSPACE_COPY = {
 	main = {
 		kicker = "MAIN",
@@ -410,10 +412,15 @@ local function buildGcScriptBrowserNode(scriptInstance)
 	}
 end
 
-local function buildGcScriptBrowserRoot()
+local function buildGcScriptBrowserRoot(forceScan)
+	if not forceScan then
+		return gcScriptBrowserRoot
+	end
+
 	for path in pairs(gcScriptRegistry) do
 		gcScriptRegistry[path] = nil
 	end
+	gcScriptBrowserRoot = nil
 
 	if type(getgc) ~= "function" then
 		return nil
@@ -449,10 +456,48 @@ local function buildGcScriptBrowserRoot()
 		return string.lower(left.name) < string.lower(right.name)
 	end)
 
-	return {
+	gcScriptBrowserRoot = {
 		name = "GC Scripts",
 		path = "__gc_scripts",
 		className = ("getgc %d"):format(#nodes),
+		isScript = false,
+		children = nodes,
+		depth = 0,
+	}
+
+	return gcScriptBrowserRoot
+end
+
+local function buildDynamicWorkspaceScriptRoot()
+	local nodes = {}
+
+	for scriptInstance in pairs(dynamicWorkspaceScripts) do
+		if typeof(scriptInstance) == "Instance" and scriptInstance.Parent ~= nil and isScriptLike(scriptInstance) then
+			table.insert(nodes, {
+				name = scriptInstance.Name,
+				path = scriptInstance:GetFullName(),
+				className = scriptInstance.ClassName .. " live",
+				isScript = true,
+				children = {},
+				depth = 1,
+			})
+		else
+			dynamicWorkspaceScripts[scriptInstance] = nil
+		end
+	end
+
+	if #nodes == 0 then
+		return nil
+	end
+
+	table.sort(nodes, function(left, right)
+		return string.lower(left.path) < string.lower(right.path)
+	end)
+
+	return {
+		name = "Live Workspace Scripts",
+		path = "__workspace_live_scripts",
+		className = ("workspace %d"):format(#nodes),
 		isScript = false,
 		children = nodes,
 		depth = 0,
@@ -477,7 +522,6 @@ local function collectScriptBrowserRoots()
 	push(game:GetService("StarterGui"))
 	push(game:GetService("StarterPack"))
 	push(game:GetService("StarterPlayer"))
-	push(Workspace)
 
 	local localPlayer = Players.LocalPlayer
 	if localPlayer ~= nil then
@@ -485,6 +529,7 @@ local function collectScriptBrowserRoots()
 		push(localPlayer:FindFirstChildOfClass("PlayerScripts"))
 		push(localPlayer:FindFirstChildOfClass("PlayerGui"))
 		push(localPlayer:FindFirstChildOfClass("Backpack"))
+		push(localPlayer.Character)
 	end
 
 	return roots
@@ -522,7 +567,7 @@ local function buildScriptBrowserNode(instance, depth)
 	}
 end
 
-local function buildScriptBrowserTree()
+local function buildScriptBrowserTree(forceGcScan)
 	local roots = {}
 
 	for _, root in ipairs(collectScriptBrowserRoots()) do
@@ -532,7 +577,12 @@ local function buildScriptBrowserTree()
 		end
 	end
 
-	local gcRoot = buildGcScriptBrowserRoot()
+	local workspaceRoot = buildDynamicWorkspaceScriptRoot()
+	if workspaceRoot ~= nil then
+		table.insert(roots, workspaceRoot)
+	end
+
+	local gcRoot = buildGcScriptBrowserRoot(forceGcScan)
 	if gcRoot ~= nil then
 		table.insert(roots, gcRoot)
 	end
@@ -3685,8 +3735,8 @@ function BytecodeViewer.start(config)
 	local renderTreeView
 	local scriptBrowserRefreshQueued = false
 
-	local function refreshScriptBrowser()
-		state.scriptBrowserTree = buildScriptBrowserTree()
+	local function refreshScriptBrowser(forceGcScan)
+		state.scriptBrowserTree = buildScriptBrowserTree(forceGcScan == true)
 		state.scriptBrowserError = nil
 	end
 
@@ -3702,15 +3752,26 @@ function BytecodeViewer.start(config)
 				return
 			end
 
-			refreshScriptBrowser()
+			refreshScriptBrowser(false)
 			if renderTreeView ~= nil then
 				renderTreeView()
 			end
 		end)
 	end
 
-	local function handleScriptBrowserMutation(instance)
+	local function handleScriptBrowserAdded(instance)
 		if typeof(instance) == "Instance" and isScriptLike(instance) then
+			if instance:IsDescendantOf(Workspace) then
+				dynamicWorkspaceScripts[instance] = true
+			end
+
+			scheduleScriptBrowserRefresh()
+		end
+	end
+
+	local function handleScriptBrowserRemoving(instance)
+		if typeof(instance) == "Instance" and isScriptLike(instance) then
+			dynamicWorkspaceScripts[instance] = nil
 			scheduleScriptBrowserRefresh()
 		end
 	end
@@ -3727,8 +3788,8 @@ function BytecodeViewer.start(config)
 		end
 
 		watchedRoots[root] = true
-		trackConnection(root.DescendantAdded:Connect(handleScriptBrowserMutation))
-		trackConnection(root.DescendantRemoving:Connect(handleScriptBrowserMutation))
+		trackConnection(root.DescendantAdded:Connect(handleScriptBrowserAdded))
+		trackConnection(root.DescendantRemoving:Connect(handleScriptBrowserRemoving))
 	end
 
 	local function bindScriptBrowserMutationWatchers()
@@ -3736,6 +3797,9 @@ function BytecodeViewer.start(config)
 		for _, root in ipairs(collectScriptBrowserRoots()) do
 			connectScriptBrowserRoot(root, watchedRoots)
 		end
+
+		trackConnection(Workspace.DescendantAdded:Connect(handleScriptBrowserAdded))
+		trackConnection(Workspace.DescendantRemoving:Connect(handleScriptBrowserRemoving))
 	end
 
 	local function isNodeExpanded(node)
@@ -3763,7 +3827,7 @@ function BytecodeViewer.start(config)
 		if result ~= nil then
 			state.lastLoadedSourceMode = "script"
 			state.lastLoadedTarget = path
-			state.selectedScriptPath = result.sourceLabel
+			state.selectedScriptPath = path
 		end
 
 		renderOutputView()
@@ -5033,7 +5097,7 @@ function BytecodeViewer.start(config)
 		syncControlState()
 	end))
 	trackConnection(refs.refreshTreeButton.MouseButton1Click:Connect(function()
-		refreshScriptBrowser()
+		refreshScriptBrowser(true)
 		renderTreeView()
 	end))
 	trackConnection(refs.loadButton.MouseButton1Click:Connect(function()
@@ -5256,7 +5320,7 @@ function BytecodeViewer.start(config)
 	wellDistanceSlider.setValue(state.wellDistance)
 	refreshPlayersList()
 	refreshEspPlayersList()
-	refreshScriptBrowser()
+	refreshScriptBrowser(false)
 	reconcilePlayerHighlights()
 	reconcileObjectHighlights()
 	syncControlState()
