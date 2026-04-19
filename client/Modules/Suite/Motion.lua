@@ -11,6 +11,8 @@ local function easingStyle(name)
 		return Enum.EasingStyle.Quad
 	elseif name == "sine" then
 		return Enum.EasingStyle.Sine
+	elseif name == "linear" then
+		return Enum.EasingStyle.Linear
 	end
 
 	return Enum.EasingStyle.Quint

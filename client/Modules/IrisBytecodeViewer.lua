@@ -1763,10 +1763,10 @@ local function createOverlayLayers(screenGui, refs)
 
 	local alertRail = NativeUi.create("Frame", {
 		Name = "AlertRail",
-		AnchorPoint = Vector2.new(1, 0),
+		AnchorPoint = Vector2.new(0, 0),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.new(1, -14, 0, 92),
+		Position = UDim2.fromOffset(14, 92),
 		Size = UDim2.fromOffset(306, 252),
 		ZIndex = 35,
 		Parent = screenGui,
@@ -1808,6 +1808,15 @@ local function createOverlayLayers(screenGui, refs)
 				Size = UDim2.new(1, -28, 0, 20),
 				ZIndex = 36,
 			}),
+			timerTrack = NativeUi.create("Frame", {
+				BackgroundColor3 = NativeUi.Theme.Surface,
+				BackgroundTransparency = 0.35,
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, 14, 1, -6),
+				Size = UDim2.new(1, -28, 0, 2),
+				ZIndex = 37,
+				Parent = card,
+			}),
 		}
 	end
 
@@ -1817,39 +1826,17 @@ local function createOverlayLayers(screenGui, refs)
 		makeAlertCard(3),
 	}
 
-	local threatPeek = makeOverlayPanel(screenGui, {
-		Name = "ThreatPeek",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, 340, 0, 92),
-		Size = UDim2.fromOffset(320, 76),
-		Visible = false,
-		ZIndex = 39,
-	}, 18, NativeUi.Theme.Warning, 0.12)
-
-	refs.threatPeek = threatPeek
-	refs.threatPeekLevel = NativeUi.makeLabel(threatPeek, "WARNING", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.Warning,
-		TextSize = 11,
-		Position = UDim2.fromOffset(16, 12),
-		Size = UDim2.new(1, -32, 0, 14),
-		ZIndex = 40,
-	})
-	refs.threatPeekTitle = NativeUi.makeLabel(threatPeek, "Enemy close", {
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		Position = UDim2.fromOffset(16, 30),
-		Size = UDim2.new(1, -32, 0, 20),
-		ZIndex = 40,
-	})
-	refs.threatPeekDetail = NativeUi.makeLabel(threatPeek, "No weapon read", {
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		TextWrapped = true,
-		Position = UDim2.fromOffset(16, 51),
-		Size = UDim2.new(1, -32, 0, 18),
-		ZIndex = 40,
-	})
+	for _, card in ipairs(refs.alertCards) do
+		NativeUi.corner(card.timerTrack, 999)
+		card.timerFill = NativeUi.create("Frame", {
+			BackgroundColor3 = NativeUi.Theme.Info,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 1, 0),
+			ZIndex = 38,
+			Parent = card.timerTrack,
+		})
+		NativeUi.corner(card.timerFill, 999)
+	end
 end
 
 local function createSpyWorkspace(spyWorkspace, refs)
@@ -5507,50 +5494,62 @@ function BytecodeViewer.start(config)
 		local focusedPlayer = getFocusedSpyPlayer()
 		local activeEsp = anyEspSignalEnabled()
 		local signal = {
-			title = "Assist",
-			detail = "Movement and utility ready",
+			title = "Dart",
+			detail = "Client intelligence active",
 			badge = "READY",
 			level = "success",
-			width = 220,
+			width = 252,
 			height = 52,
 		}
 
-		if state.activeTab == "esp" then
-			signal.title = "Visibility"
-			signal.detail = activeEsp and "ESP filters active" or "Fast scan tools idle"
-			signal.badge = activeEsp and "WATCH" or "IDLE"
-			signal.level = activeEsp and "warning" or "info"
-			signal.width = 292
-		elseif state.activeTab == "spy" then
-			signal.title = focusedPlayer and "Recon" or "Spy"
-			signal.detail = focusedPlayer and (focusedPlayer.Name .. " focus") or "Select one target"
-			signal.badge = focusedPlayer and "LIVE" or "IDLE"
-			signal.level = focusedPlayer and "warning" or "info"
-			signal.width = focusedPlayer and 326 or 242
-		elseif state.activeTab == "guns" then
+		if state.autoFireEnabled then
 			signal.title = "Combat"
-			signal.detail = state.autoFireEnabled and "Auto-fire armed" or (state.aimbotEnabled and "Ctrl lock armed" or "Scoped settings idle")
-			signal.badge = (state.autoFireEnabled or state.aimbotEnabled) and "ARMED" or "SAFE"
-			signal.level = (state.autoFireEnabled or state.aimbotEnabled) and "warning" or "info"
-			signal.width = 300
-		elseif state.activeTab == "build" then
-			signal.title = "Build"
-			signal.detail = "Placement utilities staged"
-			signal.badge = "ROUTE"
-			signal.level = "info"
-			signal.width = 280
-		elseif state.activeTab == "remote" then
+			signal.detail = "Auto-fire armed"
+			signal.badge = "ARMED"
+			signal.level = "warning"
+			signal.width = 286
+		elseif state.aimbotEnabled then
+			signal.title = "Combat"
+			signal.detail = "Ctrl lock armed"
+			signal.badge = "ARMED"
+			signal.level = "warning"
+			signal.width = 278
+		elseif state.macroEnabled then
+			signal.title = "Macro"
+			signal.detail = ("%s automation staged"):format(state.macroTargetKind)
+			signal.badge = "AUTO"
+			signal.level = "warning"
+			signal.width = 320
+		elseif focusedPlayer ~= nil then
+			signal.title = "Recon"
+			signal.detail = focusedPlayer.Name .. " focus"
+			signal.badge = "LIVE"
+			signal.level = "warning"
+			signal.width = 326
+		elseif state.remoteWatcherEnabled then
 			signal.title = "Remote"
-			signal.detail = state.remoteWatcherEnabled and "Remote watcher active" or "Remote watcher idle"
-			signal.badge = state.remoteWatcherEnabled and "WATCH" or "IDLE"
-			signal.level = state.remoteWatcherEnabled and "warning" or "info"
+			signal.detail = "Remote watcher active"
+			signal.badge = "WATCH"
+			signal.level = "info"
 			signal.width = 306
-		elseif state.activeTab == "bytecode" then
-			signal.title = "Code"
-			signal.detail = state.lastResult and "Decompiler output loaded" or "Script inspection ready"
-			signal.badge = state.lastResult and "LOADED" or "READY"
-			signal.level = state.lastResult and "success" or "info"
-			signal.width = 318
+		elseif state.freeCameraEnabled then
+			signal.title = "Camera"
+			signal.detail = "Free camera active"
+			signal.badge = "LIVE"
+			signal.level = "info"
+			signal.width = 292
+		elseif state.ghostCharacterEnabled then
+			signal.title = "Local Body"
+			signal.detail = "Client-only character active"
+			signal.badge = "LOCAL"
+			signal.level = "info"
+			signal.width = 340
+		elseif activeEsp then
+			signal.title = "Visibility"
+			signal.detail = "ESP filters active"
+			signal.badge = "WATCH"
+			signal.level = "info"
+			signal.width = 292
 		end
 
 		local threatSignal = getIntelligenceThreatSignal and getIntelligenceThreatSignal() or nil
@@ -5636,6 +5635,123 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonDisabled(refs.spyHighlightButton, false)
 	end
 
+	refs.setAlertCardTextTransparency = function(card, transparency)
+		card.level.TextTransparency = transparency
+		card.title.TextTransparency = transparency
+		card.detail.TextTransparency = transparency
+	end
+
+	refs.tweenAlertCardText = function(card, transparency)
+		SuiteMotion.tween(card.level, {
+			TextTransparency = transparency,
+		}, {
+			duration = 0.16,
+			style = "quad",
+		})
+		SuiteMotion.tween(card.title, {
+			TextTransparency = transparency,
+		}, {
+			duration = 0.16,
+			style = "quad",
+		})
+		SuiteMotion.tween(card.detail, {
+			TextTransparency = transparency,
+		}, {
+			duration = 0.16,
+			style = "quad",
+		})
+	end
+
+	refs.updateAlertTimer = function(card, alert, alertColor)
+		if alert.expiresAt == nil or alert.createdAt == nil then
+			card.timerAlertId = nil
+			card.timerTrack.Visible = false
+			return
+		end
+
+		local now = os.clock()
+		local total = math.max(0.05, alert.expiresAt - alert.createdAt)
+		local remaining = clamp(alert.expiresAt - now, 0, total)
+		local progress = total > 0 and remaining / total or 0
+
+		card.timerTrack.Visible = true
+		card.timerFill.BackgroundColor3 = alertColor
+		card.timerTrack.BackgroundTransparency = 0.35
+		card.timerFill.BackgroundTransparency = 0
+		if card.timerAlertId ~= alert.id then
+			card.timerAlertId = alert.id
+			card.timerFill.Size = UDim2.new(progress, 0, 1, 0)
+			SuiteMotion.tween(card.timerFill, {
+				Size = UDim2.new(0, 0, 1, 0),
+			}, {
+				duration = remaining,
+				style = "linear",
+			})
+		end
+	end
+
+	refs.showAlertCard = function(card, index, alert, alertColor)
+		local rowY = (index - 1) * 84
+		local isNewAlert = card.currentAlertId ~= alert.id
+		card.currentAlertId = alert.id
+		card.frame.Visible = true
+
+		if isNewAlert then
+			card.frame.Position = UDim2.fromOffset(-34, rowY)
+			card.frame.BackgroundTransparency = 1
+			card.timerTrack.BackgroundTransparency = 1
+			card.timerFill.BackgroundTransparency = 1
+			refs.setAlertCardTextTransparency(card, 1)
+		end
+
+		SuiteMotion.tween(card.frame, {
+			BackgroundTransparency = 0,
+			Position = UDim2.fromOffset(0, rowY),
+		}, {
+			duration = 0.22,
+			style = "quint",
+		})
+		refs.tweenAlertCardText(card, 0)
+		refs.updateAlertTimer(card, alert, alertColor)
+	end
+
+	refs.hideAlertCard = function(card, index)
+		if card.currentAlertId == nil then
+			card.frame.Visible = false
+			return
+		end
+
+		local rowY = (index - 1) * 84
+		card.currentAlertId = nil
+		card.timerAlertId = nil
+		SuiteMotion.tween(card.frame, {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(-34, rowY),
+		}, {
+			duration = 0.18,
+			style = "quad",
+		})
+		refs.tweenAlertCardText(card, 1)
+		SuiteMotion.tween(card.timerTrack, {
+			BackgroundTransparency = 1,
+		}, {
+			duration = 0.16,
+			style = "quad",
+		})
+		SuiteMotion.tween(card.timerFill, {
+			BackgroundTransparency = 1,
+		}, {
+			duration = 0.16,
+			style = "quad",
+		})
+		task.delay(0.2, function()
+			if not cleaning and card.currentAlertId == nil then
+				card.frame.Visible = false
+				card.timerTrack.Visible = false
+			end
+		end)
+	end
+
 	updateSuiteOverlays = function()
 		local signal = buildSuiteTelemetry()
 		local color = signal.color or getLevelColor(signal.level)
@@ -5657,9 +5773,8 @@ function BytecodeViewer.start(config)
 		})
 
 		local alerts = buildAlertStack(signal)
-		local alertY = (state.intelligenceThreat ~= nil and not state.isMinimized) and 184 or 92
 		SuiteMotion.tween(refs.alertRail, {
-			Position = UDim2.new(1, -14, 0, alertY),
+			Position = UDim2.fromOffset(14, 92),
 		}, {
 			duration = 0.18,
 			style = "quint",
@@ -5667,7 +5782,6 @@ function BytecodeViewer.start(config)
 
 		for index, card in ipairs(refs.alertCards) do
 			local alert = alerts[index]
-			card.frame.Visible = alert ~= nil
 			if alert ~= nil then
 				local alertColor = alert.color or getLevelColor(alert.level)
 				card.level.Text = string.upper(alert.level)
@@ -5675,40 +5789,10 @@ function BytecodeViewer.start(config)
 				card.title.Text = alert.title
 				card.detail.Text = alert.detail
 				setOverlayStroke(card.frame, alertColor, alert.level == "info" and 0.26 or 0.08)
+				refs.showAlertCard(card, index, alert, alertColor)
+			else
+				refs.hideAlertCard(card, index)
 			end
-		end
-
-		local threat = state.intelligenceThreat
-		if threat ~= nil and not state.isMinimized then
-			local threatColor = threat.teamColor or getLevelColor(threat.distance <= 60 and "critical" or "warning")
-			refs.threatPeek.Visible = true
-			refs.threatPeekLevel.Text = threat.distance <= 60 and "CRITICAL" or "WARNING"
-			refs.threatPeekLevel.TextColor3 = threatColor
-			refs.threatPeekTitle.Text = "Enemy close"
-			refs.threatPeekDetail.Text = ("%s has %s at %dm"):format(
-				threat.playerName,
-				threat.weaponName,
-				math.floor(threat.distance + 0.5)
-			)
-			setOverlayStroke(refs.threatPeek, threatColor, 0.08)
-			SuiteMotion.tween(refs.threatPeek, {
-				Position = UDim2.new(1, -18, 0, 92),
-			}, {
-				duration = 0.18,
-				style = "quint",
-			})
-		else
-			SuiteMotion.tween(refs.threatPeek, {
-				Position = UDim2.new(1, 340, 0, 92),
-			}, {
-				duration = 0.18,
-				style = "quint",
-			})
-			task.delay(0.2, function()
-				if not cleaning and state.intelligenceThreat == nil then
-					refs.threatPeek.Visible = false
-				end
-			end)
 		end
 	end
 
