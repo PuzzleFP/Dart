@@ -1529,80 +1529,57 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 	local logTitle = makeSectionTitle(refs.remoteLogPanel, UI_ICON.watch .. " Remote Inspector")
 	logTitle.Position = UDim2.fromOffset(12, 12)
 
-	refs.clearRemoteLogButton = NativeUi.makeButton(refs.remoteLogPanel, UI_ICON.clear .. " Clear", {
-		Position = UDim2.new(1, -108, 0, 10),
-		Size = UDim2.fromOffset(96, 28),
+	refs.remoteWatcherToggle = makeToggleRow(refs.remoteLogPanel, 38, "Remote Watcher", "Capture client calls and server events.")
+	refs.remoteWatcherToggle.row.Size = UDim2.fromOffset(210, 34)
+
+	refs.scanRemotesButton = NativeUi.makeButton(refs.remoteLogPanel, UI_ICON.refresh .. " Scan", {
+		Position = UDim2.new(1, -206, 0, 36),
+		Size = UDim2.fromOffset(92, 30),
 		TextSize = 12,
 	})
 
-	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Select a remote to inspect its traffic.", {
+	refs.clearRemoteLogButton = NativeUi.makeButton(refs.remoteLogPanel, UI_ICON.clear .. " Clear", {
+		Position = UDim2.new(1, -106, 0, 36),
+		Size = UDim2.fromOffset(94, 30),
+		TextSize = 12,
+	})
+
+	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Select a remote to inspect class, path and payloads.", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 36),
-		Size = UDim2.new(1, -132, 0, 18),
+		Position = UDim2.fromOffset(12, 78),
+		Size = UDim2.new(1, -24, 0, 18),
+	})
+
+	refs.remoteInspectorTitleLabel = NativeUi.makeLabel(refs.remoteLogPanel, "No remote selected", {
+		Font = Enum.Font.GothamBold,
+		TextColor3 = NativeUi.Theme.Text,
+		TextSize = 14,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(12, 104),
+		Size = UDim2.new(1, -24, 0, 24),
+	})
+
+	refs.remoteInspectorMetaLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Class: -    Calls: 0    Last: -", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(12, 130),
+		Size = UDim2.new(1, -24, 0, 36),
 	})
 
 	refs.remoteLogHost = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 66),
-		Size = UDim2.new(1, -24, 1, -78),
+		Position = UDim2.fromOffset(12, 174),
+		Size = UDim2.new(1, -24, 1, -186),
 		Parent = refs.remoteLogPanel,
 	})
 	refs.remoteLogScroll, refs.remoteLogLabel, refs.syncRemoteLogCanvas = makeOutputViewer(refs.remoteLogHost)
-
-	refs.remoteControlPanel = NativeUi.makePanel(remoteWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(872, 0),
-		Size = UDim2.fromOffset(250, 100),
-	})
-	SuiteComponents.stylePanel(refs.remoteControlPanel, SuiteTheme, SuiteTheme.Variants.Card)
-
-	local controlTitle = makeSectionTitle(refs.remoteControlPanel, "Selected Remote")
-	controlTitle.Position = UDim2.fromOffset(12, 12)
-
-	refs.remoteSelectedNameLabel = NativeUi.makeLabel(refs.remoteControlPanel, "No remote selected", {
-		Font = Enum.Font.GothamBold,
-		TextColor3 = NativeUi.Theme.Text,
-		TextSize = 13,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 38),
-		Size = UDim2.new(1, -24, 0, 46),
-	})
-
-	refs.remoteSelectedMetaLabel = NativeUi.makeLabel(refs.remoteControlPanel, "Choose a remote from the left list.", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 90),
-		Size = UDim2.new(1, -24, 0, 58),
-	})
-
-	refs.remoteSelectedStatsLabel = makeBodyLabel(refs.remoteControlPanel, "Calls: 0\nLast: -", {
-		Font = Enum.Font.Code,
-		Position = UDim2.fromOffset(12, 154),
-		Size = UDim2.new(1, -24, 0, 0),
-	})
-
-	local quickTitle = makeSectionTitle(refs.remoteControlPanel, "Quick Actions")
-	quickTitle.Position = UDim2.fromOffset(12, 234)
-
-	refs.remoteWatcherToggle = makeToggleRow(refs.remoteControlPanel, 264, "Remote Watcher", "Capture client calls and server events.")
-
-	refs.scanRemotesButton = NativeUi.makeButton(refs.remoteControlPanel, UI_ICON.refresh .. " Scan Remotes", {
-		Position = UDim2.fromOffset(12, 328),
-		Size = UDim2.new(1, -24, 0, 30),
-		TextSize = 12,
-	})
-
-	refs.remoteInfoLabel = makeBodyLabel(refs.remoteControlPanel, "Read-only debugging. This tab does not fire remotes or replay payloads.", {
-		Position = UDim2.fromOffset(12, 374),
-		Size = UDim2.new(1, -24, 0, 0),
-	})
 end
 
 local function createGui(state)
@@ -2886,21 +2863,13 @@ local function createGui(state)
 		refs.spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
 
 		local remoteListWidth = 320
-		local remoteControlWidth = 280
-		local remoteLogWidth = workspaceWidth - remoteListWidth - remoteControlWidth - panelGap * 2
-		if remoteLogWidth < 360 then
-			local remoteDeficit = 360 - remoteLogWidth
-			remoteControlWidth = math.max(220, remoteControlWidth - remoteDeficit)
-			remoteLogWidth = workspaceWidth - remoteListWidth - remoteControlWidth - panelGap * 2
-		end
+		local remoteLogWidth = workspaceWidth - remoteListWidth - panelGap
 		refs.remoteListPanel.Size = UDim2.fromOffset(remoteListWidth, workspaceHeight)
 		refs.remoteListScroll.Size = UDim2.new(1, -24, 1, -116)
 		refs.remoteLogPanel.Position = UDim2.fromOffset(remoteListWidth + panelGap, 0)
 		refs.remoteLogPanel.Size = UDim2.fromOffset(remoteLogWidth, workspaceHeight)
-		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -78)
+		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -186)
 		refs.remoteLogScroll.Size = UDim2.new(1, 0, 1, 0)
-		refs.remoteControlPanel.Position = UDim2.fromOffset(remoteListWidth + remoteLogWidth + panelGap * 2, 0)
-		refs.remoteControlPanel.Size = UDim2.fromOffset(remoteControlWidth, workspaceHeight)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
 		local maxInspector = math.max(280, workspaceWidth - state.bytecodeSidebarWidth - 420)
@@ -4245,6 +4214,11 @@ function BytecodeViewer.start(config)
 	local renderRemoteLog
 	local connectRemoteEvent
 	local remoteEventConnections = {}
+	local remoteHookBridge = scope.__DartRemoteHookBridge
+	if type(remoteHookBridge) ~= "table" then
+		remoteHookBridge = {}
+		scope.__DartRemoteHookBridge = remoteHookBridge
+	end
 
 	local function getSelectedRemote()
 		if state.selectedRemotePath == nil then
@@ -4260,11 +4234,15 @@ function BytecodeViewer.start(config)
 		return nil
 	end
 
-	local function getRemoteLogStats(remotePath)
+	local function remoteLogMatches(entry, remotePath, remote)
+		return entry ~= nil and (entry.remote == remote or entry.remotePath == remotePath)
+	end
+
+	local function getRemoteLogStats(remotePath, remote)
 		local count = 0
 		local lastEntry = nil
 		for _, entry in ipairs(state.remoteLogs) do
-			if entry.remotePath == remotePath then
+			if remoteLogMatches(entry, remotePath, remote) then
 				count = count + 1
 				lastEntry = lastEntry or entry
 			end
@@ -4272,10 +4250,39 @@ function BytecodeViewer.start(config)
 		return count, lastEntry
 	end
 
+	local function ensureRemoteTracked(remote)
+		if not isRemoteLike(remote) then
+			return false
+		end
+
+		for _, existing in ipairs(state.remoteList) do
+			if existing == remote then
+				return false
+			end
+		end
+
+		table.insert(state.remoteList, remote)
+		table.sort(state.remoteList, function(left, right)
+			return string.lower(getRemotePath(left)) < string.lower(getRemotePath(right))
+		end)
+		if connectRemoteEvent ~= nil then
+			connectRemoteEvent(remote)
+		end
+		return true
+	end
+
 	local function appendRemoteLog(direction, remote, method, args)
 		args = args or {}
 		local path = getRemotePath(remote)
+		local listChanged = ensureRemoteTracked(remote)
+		local selectionChanged = false
+		if state.selectedRemotePath == nil then
+			state.selectedRemotePath = path
+			selectionChanged = true
+		end
+
 		local entry = {
+			remote = remote,
 			direction = direction or "?",
 			remotePath = path,
 			className = typeof(remote) == "Instance" and remote.ClassName or "?",
@@ -4291,10 +4298,26 @@ function BytecodeViewer.start(config)
 			table.remove(state.remoteLogs)
 		end
 
+		if renderRemoteList ~= nil and (listChanged or selectionChanged) then
+			renderRemoteList()
+		end
 		if renderRemoteLog ~= nil then
 			renderRemoteLog()
 		end
 	end
+
+	remoteHookBridge.callback = function(remote, method, args)
+		if state.remoteWatcherEnabled then
+			appendRemoteLog("OUT", remote, method, args)
+		end
+	end
+	remoteHookBridge.enabled = state.remoteWatcherEnabled
+	trackCleanup(function()
+		if scope.__DartRemoteHookBridge == remoteHookBridge then
+			remoteHookBridge.callback = nil
+			remoteHookBridge.enabled = false
+		end
+	end)
 
 	local function scanRemoteList()
 		state.remoteList = buildRemoteBrowserList()
@@ -4310,11 +4333,53 @@ function BytecodeViewer.start(config)
 
 	local function installRemoteNamecallWatcher()
 		if state.remoteHookInstalled then
+			remoteHookBridge.enabled = true
 			return true
 		end
 
-		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" or type(getnamecallmethod) ~= "function" or type(newcclosure) ~= "function" then
-			state.remoteHookError = "Namecall hook APIs unavailable; server-to-client events can still be observed."
+		if type(getnamecallmethod) ~= "function" then
+			state.remoteHookError = "Namecall method API unavailable; server-to-client events can still be observed."
+			return false
+		end
+
+		local makeHookClosure = type(newcclosure) == "function" and newcclosure or function(fn)
+			return fn
+		end
+
+		if type(hookmetamethod) == "function" then
+			if remoteHookBridge.namecallInstalled then
+				state.remoteHookInstalled = true
+				state.remoteHookError = nil
+				remoteHookBridge.enabled = true
+				return true
+			end
+
+			local originalNamecall
+			local ok, err = pcall(function()
+				originalNamecall = hookmetamethod(game, "__namecall", makeHookClosure(function(self, ...)
+					local method = getnamecallmethod()
+					local bridge = getGlobalScope().__DartRemoteHookBridge
+					if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
+						bridge.callback(self, method, packRemoteArgs(...))
+					end
+					return originalNamecall(self, ...)
+				end))
+			end)
+
+			if ok then
+				remoteHookBridge.namecallInstalled = true
+				remoteHookBridge.originalNamecall = originalNamecall
+				remoteHookBridge.enabled = true
+				state.remoteHookInstalled = true
+				state.remoteHookError = nil
+				return true
+			end
+
+			state.remoteHookError = "hookmetamethod failed: " .. tostring(err)
+		end
+
+		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" then
+			state.remoteHookError = state.remoteHookError or "Namecall hook APIs unavailable; server-to-client events can still be observed."
 			return false
 		end
 
@@ -4322,7 +4387,7 @@ function BytecodeViewer.start(config)
 		local originalNamecall = metatable.__namecall
 		local ok, err = pcall(function()
 			setreadonly(metatable, false)
-			metatable.__namecall = newcclosure(function(self, ...)
+			metatable.__namecall = makeHookClosure(function(self, ...)
 				local method = getnamecallmethod()
 				if state.remoteWatcherEnabled and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
 					appendRemoteLog("OUT", self, method, packRemoteArgs(...))
@@ -4368,6 +4433,17 @@ function BytecodeViewer.start(config)
 		end))
 	end
 
+	local function appendRemoteEntryLines(lines, entry)
+		local preview = entry.argsText ~= "" and entry.argsText or "<no args>"
+		table.insert(lines, ("[%s] %s  %s"):format(entry.timestamp, entry.direction, entry.method))
+		table.insert(lines, ("  Class   : %s"):format(entry.className))
+		table.insert(lines, ("  Path    : %s"):format(entry.remotePath))
+		table.insert(lines, ("  Args    : %d"):format(entry.argCount))
+		table.insert(lines, ("  Payload : %s"):format(preview))
+		table.insert(lines, entry.argsLines)
+		table.insert(lines, "")
+	end
+
 	renderRemoteLog = function()
 		local selectedPath = state.selectedRemotePath
 		local selectedRemote = getSelectedRemote()
@@ -4377,23 +4453,40 @@ function BytecodeViewer.start(config)
 		end
 
 		if selectedPath == nil then
-			refs.remoteLogLabel.Text = withLineNumbers(("Select a remote from the left to inspect calls, methods, and args.\nCaptured entries: %d"):format(#state.remoteLogs))
+			local lines = {
+				"REMOTE INSPECTOR",
+				"",
+				"Select a remote from the left to inspect class, path, methods, and payloads.",
+				("Watcher: %s"):format(status),
+				("Captured entries: %d"):format(#state.remoteLogs),
+			}
+			if #state.remoteLogs > 0 then
+				table.insert(lines, "")
+				table.insert(lines, "RECENT TRAFFIC")
+				for index = 1, math.min(12, #state.remoteLogs) do
+					appendRemoteEntryLines(lines, state.remoteLogs[index])
+				end
+			end
+
+			refs.remoteLogLabel.Text = withLineNumbers(table.concat(lines, "\n"))
 			refs.remoteLogStatusLabel.Text = status
-			refs.remoteSelectedNameLabel.Text = "No remote selected"
-			refs.remoteSelectedMetaLabel.Text = "Choose a remote from the list to focus this inspector."
-			refs.remoteSelectedStatsLabel.Text = ("Watcher: %s\nCaptured: %d\nLast: -"):format(state.remoteWatcherEnabled and "active" or "idle", #state.remoteLogs)
+			refs.remoteInspectorTitleLabel.Text = "No remote selected"
+			refs.remoteInspectorMetaLabel.Text = ("Class: -    Calls: 0    Captured: %d    Last: -"):format(#state.remoteLogs)
 			refs.syncRemoteLogCanvas()
 			return
 		end
 
-		local count, lastEntry = getRemoteLogStats(selectedPath)
+		local count, lastEntry = getRemoteLogStats(selectedPath, selectedRemote)
 		local className = selectedRemote and selectedRemote.ClassName or "Missing"
 		local lines = {
-			("Remote: %s"):format(selectedPath),
-			("Class: %s"):format(className),
+			"REMOTE",
+			("Name: %s"):format(selectedRemote and selectedRemote.Name or "<missing>"),
 			("Watcher: %s"):format(status),
+			("Class: %s"):format(className),
+			("Path: %s"):format(selectedPath),
 			("Observed calls: %d"):format(count),
 			"",
+			"RECENT PAYLOADS",
 		}
 
 		if count == 0 then
@@ -4401,11 +4494,9 @@ function BytecodeViewer.start(config)
 		else
 			local added = 0
 			for _, entry in ipairs(state.remoteLogs) do
-				if entry.remotePath == selectedPath then
+				if remoteLogMatches(entry, selectedPath, selectedRemote) then
 					added = added + 1
-					table.insert(lines, ("[%s] %s %s.%s  args=%d"):format(entry.timestamp, entry.direction, entry.className, entry.method, entry.argCount))
-					table.insert(lines, entry.argsLines)
-					table.insert(lines, "")
+					appendRemoteEntryLines(lines, entry)
 					if added >= 40 then
 						table.insert(lines, "...older calls hidden")
 						break
@@ -4416,12 +4507,12 @@ function BytecodeViewer.start(config)
 
 		refs.remoteLogLabel.Text = withLineNumbers(table.concat(lines, "\n"))
 		refs.remoteLogStatusLabel.Text = ("Focused: %s"):format(selectedRemote and selectedRemote.Name or selectedPath)
-		refs.remoteSelectedNameLabel.Text = selectedRemote and selectedRemote.Name or selectedPath
-		refs.remoteSelectedMetaLabel.Text = ("%s\n%s"):format(className, selectedPath)
-		refs.remoteSelectedStatsLabel.Text = ("Watcher: %s\nCalls: %d\nLast: %s"):format(
-			state.remoteWatcherEnabled and "active" or "idle",
+		refs.remoteInspectorTitleLabel.Text = selectedRemote and selectedRemote.Name or selectedPath
+		refs.remoteInspectorMetaLabel.Text = ("Class: %s    Calls: %d    Last: %s\nPath: %s"):format(
+			className,
 			count,
-			lastEntry and (lastEntry.timestamp .. " " .. lastEntry.direction .. " " .. lastEntry.method) or "-"
+			lastEntry and (lastEntry.timestamp .. " " .. lastEntry.direction .. " " .. lastEntry.method) or "-",
+			selectedPath
 		)
 		refs.syncRemoteLogCanvas()
 	end
@@ -5906,6 +5997,7 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.remoteWatcherToggle.toggle.MouseButton1Click:Connect(function()
 		state.remoteWatcherEnabled = not state.remoteWatcherEnabled
+		remoteHookBridge.enabled = state.remoteWatcherEnabled
 		if state.remoteWatcherEnabled then
 			installRemoteNamecallWatcher()
 			scanRemoteList()
