@@ -1381,7 +1381,7 @@ local function makeState(config)
 		notifications = {},
 		nextNotificationId = 0,
 		intelligenceThreat = nil,
-		intelligenceThreatRange = 160,
+		intelligenceThreatRange = tonumber(config.IntelligenceThreatRange) or 350,
 		intelligenceThreatKey = nil,
 		macroEnabled = false,
 		macroTargetKind = "Arsenal",
@@ -5177,15 +5177,15 @@ function BytecodeViewer.start(config)
 
 		local distance = math.floor(threat.distance + 0.5)
 		local detail = threat.weaponKnown
-			and ("%s with %s is %dm close"):format(threat.playerName, threat.weaponName, distance)
-			or ("%s is %dm close"):format(threat.playerName, distance)
+			and ("%s with %s • %s"):format(threat.playerName, threat.weaponName, threat.teamText)
+			or ("%s • %s"):format(threat.playerName, threat.teamText)
 		return {
-			title = "Threat Close",
+			title = "Enemy Close",
 			detail = detail,
-			badge = threat.teamText,
+			badge = ("%dm"):format(distance),
 			level = distance <= 60 and "critical" or "warning",
 			color = threat.teamColor,
-			width = 420,
+			width = 430,
 			height = 62,
 		}
 	end
