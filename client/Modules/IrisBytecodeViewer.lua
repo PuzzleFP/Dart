@@ -822,27 +822,7 @@ local function makeOverlayPanel(parent, properties, radius, strokeColor, strokeT
 	return panel
 end
 
-local function createGui(state)
-	destroyExistingGui()
-
-	local refs = {
-		connections = {},
-	}
-
-	local function trackConnection(connection)
-		table.insert(refs.connections, connection)
-		return connection
-	end
-
-	local screenGui = NativeUi.create("ScreenGui", {
-		Name = GUI_NAME,
-		DisplayOrder = 999,
-		IgnoreGuiInset = true,
-		ResetOnSpawn = false,
-		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		Parent = CoreGui,
-	})
-
+local function createOverlayLayers(screenGui, refs)
 	local dynamicIsland = makeOverlayPanel(screenGui, {
 		Name = "DynamicIsland",
 		AnchorPoint = Vector2.new(0.5, 0),
@@ -851,7 +831,8 @@ local function createGui(state)
 		ZIndex = 40,
 	}, 26, NativeUi.Theme.Border, 0.05)
 
-	local dynamicIslandDot = NativeUi.create("Frame", {
+	refs.dynamicIsland = dynamicIsland
+	refs.dynamicIslandDot = NativeUi.create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = NativeUi.Theme.Success,
 		BorderSizePixel = 0,
@@ -860,9 +841,9 @@ local function createGui(state)
 		ZIndex = 41,
 		Parent = dynamicIsland,
 	})
-	NativeUi.corner(dynamicIslandDot, 999)
+	NativeUi.corner(refs.dynamicIslandDot, 999)
 
-	local dynamicIslandTitle = NativeUi.makeLabel(dynamicIsland, "Assist", {
+	refs.dynamicIslandTitle = NativeUi.makeLabel(dynamicIsland, "Assist", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 13,
 		Position = UDim2.fromOffset(48, 10),
@@ -870,18 +851,16 @@ local function createGui(state)
 		ZIndex = 41,
 	})
 
-	local dynamicIslandDetail = NativeUi.makeLabel(dynamicIsland, "Ready",
-		{
-			Font = Enum.Font.Code,
-			TextColor3 = NativeUi.Theme.TextDim,
-			TextSize = 10,
-			Position = UDim2.fromOffset(48, 28),
-			Size = UDim2.new(1, -92, 0, 14),
-			ZIndex = 41,
-		}
-	)
+	refs.dynamicIslandDetail = NativeUi.makeLabel(dynamicIsland, "Ready", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		Position = UDim2.fromOffset(48, 28),
+		Size = UDim2.new(1, -92, 0, 14),
+		ZIndex = 41,
+	})
 
-	local dynamicIslandBadge = NativeUi.makeLabel(dynamicIsland, "LIVE", {
+	refs.dynamicIslandBadge = NativeUi.makeLabel(dynamicIsland, "LIVE", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 10,
@@ -907,7 +886,6 @@ local function createGui(state)
 			Size = UDim2.fromOffset(228, 38),
 			ZIndex = 35,
 		}, 14, NativeUi.Theme.Border, 0.16)
-
 		local dot = NativeUi.create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundColor3 = NativeUi.Theme.Info,
@@ -919,34 +897,30 @@ local function createGui(state)
 		})
 		NativeUi.corner(dot, 999)
 
-		local titleLabel = NativeUi.makeLabel(chip, labelText, {
-			Font = Enum.Font.GothamSemibold,
-			TextSize = 11,
-			Position = UDim2.fromOffset(34, 5),
-			Size = UDim2.new(1, -44, 0, 14),
-			ZIndex = 36,
-		})
-
-		local detailLabel = NativeUi.makeLabel(chip, "Ready", {
-			Font = Enum.Font.Code,
-			TextColor3 = NativeUi.Theme.TextDim,
-			TextSize = 10,
-			Position = UDim2.fromOffset(34, 19),
-			Size = UDim2.new(1, -44, 0, 13),
-			ZIndex = 36,
-		})
-
 		return {
 			frame = chip,
 			dot = dot,
-			title = titleLabel,
-			detail = detailLabel,
+			title = NativeUi.makeLabel(chip, labelText, {
+				Font = Enum.Font.GothamSemibold,
+				TextSize = 11,
+				Position = UDim2.fromOffset(34, 5),
+				Size = UDim2.new(1, -44, 0, 14),
+				ZIndex = 36,
+			}),
+			detail = NativeUi.makeLabel(chip, "Ready", {
+				Font = Enum.Font.Code,
+				TextColor3 = NativeUi.Theme.TextDim,
+				TextSize = 10,
+				Position = UDim2.fromOffset(34, 19),
+				Size = UDim2.new(1, -44, 0, 13),
+				ZIndex = 36,
+			}),
 		}
 	end
 
-	local microHookChip = makeMicroChip(1, "Hook")
-	local microTargetChip = makeMicroChip(2, "Target")
-	local microRiskChip = makeMicroChip(3, "Risk")
+	refs.microHookChip = makeMicroChip(1, "Hook")
+	refs.microTargetChip = makeMicroChip(2, "Target")
+	refs.microRiskChip = makeMicroChip(3, "Risk")
 
 	local alertRail = NativeUi.create("Frame", {
 		Name = "AlertRail",
@@ -965,41 +939,35 @@ local function createGui(state)
 			ZIndex = 35,
 		}, 16, NativeUi.Theme.Border, 0.18)
 
-		local levelLabel = NativeUi.makeLabel(card, "INFO", {
-			Font = Enum.Font.Code,
-			TextColor3 = NativeUi.Theme.TextDim,
-			TextSize = 10,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Position = UDim2.fromOffset(14, 10),
-			Size = UDim2.new(1, -28, 0, 14),
-			ZIndex = 36,
-		})
-
-		local titleLabel = NativeUi.makeLabel(card, "Ready", {
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			Position = UDim2.fromOffset(14, 27),
-			Size = UDim2.new(1, -28, 0, 18),
-			ZIndex = 36,
-		})
-
-		local detailLabel = NativeUi.makeLabel(card, "Suite initialized", {
-			TextColor3 = NativeUi.Theme.TextDim,
-			TextSize = 11,
-			Position = UDim2.fromOffset(14, 47),
-			Size = UDim2.new(1, -28, 0, 14),
-			ZIndex = 36,
-		})
-
 		return {
 			frame = card,
-			level = levelLabel,
-			title = titleLabel,
-			detail = detailLabel,
+			level = NativeUi.makeLabel(card, "INFO", {
+				Font = Enum.Font.Code,
+				TextColor3 = NativeUi.Theme.TextDim,
+				TextSize = 10,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Position = UDim2.fromOffset(14, 10),
+				Size = UDim2.new(1, -28, 0, 14),
+				ZIndex = 36,
+			}),
+			title = NativeUi.makeLabel(card, "Ready", {
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				Position = UDim2.fromOffset(14, 27),
+				Size = UDim2.new(1, -28, 0, 18),
+				ZIndex = 36,
+			}),
+			detail = NativeUi.makeLabel(card, "Suite initialized", {
+				TextColor3 = NativeUi.Theme.TextDim,
+				TextSize = 11,
+				Position = UDim2.fromOffset(14, 47),
+				Size = UDim2.new(1, -28, 0, 14),
+				ZIndex = 36,
+			}),
 		}
 	end
 
-	local alertCards = {
+	refs.alertCards = {
 		makeAlertCard(1),
 		makeAlertCard(2),
 		makeAlertCard(3),
@@ -1012,8 +980,9 @@ local function createGui(state)
 		Size = UDim2.fromOffset(646, 58),
 		ZIndex = 38,
 	}, 24, NativeUi.Theme.Border, 0.08)
+	refs.suiteDock = suiteDock
 
-	local suiteDockTitle = NativeUi.makeLabel(suiteDock, "SUITE", {
+	NativeUi.makeLabel(suiteDock, "SUITE", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 10,
@@ -1022,16 +991,14 @@ local function createGui(state)
 		ZIndex = 39,
 	})
 
-	local suiteDockDetail = NativeUi.makeLabel(suiteDock, "states",
-		{
-			Font = Enum.Font.Code,
-			TextColor3 = NativeUi.Theme.TextDim,
-			TextSize = 10,
-			Position = UDim2.fromOffset(18, 29),
-			Size = UDim2.fromOffset(80, 14),
-			ZIndex = 39,
-		}
-	)
+	NativeUi.makeLabel(suiteDock, "states", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		Position = UDim2.fromOffset(18, 29),
+		Size = UDim2.fromOffset(80, 14),
+		ZIndex = 39,
+	})
 
 	local dockButtonPalette = {
 		Base = NativeUi.Theme.Surface,
@@ -1054,12 +1021,186 @@ local function createGui(state)
 		})
 	end
 
-	local dockAssistButton = makeDockButton(1, "ASSIST")
-	local dockEspButton = makeDockButton(2, "ESP")
-	local dockSpyButton = makeDockButton(3, "SPY")
-	local dockCombatButton = makeDockButton(4, "COMBAT")
-	local dockBuildButton = makeDockButton(5, "BUILD")
-	local dockCodeButton = makeDockButton(6, "CODE")
+	refs.dockAssistButton = makeDockButton(1, "ASSIST")
+	refs.dockEspButton = makeDockButton(2, "ESP")
+	refs.dockSpyButton = makeDockButton(3, "SPY")
+	refs.dockCombatButton = makeDockButton(4, "COMBAT")
+	refs.dockBuildButton = makeDockButton(5, "BUILD")
+	refs.dockCodeButton = makeDockButton(6, "CODE")
+end
+
+local function createSpyWorkspace(spyWorkspace, refs)
+	refs.spySelectorPanel = NativeUi.makePanel(spyWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(300, 100),
+	})
+
+	local spySelectorTitle = makeSectionTitle(refs.spySelectorPanel, "Member Selection")
+	spySelectorTitle.Position = UDim2.fromOffset(12, 12)
+
+	NativeUi.makeLabel(refs.spySelectorPanel, "Pick one target to focus recon. ESP stays broad; Spy stays narrow.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(12, 34),
+		Size = UDim2.new(1, -24, 0, 34),
+	})
+
+	refs.spyClearButton = NativeUi.makeButton(refs.spySelectorPanel, "Clear Focus", {
+		Position = UDim2.fromOffset(12, 76),
+		Size = UDim2.fromOffset(104, 28),
+		TextSize = 11,
+	})
+
+	refs.spyMemberScroll, refs.spyMemberContent = NativeUi.makeScrollList(refs.spySelectorPanel, {
+		Position = UDim2.fromOffset(12, 114),
+		Size = UDim2.new(1, -24, 1, -126),
+		Padding = 6,
+		ContentPadding = 8,
+		BackgroundColor3 = NativeUi.Theme.Surface,
+	})
+
+	refs.spyReconPanel = NativeUi.makePanel(spyWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(316, 0),
+		Size = UDim2.fromOffset(520, 100),
+	})
+
+	NativeUi.makeLabel(refs.spyReconPanel, "Spy Intel", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		Position = UDim2.fromOffset(16, 18),
+		Size = UDim2.new(1, -32, 0, 24),
+	})
+
+	NativeUi.makeLabel(refs.spyReconPanel, "Focused target intelligence. One read, low clutter.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 43),
+		Size = UDim2.new(1, -32, 0, 16),
+	})
+
+	refs.spyThreatPill = NativeUi.makeLabel(refs.spyReconPanel, "IDLE", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Position = UDim2.new(1, -116, 0, 22),
+		Size = UDim2.fromOffset(92, 16),
+	})
+
+	refs.spyFigure = NativeUi.create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		BackgroundColor3 = NativeUi.Theme.Surface,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0.5, 0, 0, 96),
+		Size = UDim2.fromOffset(96, 132),
+		Parent = refs.spyReconPanel,
+	})
+	NativeUi.corner(refs.spyFigure, 44)
+	NativeUi.stroke(refs.spyFigure, NativeUi.Theme.Border, 1, 0.18)
+
+	refs.spyTargetNameLabel = NativeUi.makeLabel(refs.spyReconPanel, "No focus target", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 20,
+		Position = UDim2.fromOffset(16, 260),
+		Size = UDim2.new(1, -32, 0, 26),
+	})
+
+	refs.spyTargetDetailLabel = NativeUi.makeLabel(refs.spyReconPanel, "Select a member from the left panel.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 288),
+		Size = UDim2.new(1, -32, 0, 18),
+	})
+
+	refs.spyMetricDistanceLabel = NativeUi.makeLabel(refs.spyReconPanel, "Distance: -", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 328),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	refs.spyMetricTeamLabel = NativeUi.makeLabel(refs.spyReconPanel, "Team: -", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.new(0.5, 8, 0, 328),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	refs.spyMetricHealthLabel = NativeUi.makeLabel(refs.spyReconPanel, "Health: -", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 352),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	refs.spyMetricStateLabel = NativeUi.makeLabel(refs.spyReconPanel, "State: waiting", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.new(0.5, 8, 0, 352),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	refs.spySupportPanel = NativeUi.makePanel(spyWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(852, 0),
+		Size = UDim2.fromOffset(260, 100),
+	})
+
+	local spySituationTitle = makeSectionTitle(refs.spySupportPanel, "Situation")
+	spySituationTitle.Position = UDim2.fromOffset(12, 12)
+
+	refs.spySituationSummary = makeBodyLabel(refs.spySupportPanel, "No focus target selected. Pin a player to promote them into the intelligence capsule and alert rail.", {
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+
+	local spyActionsTitle = makeSectionTitle(refs.spySupportPanel, "Quick Actions")
+	spyActionsTitle.Position = UDim2.fromOffset(12, 122)
+
+	refs.spyPinButton = NativeUi.makeButton(refs.spySupportPanel, "Pin Target", {
+		Position = UDim2.fromOffset(12, 154),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	refs.spyHighlightButton = NativeUi.makeButton(refs.spySupportPanel, "Toggle Highlight", {
+		Position = UDim2.fromOffset(12, 192),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+end
+
+local function createGui(state)
+	destroyExistingGui()
+
+	local refs = {
+		connections = {},
+	}
+
+	local function trackConnection(connection)
+		table.insert(refs.connections, connection)
+		return connection
+	end
+
+	local screenGui = NativeUi.create("ScreenGui", {
+		Name = GUI_NAME,
+		DisplayOrder = 999,
+		IgnoreGuiInset = true,
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = CoreGui,
+	})
+
+	createOverlayLayers(screenGui, refs)
 
 	local main = NativeUi.makePanel(screenGui, {
 		Name = "Main",
@@ -1424,153 +1565,7 @@ local function createGui(state)
 	local wellToggle = makeToggleRow(espWellsPanel, 86, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
 	local wellDistanceSlider = makeSliderRow(espWellsPanel, 132, "Distance")
 
-	local spySelectorPanel = NativeUi.makePanel(spyWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.fromOffset(300, 100),
-	})
-
-	local spySelectorTitle = makeSectionTitle(spySelectorPanel, "Member Selection")
-	spySelectorTitle.Position = UDim2.fromOffset(12, 12)
-
-	local spySelectorHint = NativeUi.makeLabel(spySelectorPanel, "Pick one target to focus recon. ESP stays broad; Spy stays narrow.", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 34),
-		Size = UDim2.new(1, -24, 0, 34),
-	})
-
-	local spyClearButton = NativeUi.makeButton(spySelectorPanel, "Clear Focus", {
-		Position = UDim2.fromOffset(12, 76),
-		Size = UDim2.fromOffset(104, 28),
-		TextSize = 11,
-	})
-
-	local spyMemberScroll, spyMemberContent = NativeUi.makeScrollList(spySelectorPanel, {
-		Position = UDim2.fromOffset(12, 114),
-		Size = UDim2.new(1, -24, 1, -126),
-		Padding = 6,
-		ContentPadding = 8,
-		BackgroundColor3 = NativeUi.Theme.Surface,
-	})
-
-	local spyReconPanel = NativeUi.makePanel(spyWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(316, 0),
-		Size = UDim2.fromOffset(520, 100),
-	})
-
-	local spyReconTitle = NativeUi.makeLabel(spyReconPanel, "Spy Intel", {
-		Font = Enum.Font.GothamBold,
-		TextSize = 18,
-		Position = UDim2.fromOffset(16, 18),
-		Size = UDim2.new(1, -32, 0, 24),
-	})
-
-	local spyReconSubtitle = NativeUi.makeLabel(spyReconPanel, "Focused target intelligence. One read, low clutter.", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 43),
-		Size = UDim2.new(1, -32, 0, 16),
-	})
-
-	local spyThreatPill = NativeUi.makeLabel(spyReconPanel, "IDLE", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 10,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		Position = UDim2.new(1, -116, 0, 22),
-		Size = UDim2.fromOffset(92, 16),
-	})
-
-	local spyFigure = NativeUi.create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0),
-		BackgroundColor3 = NativeUi.Theme.Surface,
-		BackgroundTransparency = 0.08,
-		BorderSizePixel = 0,
-		Position = UDim2.new(0.5, 0, 0, 96),
-		Size = UDim2.fromOffset(96, 132),
-		Parent = spyReconPanel,
-	})
-	NativeUi.corner(spyFigure, 44)
-	NativeUi.stroke(spyFigure, NativeUi.Theme.Border, 1, 0.18)
-
-	local spyTargetNameLabel = NativeUi.makeLabel(spyReconPanel, "No focus target", {
-		Font = Enum.Font.GothamBold,
-		TextSize = 20,
-		Position = UDim2.fromOffset(16, 260),
-		Size = UDim2.new(1, -32, 0, 26),
-	})
-
-	local spyTargetDetailLabel = NativeUi.makeLabel(spyReconPanel, "Select a member from the left panel.", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 288),
-		Size = UDim2.new(1, -32, 0, 18),
-	})
-
-	local spyMetricDistanceLabel = NativeUi.makeLabel(spyReconPanel, "Distance: -", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 328),
-		Size = UDim2.new(0.5, -24, 0, 18),
-	})
-
-	local spyMetricTeamLabel = NativeUi.makeLabel(spyReconPanel, "Team: -", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.new(0.5, 8, 0, 328),
-		Size = UDim2.new(0.5, -24, 0, 18),
-	})
-
-	local spyMetricHealthLabel = NativeUi.makeLabel(spyReconPanel, "Health: -", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(16, 352),
-		Size = UDim2.new(0.5, -24, 0, 18),
-	})
-
-	local spyMetricStateLabel = NativeUi.makeLabel(spyReconPanel, "State: waiting", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.new(0.5, 8, 0, 352),
-		Size = UDim2.new(0.5, -24, 0, 18),
-	})
-
-	local spySupportPanel = NativeUi.makePanel(spyWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(852, 0),
-		Size = UDim2.fromOffset(260, 100),
-	})
-
-	local spySituationTitle = makeSectionTitle(spySupportPanel, "Situation")
-	spySituationTitle.Position = UDim2.fromOffset(12, 12)
-
-	local spySituationSummary = makeBodyLabel(spySupportPanel, "No focus target selected. Pin a player to promote them into the intelligence capsule and alert rail.", {
-		Position = UDim2.fromOffset(12, 42),
-		Size = UDim2.new(1, -24, 0, 0),
-	})
-
-	local spyActionsTitle = makeSectionTitle(spySupportPanel, "Quick Actions")
-	spyActionsTitle.Position = UDim2.fromOffset(12, 122)
-
-	local spyPinButton = NativeUi.makeButton(spySupportPanel, "Pin Target", {
-		Position = UDim2.fromOffset(12, 154),
-		Size = UDim2.new(1, -24, 0, 30),
-		TextSize = 12,
-	})
-
-	local spyHighlightButton = NativeUi.makeButton(spySupportPanel, "Toggle Highlight", {
-		Position = UDim2.fromOffset(12, 192),
-		Size = UDim2.new(1, -24, 0, 30),
-		TextSize = 12,
-	})
+	createSpyWorkspace(spyWorkspace, refs)
 
 	local scriptPanel = NativeUi.makePanel(bytecodeWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
@@ -2312,12 +2307,12 @@ local function createGui(state)
 			spyReconWidth = workspaceWidth - spySelectorWidth - spySupportWidth - panelGap * 2
 		end
 
-		spySelectorPanel.Size = UDim2.fromOffset(spySelectorWidth, workspaceHeight)
-		spyMemberScroll.Size = UDim2.new(1, -24, 1, -126)
-		spyReconPanel.Position = UDim2.fromOffset(spySelectorWidth + panelGap, 0)
-		spyReconPanel.Size = UDim2.fromOffset(spyReconWidth, workspaceHeight)
-		spySupportPanel.Position = UDim2.fromOffset(spySelectorWidth + spyReconWidth + panelGap * 2, 0)
-		spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
+		refs.spySelectorPanel.Size = UDim2.fromOffset(spySelectorWidth, workspaceHeight)
+		refs.spyMemberScroll.Size = UDim2.new(1, -24, 1, -126)
+		refs.spyReconPanel.Position = UDim2.fromOffset(spySelectorWidth + panelGap, 0)
+		refs.spyReconPanel.Size = UDim2.fromOffset(spyReconWidth, workspaceHeight)
+		refs.spySupportPanel.Position = UDim2.fromOffset(spySelectorWidth + spyReconWidth + panelGap * 2, 0)
+		refs.spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
 		local maxInspector = math.max(280, workspaceWidth - state.bytecodeSidebarWidth - 420)
@@ -2372,22 +2367,6 @@ local function createGui(state)
 
 	refs.gui = screenGui
 	refs.main = main
-	refs.dynamicIsland = dynamicIsland
-	refs.dynamicIslandDot = dynamicIslandDot
-	refs.dynamicIslandTitle = dynamicIslandTitle
-	refs.dynamicIslandDetail = dynamicIslandDetail
-	refs.dynamicIslandBadge = dynamicIslandBadge
-	refs.microHookChip = microHookChip
-	refs.microTargetChip = microTargetChip
-	refs.microRiskChip = microRiskChip
-	refs.alertCards = alertCards
-	refs.suiteDock = suiteDock
-	refs.dockAssistButton = dockAssistButton
-	refs.dockEspButton = dockEspButton
-	refs.dockSpyButton = dockSpyButton
-	refs.dockCombatButton = dockCombatButton
-	refs.dockBuildButton = dockBuildButton
-	refs.dockCodeButton = dockCodeButton
 	refs.workspaceShell = workspaceShell
 	refs.minimizeButton = minimizeButton
 	refs.closeButton = closeButton
@@ -2411,19 +2390,6 @@ local function createGui(state)
 	refs.bytecodeWorkspace = bytecodeWorkspace
 	refs.gunsWorkspace = gunsWorkspace
 	refs.buildWorkspace = buildWorkspace
-	refs.spyMemberContent = spyMemberContent
-	refs.spyClearButton = spyClearButton
-	refs.spyThreatPill = spyThreatPill
-	refs.spyFigure = spyFigure
-	refs.spyTargetNameLabel = spyTargetNameLabel
-	refs.spyTargetDetailLabel = spyTargetDetailLabel
-	refs.spyMetricDistanceLabel = spyMetricDistanceLabel
-	refs.spyMetricTeamLabel = spyMetricTeamLabel
-	refs.spyMetricHealthLabel = spyMetricHealthLabel
-	refs.spyMetricStateLabel = spyMetricStateLabel
-	refs.spySituationSummary = spySituationSummary
-	refs.spyPinButton = spyPinButton
-	refs.spyHighlightButton = spyHighlightButton
 	refs.mainStatusLabel = mainStatusLabel
 	refs.espSelectedPlayersLabel = espSelectedPlayersLabel
 	refs.espPlayerSearchBox = espPlayerSearchBox
