@@ -78,16 +78,17 @@ local function loadRemoteModule(moduleName)
 	end
 
 	local url = state.modulesBaseUrl .. moduleName .. ".lua"
-	local source = httpGet(url)
+	local requestUrl = url .. (string.find(url, "?", 1, true) and "&" or "?") .. "t=" .. tostring(os.time())
+	local source = httpGet(requestUrl)
 	local chunk, compileError = loadstring(source)
 
 	if not chunk then
-		error(("Failed to compile %s: %s"):format(url, tostring(compileError)))
+		error(("Failed to compile %s: %s"):format(requestUrl, tostring(compileError)))
 	end
 
 	local ok, result = pcall(chunk)
 	if not ok then
-		error(("Failed to execute %s: %s"):format(url, tostring(result)))
+		error(("Failed to execute %s: %s"):format(requestUrl, tostring(result)))
 	end
 
 	state.cache[moduleName] = result

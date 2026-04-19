@@ -75,16 +75,17 @@ local function loadRemoteModule(moduleName)
 	end
 
 	local url = state.modulesBaseUrl .. moduleName .. ".lua"
-	local source = httpGet(url)
+	local requestUrl = url .. (string.find(url, "?", 1, true) and "&" or "?") .. "t=" .. tostring(os.time())
+	local source = httpGet(requestUrl)
 	local chunk, compileError = loadstring(source)
 
 	if not chunk then
-		error(("Failed to compile %s: %s"):format(url, tostring(compileError)))
+		error(("Failed to compile %s: %s"):format(requestUrl, tostring(compileError)))
 	end
 
 	local ok, result = pcall(chunk)
 	if not ok then
-		error(("Failed to execute %s: %s"):format(url, tostring(result)))
+		error(("Failed to execute %s: %s"):format(requestUrl, tostring(result)))
 	end
 
 	state.cache[moduleName] = result
@@ -101,6 +102,44 @@ local started = false
 local GUI_NAME = "EclipsisControlGui"
 local SESSION_KEY = "__DartViewerCleanup"
 local MAX_AIM_MOUSE_STEP = 120
+local WORKSPACE_COPY = {
+	main = {
+		kicker = "MAIN",
+		title = "Movement and utility",
+		subtitle = "Fast local controls with compact automation and session state.",
+		search = "Search movement, world, utility",
+	},
+	esp = {
+		kicker = "ESP",
+		title = "Fast visibility tools",
+		subtitle = "Quick player, resource, and structure highlights without mass clutter.",
+		search = "Search players, teams, structures",
+	},
+	spy = {
+		kicker = "SPY",
+		title = "Focused target intelligence",
+		subtitle = "One priority read with recon, situation summary, and quick actions.",
+		search = "Search members or teams",
+	},
+	guns = {
+		kicker = "GUNS",
+		title = "Scoped combat behaviour",
+		subtitle = "Aimbot and target-part configuration isolated from build tools.",
+		search = "Search combat settings",
+	},
+	build = {
+		kicker = "BUILD",
+		title = "Placement and route utilities",
+		subtitle = "Building controls stay separate from guns and visibility.",
+		search = "Search build tools",
+	},
+	bytecode = {
+		kicker = "CODE",
+		title = "Script inspection workflow",
+		subtitle = "Three-pane bytecode, decompile, and control-flow analysis.",
+		search = "Search scripts, commands or output",
+	},
+}
 
 local function trimText(text)
 	return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -611,6 +650,12 @@ local function makeSectionTitle(parent, text, accentColor)
 		TextSize = 11,
 		Size = UDim2.new(1, 0, 0, 18),
 	})
+end
+
+local function addSectionTitle(parent, text, y, x)
+	local label = makeSectionTitle(parent, text)
+	label.Position = UDim2.fromOffset(x or 12, y or 10)
+	return label
 end
 
 local function makeBodyLabel(parent, text, properties)
@@ -1206,8 +1251,8 @@ local function createGui(state)
 		Name = "Main",
 		BackgroundColor3 = NativeUi.Theme.Background,
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0.5, -620, 0.5, -360),
-		Size = UDim2.fromOffset(1240, 720),
+		Position = UDim2.new(0.5, -680, 0.5, -325),
+		Size = UDim2.fromOffset(1360, 650),
 		ClipsDescendants = true,
 	})
 	if main:FindFirstChildOfClass("UIStroke") ~= nil then
@@ -1227,8 +1272,12 @@ local function createGui(state)
 	NativeUi.corner(shadow, 14)
 	shadow.Visible = false
 
-	local navWidth = 156
-	local contentX = 180
+	local navWidth = 172
+	local contentX = 196
+	local shellY = 16
+	local shellPadding = 12
+	local shellHeaderHeight = 72
+	local workspaceTopInset = shellPadding + shellHeaderHeight + 12
 	local navButtonPalette = {
 		Base = NativeUi.Theme.Panel,
 		Hover = NativeUi.Theme.Surface,
@@ -1242,27 +1291,29 @@ local function createGui(state)
 
 	local navRail = NativeUi.makePanel(main, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.fromOffset(navWidth, 696),
+		BackgroundTransparency = 0.03,
+		Position = UDim2.fromOffset(0, shellY),
+		Size = UDim2.fromOffset(navWidth, 618),
+		CornerRadius = 18,
 	})
 
 	local topBar = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Background,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(contentX, 12),
+		Position = UDim2.fromOffset(contentX, shellY),
 		Size = UDim2.new(1, -(contentX + 12), 0, 40),
 		Parent = main,
 	})
 
-	local title = NativeUi.makeLabel(navRail, "Eclipsis", {
+	NativeUi.makeLabel(navRail, "Eclipsis", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 16,
 		Position = UDim2.fromOffset(16, 18),
 		Size = UDim2.new(1, -32, 0, 20),
 	})
 
-	local subtitle = NativeUi.makeLabel(navRail, "Client control suite", {
+	NativeUi.makeLabel(navRail, "Client control suite", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
 		Position = UDim2.fromOffset(16, 38),
@@ -1317,11 +1368,35 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local navFooter = NativeUi.makeLabel(navRail, "Clean dark shell", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
-		Position = UDim2.new(0, 16, 1, -30),
-		Size = UDim2.new(1, -32, 0, 16),
+	local navSessionCard = NativeUi.makePanel(navRail, {
+		BackgroundColor3 = NativeUi.Theme.Surface,
+		BackgroundTransparency = 0.05,
+		Position = UDim2.new(0, 12, 1, -96),
+		Size = UDim2.new(1, -24, 0, 78),
+		CornerRadius = 14,
+	})
+
+	NativeUi.makeLabel(navSessionCard, "Session integrity", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 10),
+		Size = UDim2.new(1, -24, 0, 16),
+	})
+
+	NativeUi.makeLabel(navSessionCard, "Hook state        Stable", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 10,
+		Position = UDim2.fromOffset(12, 34),
+		Size = UDim2.new(1, -24, 0, 13),
+	})
+
+	NativeUi.makeLabel(navSessionCard, "Suite             v4", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 10,
+		Position = UDim2.fromOffset(12, 50),
+		Size = UDim2.new(1, -24, 0, 13),
 	})
 
 	local suiteStatus = NativeUi.makeLabel(topBar, "Ready", {
@@ -1358,9 +1433,66 @@ local function createGui(state)
 	local workspaceShell = NativeUi.makePanel(main, {
 		Name = "WorkspaceShell",
 		BackgroundColor3 = NativeUi.Theme.Shell,
-		Position = UDim2.fromOffset(contentX, 60),
-		Size = UDim2.new(1, -(contentX + 12), 1, -72),
-		CornerRadius = 14,
+		BackgroundTransparency = 0.02,
+		Position = UDim2.fromOffset(contentX, shellY),
+		Size = UDim2.new(1, -(contentX + 12), 1, -32),
+		CornerRadius = 20,
+	})
+	workspaceShell.ClipsDescendants = true
+
+	local workspaceHeader = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(shellPadding, shellPadding),
+		Size = UDim2.new(1, -shellPadding * 2, 0, shellHeaderHeight),
+		Parent = workspaceShell,
+	})
+
+	local workspaceKickerLabel = NativeUi.makeLabel(workspaceHeader, "CODE", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		Position = UDim2.fromOffset(4, 6),
+		Size = UDim2.new(0, 180, 0, 14),
+	})
+
+	local workspaceTitleLabel = NativeUi.makeLabel(workspaceHeader, "Script inspection workflow", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 15,
+		Position = UDim2.fromOffset(4, 25),
+		Size = UDim2.new(0.45, 0, 0, 20),
+	})
+
+	local workspaceSubtitleLabel = NativeUi.makeLabel(workspaceHeader, "Three-pane bytecode, decompile, and control-flow analysis.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		Position = UDim2.fromOffset(4, 47),
+		Size = UDim2.new(0.56, 0, 0, 16),
+	})
+
+	local workspaceSearchButton = NativeUi.makeButton(workspaceHeader, "Search scripts, commands or output", {
+		Position = UDim2.new(1, -314, 0, 18),
+		Size = UDim2.fromOffset(254, 34),
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = {
+			Base = NativeUi.Theme.Surface,
+			Hover = NativeUi.Theme.SurfaceHover,
+			Pressed = NativeUi.Theme.SurfaceActive,
+			Selected = NativeUi.Theme.SurfaceActive,
+			Disabled = NativeUi.Theme.Surface,
+			Text = NativeUi.Theme.TextDim,
+			SelectedText = NativeUi.Theme.Text,
+			DisabledText = NativeUi.Theme.TextDim,
+		},
+	})
+
+	local workspacePulseButton = NativeUi.makeButton(workspaceHeader, "!", {
+		Position = UDim2.new(1, -52, 0, 20),
+		Size = UDim2.fromOffset(32, 30),
+		TextSize = 12,
+		Palette = navButtonPalette,
 	})
 
 	local mainWorkspace = NativeUi.create("Frame", {
@@ -1426,8 +1558,7 @@ local function createGui(state)
 		Parent = mainContent,
 	})
 
-	local movementTitle = makeSectionTitle(movementSection, "Movement")
-	movementTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(movementSection, "Movement")
 
 	local walkSlider = makeSliderRow(movementSection, 40, "Walk Speed")
 	local jumpSlider = makeSliderRow(movementSection, 100, "Jump Power")
@@ -1440,8 +1571,7 @@ local function createGui(state)
 		Parent = mainContent,
 	})
 
-	local automationTitle = makeSectionTitle(automationSection, "Automation")
-	automationTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(automationSection, "Automation")
 
 	local infiniteJumpToggle = makeToggleRow(automationSection, 40, "Infinite Jump", "Keeps jump requests hot for the local character when enabled.")
 	local noClipToggle = makeToggleRow(automationSection, 86, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
@@ -1454,8 +1584,7 @@ local function createGui(state)
 		Parent = mainContent,
 	})
 
-	local worldTitle = makeSectionTitle(worldSection, "World")
-	worldTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(worldSection, "World")
 
 	local gravitySlider = makeSliderRow(worldSection, 42, "Gravity")
 
@@ -1466,8 +1595,7 @@ local function createGui(state)
 		Parent = mainContent,
 	})
 
-	local sessionTitle = makeSectionTitle(sessionSection, "Session")
-	sessionTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(sessionSection, "Session")
 
 	local mainStatusLabel = NativeUi.makeLabel(sessionSection, "Ready", {
 		Font = Enum.Font.Code,
@@ -1495,8 +1623,7 @@ local function createGui(state)
 		Size = UDim2.fromOffset(330, 100),
 	})
 
-	local espPlayersTitle = makeSectionTitle(espPlayersPanel, "Players")
-	espPlayersTitle.Position = UDim2.fromOffset(12, 12)
+	addSectionTitle(espPlayersPanel, "Players", 12)
 
 	local highlightAllPlayersButton = NativeUi.makeButton(espPlayersPanel, "Highlight All Players", {
 		Position = UDim2.fromOffset(12, 40),
@@ -1555,16 +1682,14 @@ local function createGui(state)
 		Size = UDim2.new(1, -718, 1, 0),
 	})
 
-	local resourceEspTitle = makeSectionTitle(espResourcesPanel, "Resources")
-	resourceEspTitle.Position = UDim2.fromOffset(12, 12)
+	addSectionTitle(espResourcesPanel, "Resources", 12)
 
 	local spawnPointToggle = makeToggleRow(espResourcesPanel, 40, "Spawn Point", "Highlights any instance named Spawn Point in the workspace.")
 	local wellPumpToggle = makeToggleRow(espResourcesPanel, 86, "Well Pump", "Highlights any instance named Well Pump in the workspace.")
 	local iridiumToggle = makeToggleRow(espResourcesPanel, 132, "Iridium Crystals", "Filters Workspace.Resources by CrystalFullness and highlights crystals at or above the threshold.")
 	local iridiumSlider = makeSliderRow(espResourcesPanel, 178, "Minimum Fullness")
 
-	local wellsEspTitle = makeSectionTitle(espWellsPanel, "Structures")
-	wellsEspTitle.Position = UDim2.fromOffset(12, 12)
+	addSectionTitle(espWellsPanel, "Structures", 12)
 
 	local spireWellToggle = makeToggleRow(espWellsPanel, 40, "Spire Well", "Maps to SpireOpenLarge1 in Workspace.Map and only shows entries within the selected distance.")
 	local wellToggle = makeToggleRow(espWellsPanel, 86, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
@@ -1622,8 +1747,7 @@ local function createGui(state)
 		Parent = scriptPanel,
 	})
 
-	local scriptTitle = makeSectionTitle(scriptHeader, "Scripts", Color3.fromRGB(171, 210, 255))
-	scriptTitle.Position = UDim2.fromOffset(0, 0)
+	addSectionTitle(scriptHeader, "Scripts", 0, 0)
 
 	local scriptCountLabel = NativeUi.makeLabel(scriptHeader, "Ready", {
 		Font = Enum.Font.Code,
@@ -1746,8 +1870,7 @@ local function createGui(state)
 		Parent = inspectorContent,
 	})
 
-	local inputTitle = makeSectionTitle(inputSection, "Input", Color3.fromRGB(205, 221, 248))
-	inputTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(inputSection, "Input")
 
 	local scriptModeButton = NativeUi.makeButton(inputSection, "Script", {
 		Position = UDim2.fromOffset(12, 42),
@@ -1807,8 +1930,7 @@ local function createGui(state)
 		Parent = inspectorContent,
 	})
 
-	local viewTitle = makeSectionTitle(viewSection, "View", Color3.fromRGB(205, 221, 248))
-	viewTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(viewSection, "View")
 
 	local codeViewButton = NativeUi.makeButton(viewSection, "Code", {
 		Position = UDim2.fromOffset(12, 42),
@@ -1852,8 +1974,7 @@ local function createGui(state)
 		Parent = inspectorContent,
 	})
 
-	local filterTitle = makeSectionTitle(filterSection, "Filter", Color3.fromRGB(205, 221, 248))
-	filterTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(filterSection, "Filter")
 
 	local filterBox = NativeUi.makeTextBox(filterSection, "", {
 		PlaceholderText = "Filter visible output lines",
@@ -1882,8 +2003,7 @@ local function createGui(state)
 		Parent = inspectorContent,
 	})
 
-	local summaryTitle = makeSectionTitle(summarySection, "Summary", Color3.fromRGB(205, 221, 248))
-	summaryTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(summarySection, "Summary")
 
 	local chunkSummaryLabel = makeBodyLabel(summarySection, "No chunk loaded", {
 		Position = UDim2.fromOffset(12, 42),
@@ -1934,8 +2054,7 @@ local function createGui(state)
 		Parent = gunsContent,
 	})
 
-	local gunCombatTitle = makeSectionTitle(gunCombatSection, "Aimbot", Color3.fromRGB(255, 214, 171))
-	gunCombatTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(gunCombatSection, "Aimbot")
 
 	local aimbotToggle = makeToggleRow(gunCombatSection, 40, "Enable Aimbot", "Moves the cursor onto the target nearest the mouse while Ctrl is pressed.")
 
@@ -1953,8 +2072,7 @@ local function createGui(state)
 		Parent = gunsContent,
 	})
 
-	local gunUtilityTitle = makeSectionTitle(gunUtilitySection, "Target Part", Color3.fromRGB(171, 210, 255))
-	gunUtilityTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(gunUtilitySection, "Target Part")
 
 	local aimNearestButton = NativeUi.makeButton(gunUtilitySection, "Nearest", {
 		Position = UDim2.fromOffset(12, 40),
@@ -2027,8 +2145,7 @@ local function createGui(state)
 		Parent = buildingContent,
 	})
 
-	local buildPlacementTitle = makeSectionTitle(buildPlacementSection, "Placement", Color3.fromRGB(170, 242, 187))
-	buildPlacementTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(buildPlacementSection, "Placement")
 
 	local buildPlacementBody = makeBodyLabel(buildPlacementSection, "This is where grid offsets, preview state, placement remotes, and rotation logic should land.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
@@ -2044,8 +2161,7 @@ local function createGui(state)
 		Parent = buildingContent,
 	})
 
-	local buildEditTitle = makeSectionTitle(buildEditSection, "Edit", Color3.fromRGB(205, 221, 248))
-	buildEditTitle.Position = UDim2.fromOffset(12, 10)
+	addSectionTitle(buildEditSection, "Edit")
 
 	local buildEditBody = makeBodyLabel(buildEditSection, "Upgrade, delete, swap-piece, and ownership flows can be isolated here once you walk through the build system.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
@@ -2259,8 +2375,10 @@ local function createGui(state)
 	local function applyLayout()
 		local width = main.AbsoluteSize.X
 		local height = main.AbsoluteSize.Y
-		local workspaceWidth = width - (contentX + 12)
-		local workspaceHeight = math.max(0, height - 72)
+		local shellWidth = width - (contentX + 12)
+		local shellHeight = math.max(0, height - shellY * 2)
+		local workspaceWidth = math.max(0, shellWidth - shellPadding * 2)
+		local workspaceHeight = math.max(0, shellHeight - workspaceTopInset - shellPadding)
 		local panelGap = 16
 		local splitterWidth = 6
 
@@ -2273,23 +2391,28 @@ local function createGui(state)
 		bottomResizeHandle.Position = UDim2.new(0, 14, 1, -5)
 		bottomResizeHandle.Size = UDim2.new(1, -28, 0, 10)
 		bottomRightResizeHandle.Position = UDim2.new(1, -26, 1, -22)
-		navRail.Size = UDim2.fromOffset(navWidth, height - 24)
-		topBar.Position = UDim2.fromOffset(contentX, 12)
-		topBar.Size = UDim2.fromOffset(workspaceWidth, 40)
-		workspaceShell.Position = UDim2.fromOffset(contentX, 60)
-		workspaceShell.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		navRail.Position = UDim2.fromOffset(0, shellY)
+		navRail.Size = UDim2.fromOffset(navWidth, shellHeight)
+		topBar.Position = UDim2.fromOffset(contentX, shellY)
+		topBar.Size = UDim2.fromOffset(shellWidth, 40)
+		workspaceShell.Position = UDim2.fromOffset(contentX, shellY)
+		workspaceShell.Size = UDim2.fromOffset(shellWidth, shellHeight)
+		workspaceHeader.Position = UDim2.fromOffset(shellPadding, shellPadding)
+		workspaceHeader.Size = UDim2.new(1, -shellPadding * 2, 0, shellHeaderHeight)
+		workspaceSearchButton.Position = UDim2.new(1, -314, 0, 18)
+		workspacePulseButton.Position = UDim2.new(1, -52, 0, 20)
 
-		mainWorkspace.Position = UDim2.fromOffset(0, 0)
+		mainWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		espWorkspace.Position = UDim2.fromOffset(0, 0)
+		espWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		espWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		spyWorkspace.Position = UDim2.fromOffset(0, 0)
+		spyWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		spyWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		bytecodeWorkspace.Position = UDim2.fromOffset(0, 0)
+		bytecodeWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		bytecodeWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		gunsWorkspace.Position = UDim2.fromOffset(0, 0)
+		gunsWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		gunsWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
-		buildWorkspace.Position = UDim2.fromOffset(0, 0)
+		buildWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		mainScroll.Size = UDim2.new(1, -24, 1, -24)
 
@@ -2360,6 +2483,8 @@ local function createGui(state)
 	refs.applyLayout = applyLayout
 
 	bindDrag(topBar, main)
+	bindDrag(navRail, main)
+	bindDrag(workspaceHeader, main)
 	bindWindowResize(rightResizeHandle, "right")
 	bindWindowResize(leftResizeHandle, "left")
 	bindWindowResize(topResizeHandle, "top")
@@ -2379,6 +2504,11 @@ local function createGui(state)
 	refs.gui = screenGui
 	refs.main = main
 	refs.workspaceShell = workspaceShell
+	refs.workspaceKickerLabel = workspaceKickerLabel
+	refs.workspaceTitleLabel = workspaceTitleLabel
+	refs.workspaceSubtitleLabel = workspaceSubtitleLabel
+	refs.workspaceSearchButton = workspaceSearchButton
+	refs.workspacePulseButton = workspacePulseButton
 	refs.minimizeButton = minimizeButton
 	refs.closeButton = closeButton
 	refs.suiteStatus = suiteStatus
@@ -4303,6 +4433,7 @@ function BytecodeViewer.start(config)
 
 	syncControlState = function()
 		local bodyVisible = not state.isMinimized
+		local workspaceCopy = WORKSPACE_COPY[state.activeTab] or WORKSPACE_COPY.main
 		refs.workspaceShell.Visible = bodyVisible
 		refs.mainWorkspace.Visible = bodyVisible and state.activeTab == "main"
 		refs.espWorkspace.Visible = bodyVisible and state.activeTab == "esp"
@@ -4330,6 +4461,10 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonSelected(refs.dockCombatButton, state.activeTab == "guns")
 		NativeUi.setButtonSelected(refs.dockBuildButton, state.activeTab == "build")
 		NativeUi.setButtonSelected(refs.dockCodeButton, state.activeTab == "bytecode")
+		refs.workspaceKickerLabel.Text = workspaceCopy.kicker
+		refs.workspaceTitleLabel.Text = workspaceCopy.title
+		refs.workspaceSubtitleLabel.Text = workspaceCopy.subtitle
+		refs.workspaceSearchButton.Text = "  " .. workspaceCopy.search
 		NativeUi.setButtonSelected(refs.scriptModeButton, state.sourceMode == "script")
 		NativeUi.setButtonSelected(refs.fileModeButton, state.sourceMode == "file")
 		NativeUi.setButtonSelected(refs.binaryButton, state.inputFormat == "binary")
