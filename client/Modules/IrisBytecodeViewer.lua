@@ -1334,17 +1334,18 @@ local function createSpyWorkspace(spyWorkspace, refs)
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Position = UDim2.fromOffset(12, 34),
 		Size = UDim2.new(1, -24, 0, 34),
+		Visible = false,
 	})
 
 	refs.spyClearButton = NativeUi.makeButton(refs.spySelectorPanel, "Clear Focus", {
-		Position = UDim2.fromOffset(12, 76),
+		Position = UDim2.fromOffset(12, 40),
 		Size = UDim2.fromOffset(104, 28),
 		TextSize = 12,
 	})
 
 	refs.spyMemberScroll, refs.spyMemberContent = NativeUi.makeScrollList(refs.spySelectorPanel, {
-		Position = UDim2.fromOffset(12, 114),
-		Size = UDim2.new(1, -24, 1, -126),
+		Position = UDim2.fromOffset(12, 80),
+		Size = UDim2.new(1, -24, 1, -92),
 		Padding = 6,
 		ContentPadding = 8,
 		BackgroundColor3 = NativeUi.Theme.Surface,
@@ -1377,6 +1378,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 43),
 		Size = UDim2.new(1, -32, 0, 16),
+		Visible = false,
 	})
 
 	refs.spyThreatPill = NativeUi.makeLabel(refs.spyReconPanel, "IDLE", {
@@ -1549,7 +1551,7 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 78),
+		Position = UDim2.fromOffset(12, 74),
 		Size = UDim2.new(1, -24, 0, 18),
 	})
 
@@ -1559,7 +1561,7 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 		TextSize = 14,
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 104),
+		Position = UDim2.fromOffset(12, 98),
 		Size = UDim2.new(1, -24, 0, 24),
 	})
 
@@ -1569,15 +1571,15 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 		TextSize = 12,
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 130),
-		Size = UDim2.new(1, -24, 0, 36),
+		Position = UDim2.fromOffset(12, 124),
+		Size = UDim2.new(1, -24, 0, 28),
 	})
 
 	refs.remoteLogHost = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 174),
-		Size = UDim2.new(1, -24, 1, -186),
+		Position = UDim2.fromOffset(12, 160),
+		Size = UDim2.new(1, -24, 1, -172),
 		Parent = refs.remoteLogPanel,
 	})
 	refs.remoteLogScroll, refs.remoteLogLabel, refs.syncRemoteLogCanvas = makeOutputViewer(refs.remoteLogHost)
@@ -1635,7 +1637,7 @@ local function createGui(state)
 	local contentX = 204
 	local shellY = 16
 	local shellPadding = 12
-	local shellHeaderHeight = 72
+	local shellHeaderHeight = 48
 	local workspaceTopInset = shellPadding + shellHeaderHeight + 12
 	local navButtonPalette = {
 		Base = NativeUi.Theme.Panel,
@@ -1826,13 +1828,14 @@ local function createGui(state)
 		TextSize = 11,
 		Position = UDim2.fromOffset(16, 9),
 		Size = UDim2.new(0, 180, 0, 14),
+		Visible = false,
 	})
 
 	local workspaceTitleLabel = NativeUi.makeLabel(workspaceHeader, "Script inspection workflow", {
 		Font = Enum.Font.GothamBold,
-		TextSize = 15,
-		Position = UDim2.fromOffset(16, 27),
-		Size = UDim2.new(0.45, 0, 0, 20),
+		TextSize = 16,
+		Position = UDim2.fromOffset(16, 13),
+		Size = UDim2.new(1, -32, 0, 22),
 	})
 
 	local workspaceSubtitleLabel = NativeUi.makeLabel(workspaceHeader, "Three-pane bytecode, decompile, and control-flow analysis.", {
@@ -1840,6 +1843,7 @@ local function createGui(state)
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 49),
 		Size = UDim2.new(0.56, 0, 0, 16),
+		Visible = false,
 	})
 
 	local workspaceSearchButton = NativeUi.makeButton(workspaceHeader, "Search scripts, commands or output", {
@@ -1858,6 +1862,7 @@ local function createGui(state)
 			SelectedText = NativeUi.Theme.Text,
 			DisabledText = NativeUi.Theme.TextDim,
 		},
+		Visible = false,
 	})
 
 	local workspacePulseButton = NativeUi.makeButton(workspaceHeader, "!", {
@@ -1865,6 +1870,7 @@ local function createGui(state)
 		Size = UDim2.fromOffset(32, 30),
 		TextSize = 12,
 		Palette = navButtonPalette,
+		Visible = false,
 	})
 
 	local mainWorkspace = NativeUi.create("Frame", {
@@ -2177,7 +2183,7 @@ local function createGui(state)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(12, 12),
-		Size = UDim2.new(1, -24, 0, 82),
+		Size = UDim2.new(1, -24, 0, 58),
 		Parent = outputPanel,
 	})
 
@@ -2208,15 +2214,15 @@ local function createGui(state)
 	})
 
 	local outputSummaryLabel = makeBodyLabel(outputHeader, "Load a script or file to inspect chunk structure, opcode listings, and the heuristic decompile output.", {
-		Position = UDim2.fromOffset(0, 46),
+		Position = UDim2.fromOffset(0, 42),
 		Size = UDim2.new(1, 0, 0, 0),
 	})
 
 	local outputViewerHost = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 104),
-		Size = UDim2.new(1, -24, 1, -116),
+		Position = UDim2.fromOffset(12, 76),
+		Size = UDim2.new(1, -24, 1, -88),
 		Parent = outputPanel,
 	})
 
@@ -2239,14 +2245,14 @@ local function createGui(state)
 	local intelCard = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 108),
+		Size = UDim2.new(1, 0, 0, 68),
 		Parent = inspectorContent,
 	})
 
 	local intelTitle = NativeUi.makeLabel(intelCard, "Inspector", {
 		Font = Enum.Font.GothamBold,
-		TextSize = 18,
-		Position = UDim2.fromOffset(16, 14),
+		TextSize = 16,
+		Position = UDim2.fromOffset(16, 10),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
 
@@ -2254,7 +2260,7 @@ local function createGui(state)
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(16, 44),
+		Position = UDim2.fromOffset(16, 38),
 		Size = UDim2.new(1, -32, 0, 16),
 	})
 
@@ -2262,6 +2268,7 @@ local function createGui(state)
 		TextColor3 = NativeUi.Theme.TextMuted,
 		Position = UDim2.fromOffset(16, 66),
 		Size = UDim2.new(1, -32, 0, 0),
+		Visible = false,
 	})
 
 	local inputSection = NativeUi.create("Frame", {
@@ -2366,6 +2373,7 @@ local function createGui(state)
 	local viewHint = makeBodyLabel(viewSection, "Flow builds CFG/basic blocks. Decompile v2 is still conservative around structured if/loop recovery.", {
 		Position = UDim2.fromOffset(12, 116),
 		Size = UDim2.new(1, -24, 0, 0),
+		Visible = false,
 	})
 
 	local filterSection = NativeUi.create("Frame", {
@@ -2395,6 +2403,7 @@ local function createGui(state)
 		TextSize = 12,
 		Position = UDim2.fromOffset(122, 88),
 		Size = UDim2.new(1, -134, 0, 16),
+		Visible = false,
 	})
 
 	local summarySection = NativeUi.create("Frame", {
@@ -2442,14 +2451,14 @@ local function createGui(state)
 	local gunsHeader = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 82),
+		Size = UDim2.new(1, 0, 0, 48),
 		Parent = gunsContent,
 	})
 
 	local gunsTitle = NativeUi.makeLabel(gunsHeader, "Guns", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 18,
-		Position = UDim2.fromOffset(16, 14),
+		Position = UDim2.fromOffset(16, 12),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
 
@@ -2458,12 +2467,13 @@ local function createGui(state)
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 42),
 		Size = UDim2.new(1, -32, 0, 0),
+		Visible = false,
 	})
 
 	local gunCombatSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 134),
+		Size = UDim2.new(1, 0, 0, 88),
 		Parent = gunsContent,
 	})
 
@@ -2476,6 +2486,7 @@ local function createGui(state)
 		TextSize = 12,
 		Position = UDim2.fromOffset(12, 88),
 		Size = UDim2.new(1, -24, 0, 0),
+		Visible = false,
 	})
 
 	local gunUtilitySection = NativeUi.create("Frame", {
@@ -2533,14 +2544,14 @@ local function createGui(state)
 	local buildingHeader = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 82),
+		Size = UDim2.new(1, 0, 0, 48),
 		Parent = buildingContent,
 	})
 
 	local buildingTitle = NativeUi.makeLabel(buildingHeader, "Building", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 18,
-		Position = UDim2.fromOffset(16, 14),
+		Position = UDim2.fromOffset(16, 12),
 		Size = UDim2.new(1, -32, 0, 24),
 	})
 
@@ -2549,37 +2560,38 @@ local function createGui(state)
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 42),
 		Size = UDim2.new(1, -32, 0, 0),
+		Visible = false,
 	})
 
 	local buildPlacementSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 128),
+		Size = UDim2.new(1, 0, 0, 78),
 		Parent = buildingContent,
 	})
 
 	addSectionTitle(buildPlacementSection, "Placement")
 
-	local buildPlacementBody = makeBodyLabel(buildPlacementSection, "This is where grid offsets, preview state, placement remotes, and rotation logic should land.", {
+	local buildPlacementBody = makeBodyLabel(buildPlacementSection, "Waiting for the build system map.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 42),
+		Position = UDim2.fromOffset(12, 38),
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
 	local buildEditSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 128),
+		Size = UDim2.new(1, 0, 0, 78),
 		Parent = buildingContent,
 	})
 
 	addSectionTitle(buildEditSection, "Edit")
 
-	local buildEditBody = makeBodyLabel(buildEditSection, "Upgrade, delete, swap-piece, and ownership flows can be isolated here once you walk through the build system.", {
+	local buildEditBody = makeBodyLabel(buildEditSection, "Waiting for the edit flow map.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 42),
+		Position = UDim2.fromOffset(12, 38),
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
@@ -2812,8 +2824,8 @@ local function createGui(state)
 		workspaceShell.Size = UDim2.fromOffset(shellWidth, shellHeight)
 		workspaceHeader.Position = UDim2.fromOffset(shellPadding, shellPadding)
 		workspaceHeader.Size = UDim2.new(1, -shellPadding * 2, 0, shellHeaderHeight)
-		workspaceSearchButton.Position = UDim2.new(1, -314, 0, 18)
-		workspacePulseButton.Position = UDim2.new(1, -52, 0, 20)
+		workspaceSearchButton.Position = UDim2.new(1, -314, 0, 9)
+		workspacePulseButton.Position = UDim2.new(1, -52, 0, 10)
 
 		mainWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
@@ -2857,7 +2869,7 @@ local function createGui(state)
 		end
 
 		refs.spySelectorPanel.Size = UDim2.fromOffset(spySelectorWidth, workspaceHeight)
-		refs.spyMemberScroll.Size = UDim2.new(1, -24, 1, -126)
+		refs.spyMemberScroll.Size = UDim2.new(1, -24, 1, -92)
 		refs.spyReconPanel.Position = UDim2.fromOffset(spySelectorWidth + panelGap, 0)
 		refs.spyReconPanel.Size = UDim2.fromOffset(spyReconWidth, workspaceHeight)
 		refs.spySupportPanel.Position = UDim2.fromOffset(spySelectorWidth + spyReconWidth + panelGap * 2, 0)
@@ -2869,7 +2881,7 @@ local function createGui(state)
 		refs.remoteListScroll.Size = UDim2.new(1, -24, 1, -116)
 		refs.remoteLogPanel.Position = UDim2.fromOffset(remoteListWidth + panelGap, 0)
 		refs.remoteLogPanel.Size = UDim2.fromOffset(remoteLogWidth, workspaceHeight)
-		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -186)
+		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -172)
 		refs.remoteLogScroll.Size = UDim2.new(1, 0, 1, 0)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
@@ -2895,7 +2907,7 @@ local function createGui(state)
 		inspectorPanel.Size = UDim2.fromOffset(state.bytecodeInspectorWidth, workspaceHeight)
 
 		treeScroll.Size = UDim2.new(1, -24, 1, -120)
-		outputViewerHost.Size = UDim2.new(1, -24, 1, -116)
+		outputViewerHost.Size = UDim2.new(1, -24, 1, -88)
 		outputScroll.Size = UDim2.new(1, 0, 1, 0)
 		refs.syncRemoteLogCanvas()
 		inspectorScroll.Size = UDim2.new(1, -24, 1, -24)
