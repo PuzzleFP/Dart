@@ -95,6 +95,13 @@ end
 local LuauChunk = loadRemoteModule("LuauChunk")
 local LuauBytecode = loadRemoteModule("LuauBytecode")
 local NativeUi = loadRemoteModule("NativeUi")
+local SuiteTheme = loadRemoteModule("Suite/Theme")
+local SuiteMotion = loadRemoteModule("Suite/Motion")
+local SuiteComponents = loadRemoteModule("Suite/Components")
+
+if type(SuiteTheme.applyToNativeUi) == "function" then
+	SuiteTheme.applyToNativeUi(NativeUi)
+end
 
 local BytecodeViewer = {}
 
@@ -102,6 +109,9 @@ local started = false
 local GUI_NAME = "EclipsisControlGui"
 local SESSION_KEY = "__DartViewerCleanup"
 local MAX_AIM_MOUSE_STEP = 120
+local GC_SCRIPT_PATH_PREFIX = "__gc_script:"
+local GC_SCAN_LIMIT = 12000
+local gcScriptRegistry = setmetatable({}, { __mode = "v" })
 local WORKSPACE_COPY = {
 	main = {
 		kicker = "MAIN",
@@ -314,9 +324,14 @@ local function resolveInstanceByPath(path)
 end
 
 local function safeParseScript(scriptPath)
-	local ok, scriptInstance = pcall(function()
-		return resolveInstanceByPath(scriptPath)
-	end)
+	local scriptInstance = gcScriptRegistry[scriptPath]
+	local ok = true
+
+	if scriptInstance == nil then
+		ok, scriptInstance = pcall(function()
+			return resolveInstanceByPath(scriptPath)
+		end)
+	end
 
 	if not ok then
 		return nil, scriptInstance
@@ -352,6 +367,101 @@ end
 
 local function isScriptLike(instance)
 	return instance:IsA("LuaSourceContainer")
+end
+
+local function getGcScriptRegistryPath(scriptInstance)
+	local ok, debugId = pcall(function()
+		return scriptInstance:GetDebugId(0)
+	end)
+
+	local key = ok and type(debugId) == "string" and debugId ~= "" and debugId or scriptInstance:GetFullName()
+	return GC_SCRIPT_PATH_PREFIX .. key
+end
+
+local function getScriptFromGcValue(value)
+	if typeof(value) == "Instance" and isScriptLike(value) then
+		return value
+	end
+
+	if type(value) == "function" and type(getfenv) == "function" then
+		local ok, env = pcall(getfenv, value)
+		if ok and type(env) == "table" then
+			local scriptValue = rawget(env, "script")
+			if typeof(scriptValue) == "Instance" and isScriptLike(scriptValue) then
+				return scriptValue
+			end
+		end
+	elseif type(value) == "table" then
+		local ok, scriptValue = pcall(rawget, value, "script")
+		if ok and typeof(scriptValue) == "Instance" and isScriptLike(scriptValue) then
+			return scriptValue
+		end
+	end
+
+	return nil
+end
+
+local function buildGcScriptBrowserNode(scriptInstance)
+	local path = getGcScriptRegistryPath(scriptInstance)
+	gcScriptRegistry[path] = scriptInstance
+
+	return {
+		name = scriptInstance.Name,
+		path = path,
+		className = scriptInstance.ClassName .. " gc",
+		isScript = true,
+		children = {},
+		depth = 1,
+	}
+end
+
+local function buildGcScriptBrowserRoot()
+	for path in pairs(gcScriptRegistry) do
+		gcScriptRegistry[path] = nil
+	end
+
+	if type(getgc) ~= "function" then
+		return nil
+	end
+
+	local ok, objects = pcall(getgc)
+	if not ok or type(objects) ~= "table" then
+		return nil
+	end
+
+	local nodes = {}
+	local seen = {}
+	local scanned = 0
+
+	for _, value in pairs(objects) do
+		scanned = scanned + 1
+		if scanned > GC_SCAN_LIMIT then
+			break
+		end
+
+		local scriptInstance = getScriptFromGcValue(value)
+		if scriptInstance ~= nil and not seen[scriptInstance] then
+			seen[scriptInstance] = true
+			table.insert(nodes, buildGcScriptBrowserNode(scriptInstance))
+		end
+	end
+
+	if #nodes == 0 then
+		return nil
+	end
+
+	table.sort(nodes, function(left, right)
+		return string.lower(left.name) < string.lower(right.name)
+	end)
+
+	return {
+		name = "GC Scripts",
+		path = "__gc_scripts",
+		className = ("getgc %d"):format(#nodes),
+		isScript = false,
+		children = nodes,
+		depth = 0,
+	}
 end
 
 local function collectScriptBrowserRoots()
@@ -425,6 +535,11 @@ local function buildScriptBrowserTree()
 		if node ~= nil then
 			table.insert(roots, node)
 		end
+	end
+
+	local gcRoot = buildGcScriptBrowserRoot()
+	if gcRoot ~= nil then
+		table.insert(roots, gcRoot)
 	end
 
 	table.sort(roots, function(left, right)
@@ -691,6 +806,7 @@ local function makeOutputViewer(parent)
 	})
 	NativeUi.corner(scroll, 10)
 	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0.18)
+	SuiteComponents.decorateScroll(scroll, SuiteTheme, SuiteTheme.Variants.Code)
 
 	local padding = 12
 
@@ -864,6 +980,14 @@ local function makeOverlayPanel(parent, properties, radius, strokeColor, strokeT
 
 	NativeUi.corner(panel, radius or ((properties and properties.CornerRadius) or 18))
 	NativeUi.stroke(panel, strokeColor or NativeUi.Theme.Border, 1, strokeTransparency or 0.1)
+	SuiteComponents.stylePanel(panel, SuiteTheme, {
+		background = NativeUi.Theme.Overlay,
+		transparency = 0.08,
+		radius = radius or ((properties and properties.CornerRadius) or 18),
+		stroke = strokeColor or NativeUi.Theme.Border,
+		strokeTransparency = strokeTransparency or SuiteTheme.Transparency.StrokeStrong,
+		gradient = true,
+	})
 	return panel
 end
 
@@ -875,6 +999,7 @@ local function createOverlayLayers(screenGui, refs)
 		Size = UDim2.fromOffset(220, 52),
 		ZIndex = 40,
 	}, 26, NativeUi.Theme.Border, 0.05)
+	SuiteComponents.stylePanel(dynamicIsland, SuiteTheme, SuiteTheme.Variants.Island)
 
 	refs.dynamicIsland = dynamicIsland
 	refs.dynamicIslandDot = NativeUi.create("Frame", {
@@ -1025,6 +1150,14 @@ local function createOverlayLayers(screenGui, refs)
 		Size = UDim2.fromOffset(646, 58),
 		ZIndex = 38,
 	}, 24, NativeUi.Theme.Border, 0.08)
+	SuiteComponents.stylePanel(suiteDock, SuiteTheme, {
+		background = SuiteTheme.Colors.Shell,
+		transparency = 0.10,
+		radius = 26,
+		stroke = SuiteTheme.Colors.Stroke,
+		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
+		gradient = true,
+	})
 	refs.suiteDock = suiteDock
 
 	NativeUi.makeLabel(suiteDock, "SUITE", {
@@ -1080,6 +1213,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(300, 100),
 	})
+	SuiteComponents.stylePanel(refs.spySelectorPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	local spySelectorTitle = makeSectionTitle(refs.spySelectorPanel, "Member Selection")
 	spySelectorTitle.Position = UDim2.fromOffset(12, 12)
@@ -1106,11 +1240,20 @@ local function createSpyWorkspace(spyWorkspace, refs)
 		ContentPadding = 8,
 		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
+	SuiteComponents.decorateScroll(refs.spyMemberScroll, SuiteTheme, SuiteTheme.Variants.Control)
 
 	refs.spyReconPanel = NativeUi.makePanel(spyWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(316, 0),
 		Size = UDim2.fromOffset(520, 100),
+	})
+	SuiteComponents.stylePanel(refs.spyReconPanel, SuiteTheme, {
+		background = SuiteTheme.Colors.Panel,
+		transparency = 0.14,
+		radius = SuiteTheme.Radius.CardLarge,
+		stroke = SuiteTheme.Colors.Stroke,
+		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
+		gradient = true,
 	})
 
 	NativeUi.makeLabel(refs.spyReconPanel, "Spy Intel", {
@@ -1147,6 +1290,14 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	})
 	NativeUi.corner(refs.spyFigure, 44)
 	NativeUi.stroke(refs.spyFigure, NativeUi.Theme.Border, 1, 0.18)
+	SuiteComponents.stylePanel(refs.spyFigure, SuiteTheme, {
+		background = SuiteTheme.Colors.Surface,
+		transparency = 0.18,
+		radius = 44,
+		stroke = SuiteTheme.Colors.Stroke,
+		strokeTransparency = SuiteTheme.Transparency.Stroke,
+		gradient = true,
+	})
 
 	refs.spyTargetNameLabel = NativeUi.makeLabel(refs.spyReconPanel, "No focus target", {
 		Font = Enum.Font.GothamBold,
@@ -1199,6 +1350,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 		Position = UDim2.fromOffset(852, 0),
 		Size = UDim2.fromOffset(260, 100),
 	})
+	SuiteComponents.stylePanel(refs.spySupportPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	local spySituationTitle = makeSectionTitle(refs.spySupportPanel, "Situation")
 	spySituationTitle.Position = UDim2.fromOffset(12, 12)
@@ -1272,8 +1424,8 @@ local function createGui(state)
 	NativeUi.corner(shadow, 14)
 	shadow.Visible = false
 
-	local navWidth = 172
-	local contentX = 196
+	local navWidth = 220
+	local contentX = 244
 	local shellY = 16
 	local shellPadding = 12
 	local shellHeaderHeight = 72
@@ -1296,6 +1448,7 @@ local function createGui(state)
 		Size = UDim2.fromOffset(navWidth, 618),
 		CornerRadius = 18,
 	})
+	SuiteComponents.stylePanel(navRail, SuiteTheme, SuiteTheme.Variants.Sidebar)
 
 	local topBar = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Background,
@@ -1375,6 +1528,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 78),
 		CornerRadius = 14,
 	})
+	SuiteComponents.stylePanel(navSessionCard, SuiteTheme, SuiteTheme.Variants.CardSoft)
 
 	NativeUi.makeLabel(navSessionCard, "Session integrity", {
 		Font = Enum.Font.GothamBold,
@@ -1438,35 +1592,45 @@ local function createGui(state)
 		Size = UDim2.new(1, -(contentX + 12), 1, -32),
 		CornerRadius = 20,
 	})
+	SuiteComponents.stylePanel(workspaceShell, SuiteTheme, SuiteTheme.Variants.Shell)
 	workspaceShell.ClipsDescendants = true
 
 	local workspaceHeader = NativeUi.create("Frame", {
-		BackgroundTransparency = 1,
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		BackgroundTransparency = 0.42,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(shellPadding, shellPadding),
 		Size = UDim2.new(1, -shellPadding * 2, 0, shellHeaderHeight),
 		Parent = workspaceShell,
+	})
+	SuiteComponents.stylePanel(workspaceHeader, SuiteTheme, {
+		background = SuiteTheme.Colors.Panel,
+		transparency = 0.42,
+		radius = 24,
+		stroke = SuiteTheme.Colors.Stroke,
+		strokeTransparency = SuiteTheme.Transparency.Stroke,
+		gradient = true,
 	})
 
 	local workspaceKickerLabel = NativeUi.makeLabel(workspaceHeader, "CODE", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 10,
-		Position = UDim2.fromOffset(4, 6),
+		Position = UDim2.fromOffset(16, 9),
 		Size = UDim2.new(0, 180, 0, 14),
 	})
 
 	local workspaceTitleLabel = NativeUi.makeLabel(workspaceHeader, "Script inspection workflow", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 15,
-		Position = UDim2.fromOffset(4, 25),
+		Position = UDim2.fromOffset(16, 27),
 		Size = UDim2.new(0.45, 0, 0, 20),
 	})
 
 	local workspaceSubtitleLabel = NativeUi.makeLabel(workspaceHeader, "Three-pane bytecode, decompile, and control-flow analysis.", {
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
-		Position = UDim2.fromOffset(4, 47),
+		Position = UDim2.fromOffset(16, 49),
 		Size = UDim2.new(0.56, 0, 0, 16),
 	})
 
@@ -1550,6 +1714,12 @@ local function createGui(state)
 		ContentPadding = 0,
 		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
+	SuiteComponents.decorateScroll(mainScroll, SuiteTheme, {
+		background = SuiteTheme.Colors.Panel,
+		transparency = 0.18,
+		radius = SuiteTheme.Radius.Card,
+		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
+	})
 
 	local movementSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -1622,6 +1792,7 @@ local function createGui(state)
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(330, 100),
 	})
+	SuiteComponents.stylePanel(espPlayersPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	addSectionTitle(espPlayersPanel, "Players", 12)
 
@@ -1669,18 +1840,21 @@ local function createGui(state)
 		ContentPadding = 8,
 		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
+	SuiteComponents.decorateScroll(espPlayerScroll, SuiteTheme, SuiteTheme.Variants.Control)
 
 	local espResourcesPanel = NativeUi.makePanel(espWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(346, 0),
 		Size = UDim2.fromOffset(356, 100),
 	})
+	SuiteComponents.stylePanel(espResourcesPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	local espWellsPanel = NativeUi.makePanel(espWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
 		Position = UDim2.fromOffset(718, 0),
 		Size = UDim2.new(1, -718, 1, 0),
 	})
+	SuiteComponents.stylePanel(espWellsPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	addSectionTitle(espResourcesPanel, "Resources", 12)
 
@@ -1702,6 +1876,7 @@ local function createGui(state)
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(280, 100),
 	})
+	SuiteComponents.stylePanel(scriptPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	local bytecodeSplitter = NativeUi.create("TextButton", {
 		Active = true,
@@ -1720,6 +1895,7 @@ local function createGui(state)
 		Position = UDim2.fromOffset(302, 0),
 		Size = UDim2.fromOffset(500, 100),
 	})
+	SuiteComponents.stylePanel(outputPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	local inspectorSplitter = NativeUi.create("TextButton", {
 		Active = true,
@@ -1738,6 +1914,7 @@ local function createGui(state)
 		Position = UDim2.fromOffset(824, 0),
 		Size = UDim2.new(1, -824, 1, 0),
 	})
+	SuiteComponents.stylePanel(inspectorPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	local scriptHeader = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -1777,6 +1954,7 @@ local function createGui(state)
 		ContentPadding = 8,
 		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
+	SuiteComponents.decorateScroll(treeScroll, SuiteTheme, SuiteTheme.Variants.Control)
 
 	local outputHeader = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -1833,6 +2011,12 @@ local function createGui(state)
 		Padding = 10,
 		ContentPadding = 0,
 		BackgroundColor3 = NativeUi.Theme.Panel,
+	})
+	SuiteComponents.decorateScroll(inspectorScroll, SuiteTheme, {
+		background = SuiteTheme.Colors.Panel,
+		transparency = 0.38,
+		radius = SuiteTheme.Radius.Card,
+		strokeTransparency = 1,
 	})
 
 	local intelCard = NativeUi.create("Frame", {
@@ -2017,6 +2201,12 @@ local function createGui(state)
 		ContentPadding = 0,
 		BackgroundColor3 = NativeUi.Theme.Panel,
 	})
+	SuiteComponents.decorateScroll(gunsScroll, SuiteTheme, {
+		background = SuiteTheme.Colors.Panel,
+		transparency = 0.18,
+		radius = SuiteTheme.Radius.Card,
+		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
+	})
 
 	local buildingScroll, buildingContent = NativeUi.makeScrollList(buildWorkspace, {
 		Position = UDim2.fromOffset(12, 12),
@@ -2024,6 +2214,12 @@ local function createGui(state)
 		Padding = 10,
 		ContentPadding = 0,
 		BackgroundColor3 = NativeUi.Theme.Panel,
+	})
+	SuiteComponents.decorateScroll(buildingScroll, SuiteTheme, {
+		background = SuiteTheme.Colors.Panel,
+		transparency = 0.18,
+		radius = SuiteTheme.Radius.Card,
+		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
 	})
 
 	local gunsHeader = NativeUi.create("Frame", {
@@ -2910,8 +3106,11 @@ function BytecodeViewer.start(config)
 		refs.dynamicIslandBadge.Text = signal.badge
 		refs.dynamicIslandDot.BackgroundColor3 = color
 		setOverlayStroke(refs.dynamicIsland, color, signal.level == "info" and 0.18 or 0.04)
-		NativeUi.tween(refs.dynamicIsland, 0.18, {
+		SuiteMotion.tween(refs.dynamicIsland, {
 			Size = UDim2.fromOffset(signal.width, 52),
+		}, {
+			duration = 0.18,
+			style = "quint",
 		})
 
 		setHudChip(refs.microHookChip, "Hook", "stable", "success")
