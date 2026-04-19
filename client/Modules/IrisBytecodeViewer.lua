@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
+local GuiService = game:GetService("GuiService")
 
 local function getGlobalScope()
 	if type(getgenv) == "function" then
@@ -3639,8 +3640,28 @@ function BytecodeViewer.start(config)
 			})
 		end
 
-		appendAimPart(candidates, seen, character:FindFirstChild("HumanoidRootPart"))
+		if #candidates == 0 then
+			appendAimPart(candidates, seen, character:FindFirstChild("HumanoidRootPart"))
+		end
 		return candidates
+	end
+
+	local function getAimGuiInset()
+		local ok, topLeftInset = pcall(function()
+			return GuiService:GetGuiInset()
+		end)
+		if ok and typeof(topLeftInset) == "Vector2" then
+			return topLeftInset
+		end
+		return Vector2.new(0, 0)
+	end
+
+	local function getAimWorldPoint(part)
+		if part == nil then
+			return nil
+		end
+
+		return part.Position
 	end
 
 	local function getScreenPointForPart(part)
@@ -3649,12 +3670,18 @@ function BytecodeViewer.start(config)
 			return nil
 		end
 
-		local screenPoint, onScreen = camera:WorldToScreenPoint(part.Position)
+		local aimPoint = getAimWorldPoint(part)
+		if aimPoint == nil then
+			return nil
+		end
+
+		local screenPoint, onScreen = camera:WorldToViewportPoint(aimPoint)
 		if not onScreen or screenPoint.Z <= 0 then
 			return nil
 		end
 
-		return Vector2.new(screenPoint.X, screenPoint.Y)
+		local inset = getAimGuiInset()
+		return Vector2.new(screenPoint.X + inset.X, screenPoint.Y + inset.Y)
 	end
 
 	local function getBestAimPartForPlayer(player, mode, mousePosition)
