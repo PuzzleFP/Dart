@@ -7,6 +7,7 @@ local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
 local GuiService = game:GetService("GuiService")
 local ContextActionService = game:GetService("ContextActionService")
+local StarterGui = game:GetService("StarterGui")
 
 local function getGlobalScope()
 	if type(getgenv) == "function" then
@@ -953,12 +954,23 @@ local function makeState(config)
 		aimLockedPartName = "",
 		ghostCharacterEnabled = false,
 		ghostCharacter = nil,
+		ghostCharacters = {},
+		selectedGhostIndex = 0,
+		ghostCharacterSerial = 0,
+		ghostFlyEnabled = false,
+		ghostFlySpeed = 48,
 		realCharacterBeforeGhost = nil,
+		backpackCoreGuiSnapshot = nil,
 		freeCameraEnabled = false,
 		freeCameraSnapshot = nil,
 		freeCameraCFrame = nil,
 		freeCameraYaw = 0,
 		freeCameraPitch = 0,
+		freeCameraSpeed = 40,
+		freeCameraFastSpeed = 86,
+		cameraPerspectives = {},
+		selectedCameraPerspectiveIndex = 0,
+		cameraPerspectiveSerial = 0,
 		highlightFillTransparency = 0.65,
 		highlightedPlayers = {},
 		highlightAllPlayers = false,
@@ -1503,11 +1515,125 @@ local function createSpyWorkspace(spyWorkspace, refs)
 		TextSize = 12,
 	})
 
-	local spyOperatorTitle = makeSectionTitle(refs.spySupportPanel, "Operator")
-	spyOperatorTitle.Position = UDim2.fromOffset(12, 244)
+	refs.spyOperatorScroll, refs.spyOperatorContent = NativeUi.makeScrollList(refs.spySupportPanel, {
+		Position = UDim2.fromOffset(12, 242),
+		Size = UDim2.new(1, -24, 1, -254),
+		Padding = 10,
+		ContentPadding = 0,
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		ScrollBarThickness = 3,
+	})
+	SuiteComponents.decorateScroll(refs.spyOperatorScroll, SuiteTheme, {
+		background = SuiteTheme.Colors.Panel,
+		transparency = 0,
+		radius = SuiteTheme.Radius.Card,
+		strokeTransparency = 1,
+	})
 
-	refs.spyGhostToggle = makeToggleRow(refs.spySupportPanel, 274, "Spawn Local Character", "Client-only body you can swap into and walk around locally.")
-	refs.spyFreeCameraToggle = makeToggleRow(refs.spySupportPanel, 320, "Free Camera", "Fly the camera with WASD, Q/E vertical, Shift fast, Ctrl slow.")
+	local localCharacterSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 352),
+		Parent = refs.spyOperatorContent,
+	})
+
+	addSectionTitle(localCharacterSection, "Local Character", 0)
+
+	refs.spyGhostToggle = makeToggleRow(localCharacterSection, 28, "Spawn Local Character", "Swap control into the selected client-only body.")
+	refs.spyGhostFlyToggle = makeToggleRow(localCharacterSection, 74, "Fly Local Character", "Moves the selected local body through the camera basis.")
+	refs.ghostFlySpeedSlider = makeSliderRow(localCharacterSection, 122, "Fly Speed")
+
+	refs.ghostStatusLabel = NativeUi.makeLabel(localCharacterSection, "No local characters created", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 182),
+		Size = UDim2.new(1, -24, 0, 18),
+	})
+
+	refs.ghostNameBox = NativeUi.makeTextBox(localCharacterSection, "", {
+		PlaceholderText = "Local character name",
+		Position = UDim2.fromOffset(12, 206),
+		Size = UDim2.new(1, -24, 0, 28),
+		TextSize = 12,
+	})
+
+	refs.ghostNewButton = NativeUi.makeButton(localCharacterSection, "New", {
+		Position = UDim2.fromOffset(12, 244),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+	refs.ghostDestroyButton = NativeUi.makeButton(localCharacterSection, "Destroy", {
+		Position = UDim2.new(0.5, 4, 0, 244),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+	refs.ghostPrevButton = NativeUi.makeButton(localCharacterSection, "Prev", {
+		Position = UDim2.fromOffset(12, 282),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+	refs.ghostNextButton = NativeUi.makeButton(localCharacterSection, "Next", {
+		Position = UDim2.new(0.5, 4, 0, 282),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+
+	local freeCameraSection = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
+		Size = UDim2.new(1, 0, 0, 386),
+		Parent = refs.spyOperatorContent,
+	})
+
+	addSectionTitle(freeCameraSection, "Free Camera", 0)
+
+	refs.spyFreeCameraToggle = makeToggleRow(freeCameraSection, 28, "Free Camera", "WASD fly, Q/E vertical, Shift fast.")
+	refs.freeCameraSpeedSlider = makeSliderRow(freeCameraSection, 76, "Normal Speed")
+	refs.freeCameraFastSpeedSlider = makeSliderRow(freeCameraSection, 136, "Shift Speed")
+
+	refs.cameraPerspectiveStatusLabel = NativeUi.makeLabel(freeCameraSection, "No saved camera perspectives", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 198),
+		Size = UDim2.new(1, -24, 0, 18),
+	})
+
+	refs.cameraPerspectiveNameBox = NativeUi.makeTextBox(freeCameraSection, "", {
+		PlaceholderText = "Perspective name",
+		Position = UDim2.fromOffset(12, 222),
+		Size = UDim2.new(1, -24, 0, 28),
+		TextSize = 12,
+	})
+
+	refs.cameraSaveButton = NativeUi.makeButton(freeCameraSection, "Save", {
+		Position = UDim2.fromOffset(12, 260),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+	refs.cameraRenameButton = NativeUi.makeButton(freeCameraSection, "Rename", {
+		Position = UDim2.new(0.5, 4, 0, 260),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+	refs.cameraPrevButton = NativeUi.makeButton(freeCameraSection, "Prev", {
+		Position = UDim2.fromOffset(12, 298),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+	refs.cameraNextButton = NativeUi.makeButton(freeCameraSection, "Next", {
+		Position = UDim2.new(0.5, 4, 0, 298),
+		Size = UDim2.new(0.5, -16, 0, 28),
+		TextSize = 12,
+	})
+	refs.cameraDestroyButton = NativeUi.makeButton(freeCameraSection, "Destroy", {
+		Position = UDim2.fromOffset(12, 336),
+		Size = UDim2.new(1, -24, 0, 28),
+		TextSize = 12,
+	})
 end
 
 local function createRemoteWorkspace(remoteWorkspace, refs)
@@ -2914,12 +3040,12 @@ local function createGui(state)
 		espPlayerSearchBox.Size = UDim2.new(1, -24, 0, 30)
 		espPlayerScroll.Size = UDim2.new(1, -24, 1, -154)
 
-		local spySelectorWidth = 300
-		local spySupportWidth = 260
+		local spySelectorWidth = workspaceWidth < 980 and 260 or 300
+		local spySupportWidth = workspaceWidth < 980 and 280 or 360
 		local spyReconWidth = workspaceWidth - spySelectorWidth - spySupportWidth - panelGap * 2
 		if spyReconWidth < 340 then
 			local deficit = 340 - spyReconWidth
-			spySupportWidth = math.max(220, spySupportWidth - deficit)
+			spySupportWidth = math.max(260, spySupportWidth - deficit)
 			spyReconWidth = workspaceWidth - spySelectorWidth - spySupportWidth - panelGap * 2
 		end
 
@@ -2929,6 +3055,7 @@ local function createGui(state)
 		refs.spyReconPanel.Size = UDim2.fromOffset(spyReconWidth, workspaceHeight)
 		refs.spySupportPanel.Position = UDim2.fromOffset(spySelectorWidth + spyReconWidth + panelGap * 2, 0)
 		refs.spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
+		refs.spyOperatorScroll.Size = UDim2.new(1, -24, 1, -254)
 
 		local remoteListWidth = 320
 		local remoteLogWidth = workspaceWidth - remoteListWidth - panelGap
@@ -3400,9 +3527,41 @@ function BytecodeViewer.start(config)
 		camera.CameraSubject = subject
 	end
 
+	local function setBackpackHiddenForGhost(hidden)
+		if hidden then
+			if state.backpackCoreGuiSnapshot == nil then
+				local ok, enabled = pcall(function()
+					return StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack)
+				end)
+				state.backpackCoreGuiSnapshot = ok and enabled or true
+			end
+			pcall(function()
+				StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+			end)
+			return
+		end
+
+		if state.backpackCoreGuiSnapshot ~= nil then
+			local shouldEnable = state.backpackCoreGuiSnapshot == true
+			pcall(function()
+				StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, shouldEnable)
+			end)
+			state.backpackCoreGuiSnapshot = nil
+		end
+	end
+
 	local function stripGhostExecutables(character)
 		for _, descendant in ipairs(character:GetDescendants()) do
-			if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+			if descendant:IsA("Tool") then
+				descendant:Destroy()
+			elseif descendant:IsA("LocalScript") and descendant.Name == "Animate" then
+				pcall(function()
+					descendant.Enabled = true
+				end)
+				pcall(function()
+					descendant.Disabled = false
+				end)
+			elseif descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
 				descendant:Destroy()
 			elseif descendant:IsA("BasePart") then
 				descendant.Anchored = false
@@ -3410,9 +3569,9 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	local function createFallbackGhostCharacter()
+	local function createFallbackGhostCharacter(characterName)
 		local model = Instance.new("Model")
-		model.Name = "DartLocalCharacter"
+		model.Name = characterName or "DartLocalCharacter"
 
 		local root = Instance.new("Part")
 		root.Name = "HumanoidRootPart"
@@ -3464,10 +3623,13 @@ function BytecodeViewer.start(config)
 		return model
 	end
 
-	local function createGhostCharacter()
+	local function createGhostCharacter(characterName)
 		local sourceCharacter = state.realCharacterBeforeGhost
 		if sourceCharacter == nil or sourceCharacter.Parent == nil or sourceCharacter == state.ghostCharacter then
 			sourceCharacter = getLocalCharacter()
+		end
+		if sourceCharacter == state.ghostCharacter then
+			sourceCharacter = nil
 		end
 
 		local ghost = nil
@@ -3484,10 +3646,10 @@ function BytecodeViewer.start(config)
 		end
 
 		if ghost == nil then
-			ghost = createFallbackGhostCharacter()
+			ghost = createFallbackGhostCharacter(characterName)
 		end
 
-		ghost.Name = "DartLocalCharacter"
+		ghost.Name = characterName or "DartLocalCharacter"
 		stripGhostExecutables(ghost)
 		if ghost.PrimaryPart == nil then
 			ghost.PrimaryPart = getCharacterRootPart(ghost)
@@ -3516,13 +3678,69 @@ function BytecodeViewer.start(config)
 		return ghost
 	end
 
-	local function ensureGhostCharacter()
-		if state.ghostCharacter ~= nil and state.ghostCharacter.Parent ~= nil then
-			return state.ghostCharacter
+	local function pruneGhostCharacters()
+		for index = #state.ghostCharacters, 1, -1 do
+			local slot = state.ghostCharacters[index]
+			if type(slot) ~= "table" or typeof(slot.character) ~= "Instance" or slot.character.Parent == nil then
+				table.remove(state.ghostCharacters, index)
+				if state.selectedGhostIndex >= index then
+					state.selectedGhostIndex = state.selectedGhostIndex - 1
+				end
+			end
 		end
 
-		state.ghostCharacter = createGhostCharacter()
-		return state.ghostCharacter
+		if #state.ghostCharacters == 0 then
+			state.selectedGhostIndex = 0
+			state.ghostCharacter = nil
+			return
+		end
+
+		state.selectedGhostIndex = clamp(state.selectedGhostIndex, 1, #state.ghostCharacters)
+		state.ghostCharacter = state.ghostCharacters[state.selectedGhostIndex].character
+	end
+
+	local function getSelectedGhostSlot()
+		pruneGhostCharacters()
+		if state.selectedGhostIndex <= 0 then
+			return nil
+		end
+
+		return state.ghostCharacters[state.selectedGhostIndex]
+	end
+
+	local function makeGhostCharacterName(requestedName)
+		local trimmed = trimText(requestedName or "")
+		if trimmed ~= "" then
+			return trimmed
+		end
+
+		state.ghostCharacterSerial = state.ghostCharacterSerial + 1
+		return ("Local Character %d"):format(state.ghostCharacterSerial)
+	end
+
+	local function createGhostSlot(requestedName)
+		local displayName = makeGhostCharacterName(requestedName)
+		local ghost = createGhostCharacter(displayName)
+		local slot = {
+			name = displayName,
+			character = ghost,
+			createdAt = os.clock(),
+		}
+
+		table.insert(state.ghostCharacters, slot)
+		state.selectedGhostIndex = #state.ghostCharacters
+		state.ghostCharacter = ghost
+		return slot
+	end
+
+	local function ensureGhostCharacter()
+		local slot = getSelectedGhostSlot()
+		if slot == nil then
+			slot = createGhostSlot()
+		end
+
+		state.ghostCharacter = slot.character
+		return slot.character
 	end
 
 	local function restoreRealCharacter()
@@ -3532,11 +3750,59 @@ function BytecodeViewer.start(config)
 			return false
 		end
 
-		pcall(function()
+		local ok = pcall(function()
 			player.Character = realCharacter
 		end)
+		if not ok then
+			return false
+		end
+		setBackpackHiddenForGhost(false)
 		setCameraSubjectToCharacter(realCharacter)
 		return true
+	end
+
+	local function switchToGhostSlot(slot)
+		if slot == nil or typeof(slot.character) ~= "Instance" or slot.character.Parent == nil then
+			return false
+		end
+
+		state.ghostCharacter = slot.character
+		if Players.LocalPlayer ~= nil then
+			local ok = pcall(function()
+				Players.LocalPlayer.Character = slot.character
+			end)
+			if not ok then
+				return false
+			end
+		end
+		setBackpackHiddenForGhost(true)
+		setCameraSubjectToCharacter(slot.character)
+		return true
+	end
+
+	local function selectGhostOffset(offset)
+		pruneGhostCharacters()
+		local count = #state.ghostCharacters
+		if count == 0 then
+			return nil
+		end
+
+		state.selectedGhostIndex = ((state.selectedGhostIndex - 1 + offset) % count) + 1
+		local slot = state.ghostCharacters[state.selectedGhostIndex]
+		state.ghostCharacter = slot.character
+		if state.ghostCharacterEnabled then
+			switchToGhostSlot(slot)
+		end
+		return slot
+	end
+
+	local function setGhostFlyEnabled(enabled)
+		state.ghostFlyEnabled = enabled == true
+		local ghost = state.ghostCharacter
+		local humanoid = ghost and ghost:FindFirstChildOfClass("Humanoid") or nil
+		if humanoid ~= nil and not state.ghostFlyEnabled then
+			humanoid.PlatformStand = false
+		end
 	end
 
 	local function setGhostCharacterEnabled(enabled)
@@ -3558,32 +3824,87 @@ function BytecodeViewer.start(config)
 			end
 
 			state.ghostCharacterEnabled = true
-			if Players.LocalPlayer ~= nil then
-				pcall(function()
-					Players.LocalPlayer.Character = ghost
-				end)
+			if not switchToGhostSlot(getSelectedGhostSlot() or { character = ghost }) then
+				state.ghostCharacterEnabled = false
+				emitNotification("critical", "Local character failed", "Could not swap control to the local character.", { duration = 3 })
+				return
 			end
-			setCameraSubjectToCharacter(ghost)
 			emitNotification("success", "Local character", "Swapped to a client-only operator body.", { duration = 2.5 })
 			return
 		end
 
 		state.ghostCharacterEnabled = false
+		setGhostFlyEnabled(false)
 		local restored = restoreRealCharacter()
-		local ghost = state.ghostCharacter
-		state.ghostCharacter = nil
-		if ghost ~= nil then
-			if state.freeCameraSnapshot ~= nil and typeof(state.freeCameraSnapshot.subject) == "Instance" and state.freeCameraSnapshot.subject:IsDescendantOf(ghost) then
+		if state.ghostCharacter ~= nil then
+			if state.freeCameraSnapshot ~= nil and typeof(state.freeCameraSnapshot.subject) == "Instance" and state.freeCameraSnapshot.subject:IsDescendantOf(state.ghostCharacter) then
 				state.freeCameraSnapshot.subject = getCharacterCameraSubject(state.realCharacterBeforeGhost)
 			end
-			ghost:Destroy()
 		end
 
 		if restored then
-			emitNotification("info", "Local character", "Restored real character control.", { duration = 2.5 })
+			emitNotification("info", "Local character", "Restored real character control. Local bodies remain available.", { duration = 2.5 })
 		else
-			emitNotification("warning", "Local character", "Ghost removed. No real character was available to restore.", { duration = 3 })
+			setBackpackHiddenForGhost(false)
+			emitNotification("warning", "Local character", "No real character was available to restore.", { duration = 3 })
 		end
+	end
+
+	local function createNewGhostCharacterFromInput()
+		local name = refs.ghostNameBox and refs.ghostNameBox.Text or ""
+		local selectedSlot = getSelectedGhostSlot()
+		if selectedSlot ~= nil and trimText(name) == selectedSlot.name then
+			name = ""
+		end
+		local slot = createGhostSlot(name)
+		if state.ghostCharacterEnabled then
+			switchToGhostSlot(slot)
+		end
+		emitNotification("success", "Local character", ("Created %s."):format(slot.name), { duration = 2.5 })
+		return slot
+	end
+
+	local function destroySelectedGhostCharacter()
+		local slot = getSelectedGhostSlot()
+		if slot == nil then
+			return
+		end
+
+		local destroyedCurrent = slot.character == state.ghostCharacter
+		local character = slot.character
+		table.remove(state.ghostCharacters, state.selectedGhostIndex)
+		if typeof(character) == "Instance" then
+			character:Destroy()
+		end
+
+		if #state.ghostCharacters == 0 then
+			state.selectedGhostIndex = 0
+			state.ghostCharacter = nil
+			if state.ghostCharacterEnabled then
+				setGhostCharacterEnabled(false)
+			end
+			emitNotification("info", "Local character", "Destroyed the last local character.", { duration = 2.5 })
+			return
+		end
+
+		state.selectedGhostIndex = clamp(state.selectedGhostIndex, 1, #state.ghostCharacters)
+		local nextSlot = state.ghostCharacters[state.selectedGhostIndex]
+		state.ghostCharacter = nextSlot.character
+		if state.ghostCharacterEnabled and destroyedCurrent then
+			switchToGhostSlot(nextSlot)
+		end
+		emitNotification("info", "Local character", ("Destroyed %s."):format(slot.name), { duration = 2.5 })
+	end
+
+	local function destroyAllGhostCharacters()
+		for _, slot in ipairs(state.ghostCharacters) do
+			if type(slot) == "table" and typeof(slot.character) == "Instance" then
+				slot.character:Destroy()
+			end
+		end
+		state.ghostCharacters = {}
+		state.selectedGhostIndex = 0
+		state.ghostCharacter = nil
 	end
 
 	local function bindFreeCameraInputSink()
@@ -3676,6 +3997,130 @@ function BytecodeViewer.start(config)
 		emitNotification("info", "Free camera", "Camera restored.", { duration = 2.5 })
 	end
 
+	local function setFreeCameraCFrame(cframe)
+		if typeof(cframe) ~= "CFrame" then
+			return
+		end
+
+		local pitch, yaw = cframe:ToOrientation()
+		state.freeCameraPitch = pitch
+		state.freeCameraYaw = yaw
+		state.freeCameraCFrame = cframe
+
+		local camera = getCurrentCamera()
+		if camera ~= nil and state.freeCameraEnabled then
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = cframe
+		end
+	end
+
+	local function getSelectedCameraPerspective()
+		if #state.cameraPerspectives == 0 then
+			state.selectedCameraPerspectiveIndex = 0
+			return nil
+		end
+
+		state.selectedCameraPerspectiveIndex = clamp(state.selectedCameraPerspectiveIndex, 1, #state.cameraPerspectives)
+		return state.cameraPerspectives[state.selectedCameraPerspectiveIndex]
+	end
+
+	local function makeCameraPerspectiveName(requestedName)
+		local trimmed = trimText(requestedName or "")
+		if trimmed ~= "" then
+			return trimmed
+		end
+
+		state.cameraPerspectiveSerial = state.cameraPerspectiveSerial + 1
+		return ("Perspective %d"):format(state.cameraPerspectiveSerial)
+	end
+
+	local function saveCameraPerspective()
+		local camera = getCurrentCamera()
+		if camera == nil then
+			return
+		end
+
+		local requestedName = refs.cameraPerspectiveNameBox and refs.cameraPerspectiveNameBox.Text or ""
+		local selectedPerspective = getSelectedCameraPerspective()
+		if selectedPerspective ~= nil and trimText(requestedName) == selectedPerspective.name then
+			requestedName = ""
+		end
+
+		local perspective = {
+			name = makeCameraPerspectiveName(requestedName),
+			cframe = state.freeCameraCFrame or camera.CFrame,
+			fieldOfView = camera.FieldOfView,
+			createdAt = os.clock(),
+		}
+
+		table.insert(state.cameraPerspectives, perspective)
+		state.selectedCameraPerspectiveIndex = #state.cameraPerspectives
+		emitNotification("success", "Camera perspective", ("Saved %s."):format(perspective.name), { duration = 2.5 })
+	end
+
+	local function applyCameraPerspective(index)
+		if #state.cameraPerspectives == 0 then
+			return
+		end
+
+		state.selectedCameraPerspectiveIndex = clamp(index, 1, #state.cameraPerspectives)
+		local perspective = getSelectedCameraPerspective()
+		if perspective == nil then
+			return
+		end
+
+		if not state.freeCameraEnabled then
+			setFreeCameraEnabled(true)
+		end
+
+		local camera = getCurrentCamera()
+		if camera ~= nil and type(perspective.fieldOfView) == "number" then
+			camera.FieldOfView = perspective.fieldOfView
+		end
+		setFreeCameraCFrame(perspective.cframe)
+		emitNotification("info", "Camera perspective", ("Loaded %s."):format(perspective.name), { duration = 2 })
+	end
+
+	local function selectCameraPerspectiveOffset(offset)
+		if #state.cameraPerspectives == 0 then
+			return
+		end
+
+		local nextIndex = ((state.selectedCameraPerspectiveIndex - 1 + offset) % #state.cameraPerspectives) + 1
+		applyCameraPerspective(nextIndex)
+	end
+
+	local function renameSelectedCameraPerspective()
+		local perspective = getSelectedCameraPerspective()
+		if perspective == nil then
+			return
+		end
+
+		local name = trimText(refs.cameraPerspectiveNameBox and refs.cameraPerspectiveNameBox.Text or "")
+		if name == "" then
+			return
+		end
+
+		perspective.name = name
+		emitNotification("info", "Camera perspective", ("Renamed to %s."):format(name), { duration = 2 })
+	end
+
+	local function destroySelectedCameraPerspective()
+		local perspective = getSelectedCameraPerspective()
+		if perspective == nil then
+			return
+		end
+
+		local name = perspective.name
+		table.remove(state.cameraPerspectives, state.selectedCameraPerspectiveIndex)
+		if #state.cameraPerspectives == 0 then
+			state.selectedCameraPerspectiveIndex = 0
+		else
+			state.selectedCameraPerspectiveIndex = clamp(state.selectedCameraPerspectiveIndex, 1, #state.cameraPerspectives)
+		end
+		emitNotification("info", "Camera perspective", ("Destroyed %s."):format(name), { duration = 2 })
+	end
+
 	local function getFlatCameraVectors(cameraCFrame)
 		local look = Vector3.new(cameraCFrame.LookVector.X, 0, cameraCFrame.LookVector.Z)
 		local right = Vector3.new(cameraCFrame.RightVector.X, 0, cameraCFrame.RightVector.Z)
@@ -3693,7 +4138,77 @@ function BytecodeViewer.start(config)
 		return look, right
 	end
 
-	local function updateGhostMovement()
+	local function getOperatorMoveVector(flatOnly)
+		local camera = getCurrentCamera()
+		local basis = camera and camera.CFrame or CFrame.new()
+		local look = basis.LookVector
+		local right = basis.RightVector
+		local up = Vector3.new(0, 1, 0)
+		if flatOnly then
+			look, right = getFlatCameraVectors(basis)
+		end
+
+		local move = Vector3.zero
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+			move = move + look
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+			move = move - look
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+			move = move + right
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+			move = move - right
+		end
+		if not flatOnly then
+			if UserInputService:IsKeyDown(Enum.KeyCode.E) or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+				move = move + up
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+				move = move - up
+			end
+		end
+
+		if move.Magnitude > 1 then
+			return move.Unit
+		end
+
+		return move
+	end
+
+	local function updateGhostFly(deltaTime)
+		local ghost = state.ghostCharacter
+		if ghost == nil or ghost.Parent == nil then
+			return
+		end
+
+		local root = getCharacterRootPart(ghost)
+		local humanoid = ghost:FindFirstChildOfClass("Humanoid")
+		if root == nil or humanoid == nil then
+			return
+		end
+
+		humanoid.PlatformStand = true
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+
+		local move = getOperatorMoveVector(false)
+		local speed = state.ghostFlySpeed
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+			speed = speed * 1.8
+		end
+
+		local nextPosition = root.Position + move * speed * deltaTime
+		local camera = getCurrentCamera()
+		local look = camera and camera.CFrame.LookVector or root.CFrame.LookVector
+		if look.Magnitude < 0.01 then
+			look = Vector3.new(0, 0, -1)
+		end
+		ghost:PivotTo(CFrame.lookAt(nextPosition, nextPosition + look.Unit))
+	end
+
+	local function updateGhostMovement(deltaTime)
 		if not state.ghostCharacterEnabled or state.freeCameraEnabled or UserInputService:GetFocusedTextBox() ~= nil then
 			return
 		end
@@ -3708,28 +4223,13 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		local camera = getCurrentCamera()
-		local basis = camera and camera.CFrame or ghost:GetPivot()
-		local look, right = getFlatCameraVectors(basis)
-		local move = Vector3.zero
-
-		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-			move = move + look
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-			move = move - look
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-			move = move + right
-		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-			move = move - right
+		if state.ghostFlyEnabled then
+			updateGhostFly(deltaTime)
+			return
 		end
 
-		if move.Magnitude > 1 then
-			move = move.Unit
-		end
-
+		humanoid.PlatformStand = false
+		local move = getOperatorMoveVector(true)
 		humanoid:Move(move, false)
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 			humanoid.Jump = true
@@ -3777,11 +4277,11 @@ function BytecodeViewer.start(config)
 			move = move.Unit
 		end
 
-		local speed = 40
+		local speed = state.freeCameraSpeed
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
-			speed = 86
+			speed = state.freeCameraFastSpeed
 		elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
-			speed = 16
+			speed = math.max(6, state.freeCameraSpeed * 0.4)
 		end
 
 		local currentCFrame = state.freeCameraCFrame or camera.CFrame
@@ -5884,6 +6384,24 @@ function BytecodeViewer.start(config)
 		state.gravityValue = value
 	end)
 
+	local ghostFlySpeedSlider = bindSlider(refs.ghostFlySpeedSlider, 8, 180, state.ghostFlySpeed, 1, function(value)
+		return tostring(math.floor(value + 0.5))
+	end, function(value)
+		state.ghostFlySpeed = value
+	end)
+
+	local freeCameraSpeedSlider = bindSlider(refs.freeCameraSpeedSlider, 8, 220, state.freeCameraSpeed, 1, function(value)
+		return tostring(math.floor(value + 0.5))
+	end, function(value)
+		state.freeCameraSpeed = value
+	end)
+
+	local freeCameraFastSpeedSlider = bindSlider(refs.freeCameraFastSpeedSlider, 16, 360, state.freeCameraFastSpeed, 1, function(value)
+		return tostring(math.floor(value + 0.5))
+	end, function(value)
+		state.freeCameraFastSpeed = value
+	end)
+
 	local iridiumSlider = bindSlider(refs.iridiumSlider, 0, 1, state.iridiumMinFullness, 0.05, function(value)
 		return string.format("%.2f", value)
 	end, function(value)
@@ -6640,6 +7158,45 @@ function BytecodeViewer.start(config)
 		end
 	end
 
+	local function syncOperatorControls()
+		pruneGhostCharacters()
+		local ghostCount = #state.ghostCharacters
+		local selectedGhost = getSelectedGhostSlot()
+		if selectedGhost == nil then
+			refs.ghostStatusLabel.Text = "No local characters created"
+		else
+			refs.ghostStatusLabel.Text = ("%d/%d  %s%s"):format(
+				state.selectedGhostIndex,
+				ghostCount,
+				selectedGhost.name,
+				state.ghostCharacterEnabled and "  [controlling]" or ""
+			)
+			if not refs.ghostNameBox:IsFocused() then
+				refs.ghostNameBox.Text = selectedGhost.name
+			end
+		end
+
+		NativeUi.setButtonDisabled(refs.ghostPrevButton, ghostCount < 2)
+		NativeUi.setButtonDisabled(refs.ghostNextButton, ghostCount < 2)
+		NativeUi.setButtonDisabled(refs.ghostDestroyButton, ghostCount == 0)
+
+		local perspectiveCount = #state.cameraPerspectives
+		local perspective = getSelectedCameraPerspective()
+		if perspective == nil then
+			refs.cameraPerspectiveStatusLabel.Text = "No saved camera perspectives"
+		else
+			refs.cameraPerspectiveStatusLabel.Text = ("%d/%d  %s"):format(state.selectedCameraPerspectiveIndex, perspectiveCount, perspective.name)
+			if not refs.cameraPerspectiveNameBox:IsFocused() then
+				refs.cameraPerspectiveNameBox.Text = perspective.name
+			end
+		end
+
+		NativeUi.setButtonDisabled(refs.cameraPrevButton, perspectiveCount < 2)
+		NativeUi.setButtonDisabled(refs.cameraNextButton, perspectiveCount < 2)
+		NativeUi.setButtonDisabled(refs.cameraRenameButton, perspectiveCount == 0)
+		NativeUi.setButtonDisabled(refs.cameraDestroyButton, perspectiveCount == 0)
+	end
+
 	syncControlState = function()
 		local bodyVisible = not state.isMinimized
 		local workspaceCopy = WORKSPACE_COPY[state.activeTab] or WORKSPACE_COPY.main
@@ -6695,6 +7252,7 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.wellToggle, state.espObjectToggles.well)
 		syncToggleButton(refs.remoteWatcherToggle, state.remoteWatcherEnabled)
 		syncToggleButton(refs.spyGhostToggle, state.ghostCharacterEnabled)
+		syncToggleButton(refs.spyGhostFlyToggle, state.ghostFlyEnabled)
 		syncToggleButton(refs.spyFreeCameraToggle, state.freeCameraEnabled)
 		NativeUi.setButtonSelected(refs.aimNearestButton, state.aimTargetPart == "nearest")
 		NativeUi.setButtonSelected(refs.aimHeadButton, state.aimTargetPart == "head")
@@ -6738,6 +7296,7 @@ function BytecodeViewer.start(config)
 		end
 
 		updateSpyReadout()
+		syncOperatorControls()
 		updateSuiteOverlays()
 	end
 
@@ -6823,10 +7382,10 @@ function BytecodeViewer.start(config)
 		end
 		if state.ghostCharacterEnabled then
 			setGhostCharacterEnabled(false)
-		elseif state.ghostCharacter ~= nil then
-			state.ghostCharacter:Destroy()
-			state.ghostCharacter = nil
+		else
+			setBackpackHiddenForGhost(false)
 		end
+		destroyAllGhostCharacters()
 	end)
 	trackCleanup(restoreLighting)
 	trackCleanup(function()
@@ -6878,7 +7437,7 @@ function BytecodeViewer.start(config)
 
 	trackConnection(RunService.RenderStepped:Connect(function(deltaTime)
 		updateFreeCamera(deltaTime)
-		updateGhostMovement()
+		updateGhostMovement(deltaTime)
 		if state.freeCameraEnabled then
 			return
 		end
@@ -7188,8 +7747,51 @@ function BytecodeViewer.start(config)
 		setGhostCharacterEnabled(not state.ghostCharacterEnabled)
 		syncControlState()
 	end))
+	trackConnection(refs.spyGhostFlyToggle.toggle.MouseButton1Click:Connect(function()
+		if not state.ghostCharacterEnabled then
+			setGhostCharacterEnabled(true)
+		end
+		setGhostFlyEnabled(not state.ghostFlyEnabled)
+		syncControlState()
+	end))
+	trackConnection(refs.ghostNewButton.MouseButton1Click:Connect(function()
+		createNewGhostCharacterFromInput()
+		syncControlState()
+	end))
+	trackConnection(refs.ghostPrevButton.MouseButton1Click:Connect(function()
+		selectGhostOffset(-1)
+		syncControlState()
+	end))
+	trackConnection(refs.ghostNextButton.MouseButton1Click:Connect(function()
+		selectGhostOffset(1)
+		syncControlState()
+	end))
+	trackConnection(refs.ghostDestroyButton.MouseButton1Click:Connect(function()
+		destroySelectedGhostCharacter()
+		syncControlState()
+	end))
 	trackConnection(refs.spyFreeCameraToggle.toggle.MouseButton1Click:Connect(function()
 		setFreeCameraEnabled(not state.freeCameraEnabled)
+		syncControlState()
+	end))
+	trackConnection(refs.cameraSaveButton.MouseButton1Click:Connect(function()
+		saveCameraPerspective()
+		syncControlState()
+	end))
+	trackConnection(refs.cameraPrevButton.MouseButton1Click:Connect(function()
+		selectCameraPerspectiveOffset(-1)
+		syncControlState()
+	end))
+	trackConnection(refs.cameraNextButton.MouseButton1Click:Connect(function()
+		selectCameraPerspectiveOffset(1)
+		syncControlState()
+	end))
+	trackConnection(refs.cameraRenameButton.MouseButton1Click:Connect(function()
+		renameSelectedCameraPerspective()
+		syncControlState()
+	end))
+	trackConnection(refs.cameraDestroyButton.MouseButton1Click:Connect(function()
+		destroySelectedCameraPerspective()
 		syncControlState()
 	end))
 	trackConnection(refs.walkSlider.applyButton.MouseButton1Click:Connect(function()
@@ -7287,6 +7889,9 @@ function BytecodeViewer.start(config)
 	jumpPowerSlider.setValue(state.jumpPowerValue)
 	hipHeightSlider.setValue(state.hipHeightValue)
 	gravitySlider.setValue(state.gravityValue)
+	ghostFlySpeedSlider.setValue(state.ghostFlySpeed)
+	freeCameraSpeedSlider.setValue(state.freeCameraSpeed)
+	freeCameraFastSpeedSlider.setValue(state.freeCameraFastSpeed)
 	iridiumSlider.setValue(state.iridiumMinFullness)
 	wellDistanceSlider.setValue(state.wellDistance)
 	refreshPlayersList()
