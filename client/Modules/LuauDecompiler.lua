@@ -294,7 +294,7 @@ local function getUpvalueName(context, index)
 	end
 
 	local upvalue = context.proto.upvalues and context.proto.upvalues[index + 1]
-	return upvalue and upvalue.name or ("upvalue_%d"):format(index)
+	return sanitizeIdentifier(upvalue and upvalue.name, nil) or ("upvalue_%d"):format(index)
 end
 
 local function memberAccess(base, key)
@@ -303,6 +303,19 @@ local function memberAccess(base, key)
 	end
 
 	return ("%s[%s]"):format(base, quoteString(key))
+end
+
+local function globalTargetExpression(proto, constantIndex)
+	local constant = getConstant(proto, constantIndex)
+	if constant and constant.kind == "string" then
+		if isIdentifier(constant.value) then
+			return constant.value
+		end
+
+		return ("_G[%s]"):format(quoteString(constant.value))
+	end
+
+	return constantToExpression(constant)
 end
 
 local function getLocalNameAtPc(proto, register, pc)
@@ -1119,7 +1132,7 @@ local function handleInstruction(context, instruction)
 		setRegister(context, fields.A + 1, target)
 	elseif name == "SETGLOBAL" then
 		emit(context, ("%s = %s"):format(
-			constantToExpression(getConstant(proto, aux and aux.constantIndex)),
+			globalTargetExpression(proto, aux and aux.constantIndex),
 			renderExpression(getRegisterValue(context, fields.A), 0)
 		))
 	elseif name == "SETUPVAL" then

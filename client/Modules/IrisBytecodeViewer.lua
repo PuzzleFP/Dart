@@ -109,11 +109,25 @@ local started = false
 local GUI_NAME = "EclipsisControlGui"
 local SESSION_KEY = "__DartViewerCleanup"
 local MAX_AIM_MOUSE_STEP = 120
-local GC_SCRIPT_PATH_PREFIX = "__gc_script:"
-local GC_SCAN_LIMIT = 3000
-local gcScriptRegistry = setmetatable({}, { __mode = "v" })
-local gcScriptBrowserRoot = nil
+local NIL_SCRIPT_PATH_PREFIX = "__nil_script:"
+local NIL_SCAN_LIMIT = 3000
+local nilScriptRegistry = setmetatable({}, { __mode = "v" })
+local nilScriptBrowserRoot = nil
 local dynamicWorkspaceScripts = setmetatable({}, { __mode = "k" })
+local UI_ICON = {
+	main = "[+]",
+	esp = "[E]",
+	spy = "[S]",
+	guns = "[G]",
+	build = "[B]",
+	remote = "[R]",
+	code = "[C]",
+	refresh = "[~]",
+	copy = "[#]",
+	load = "[>]",
+	clear = "[x]",
+	watch = "[!]",
+}
 local WORKSPACE_COPY = {
 	main = {
 		kicker = "MAIN",
@@ -145,6 +159,12 @@ local WORKSPACE_COPY = {
 		subtitle = "Building controls stay separate from guns and visibility.",
 		search = "Search build tools",
 	},
+	remote = {
+		kicker = "REMOTE",
+		title = "Remote debugging",
+		subtitle = "Inspect remotes and watch client remote traffic without firing calls.",
+		search = "Search remote events, functions, logs",
+	},
 	bytecode = {
 		kicker = "CODE",
 		title = "Script inspection workflow",
@@ -169,6 +189,21 @@ local function splitLines(text)
 	end
 
 	return lines
+end
+
+local function withLineNumbers(text)
+	local numbered = {}
+	local width = 4
+
+	for index, line in ipairs(splitLines(text or "")) do
+		table.insert(numbered, ("%0" .. tostring(width) .. "d | %s"):format(index, line))
+	end
+
+	if #numbered == 0 then
+		return "0001 | "
+	end
+
+	return table.concat(numbered, "\n")
 end
 
 local function writeClipboard(text)
@@ -326,7 +361,7 @@ local function resolveInstanceByPath(path)
 end
 
 local function safeParseScript(scriptPath)
-	local scriptInstance = gcScriptRegistry[scriptPath]
+	local scriptInstance = nilScriptRegistry[scriptPath]
 	local ok = true
 
 	if scriptInstance == nil then
@@ -371,62 +406,35 @@ local function isScriptLike(instance)
 	return instance:IsA("LuaSourceContainer")
 end
 
-local function getGcScriptRegistryPath(scriptInstance)
-	return GC_SCRIPT_PATH_PREFIX .. scriptInstance:GetFullName()
-end
-
-local function getScriptFromGcValue(value)
-	if typeof(value) == "Instance" and isScriptLike(value) then
-		return value
-	end
-
-	if type(value) == "function" and type(getfenv) == "function" then
-		local env = getfenv(value)
-		if type(env) == "table" then
-			local scriptValue = rawget(env, "script")
-			if typeof(scriptValue) == "Instance" and isScriptLike(scriptValue) then
-				return scriptValue
-			end
-		end
-	elseif type(value) == "table" then
-		local scriptValue = rawget(value, "script")
-		if typeof(scriptValue) == "Instance" and isScriptLike(scriptValue) then
-			return scriptValue
-		end
-	end
-
-	return nil
-end
-
-local function buildGcScriptBrowserNode(scriptInstance)
-	local path = getGcScriptRegistryPath(scriptInstance)
-	gcScriptRegistry[path] = scriptInstance
+local function buildNilScriptBrowserNode(scriptInstance, index)
+	local path = NIL_SCRIPT_PATH_PREFIX .. tostring(index) .. ":" .. scriptInstance.Name
+	nilScriptRegistry[path] = scriptInstance
 
 	return {
 		name = scriptInstance.Name,
 		path = path,
-		className = scriptInstance.ClassName .. " gc",
+		className = scriptInstance.ClassName .. " nil",
 		isScript = true,
 		children = {},
 		depth = 1,
 	}
 end
 
-local function buildGcScriptBrowserRoot(forceScan)
+local function buildNilScriptBrowserRoot(forceScan)
 	if not forceScan then
-		return gcScriptBrowserRoot
+		return nilScriptBrowserRoot
 	end
 
-	for path in pairs(gcScriptRegistry) do
-		gcScriptRegistry[path] = nil
+	for path in pairs(nilScriptRegistry) do
+		nilScriptRegistry[path] = nil
 	end
-	gcScriptBrowserRoot = nil
+	nilScriptBrowserRoot = nil
 
-	if type(getgc) ~= "function" then
+	if type(getnilinstances) ~= "function" then
 		return nil
 	end
 
-	local objects = getgc()
+	local objects = getnilinstances()
 	if type(objects) ~= "table" then
 		return nil
 	end
@@ -437,14 +445,13 @@ local function buildGcScriptBrowserRoot(forceScan)
 
 	for _, value in pairs(objects) do
 		scanned = scanned + 1
-		if scanned > GC_SCAN_LIMIT then
+		if scanned > NIL_SCAN_LIMIT then
 			break
 		end
 
-		local scriptInstance = getScriptFromGcValue(value)
-		if scriptInstance ~= nil and not seen[scriptInstance] then
-			seen[scriptInstance] = true
-			table.insert(nodes, buildGcScriptBrowserNode(scriptInstance))
+		if typeof(value) == "Instance" and isScriptLike(value) and not seen[value] then
+			seen[value] = true
+			table.insert(nodes, buildNilScriptBrowserNode(value, #nodes + 1))
 		end
 	end
 
@@ -456,16 +463,16 @@ local function buildGcScriptBrowserRoot(forceScan)
 		return string.lower(left.name) < string.lower(right.name)
 	end)
 
-	gcScriptBrowserRoot = {
-		name = "GC Scripts",
-		path = "__gc_scripts",
-		className = ("getgc %d"):format(#nodes),
+	nilScriptBrowserRoot = {
+		name = "Nil Instances",
+		path = "__nil_instances",
+		className = ("nil %d"):format(#nodes),
 		isScript = false,
 		children = nodes,
 		depth = 0,
 	}
 
-	return gcScriptBrowserRoot
+	return nilScriptBrowserRoot
 end
 
 local function buildDynamicWorkspaceScriptRoot()
@@ -567,7 +574,7 @@ local function buildScriptBrowserNode(instance, depth)
 	}
 end
 
-local function buildScriptBrowserTree(forceGcScan)
+local function buildScriptBrowserTree(forceNilScan)
 	local roots = {}
 
 	for _, root in ipairs(collectScriptBrowserRoots()) do
@@ -582,9 +589,9 @@ local function buildScriptBrowserTree(forceGcScan)
 		table.insert(roots, workspaceRoot)
 	end
 
-	local gcRoot = buildGcScriptBrowserRoot(forceGcScan)
-	if gcRoot ~= nil then
-		table.insert(roots, gcRoot)
+	local nilRoot = buildNilScriptBrowserRoot(forceNilScan)
+	if nilRoot ~= nil then
+		table.insert(roots, nilRoot)
 	end
 
 	table.sort(roots, function(left, right)
@@ -639,6 +646,112 @@ local function getFilteredTree(tree, filterText)
 	end
 
 	return filtered
+end
+
+local function isRemoteLike(instance)
+	return typeof(instance) == "Instance"
+		and (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance.ClassName == "UnreliableRemoteEvent")
+end
+
+local function getRemotePath(instance)
+	if typeof(instance) ~= "Instance" then
+		return tostring(instance)
+	end
+
+	return instance:GetFullName()
+end
+
+local function collectRemoteBrowserRoots()
+	local roots = {}
+	local seen = {}
+
+	local function push(instance)
+		if typeof(instance) ~= "Instance" or seen[instance] then
+			return
+		end
+
+		seen[instance] = true
+		table.insert(roots, instance)
+	end
+
+	push(game:GetService("ReplicatedStorage"))
+	push(game:GetService("ReplicatedFirst"))
+	push(Workspace)
+
+	local localPlayer = Players.LocalPlayer
+	if localPlayer ~= nil then
+		push(localPlayer)
+		push(localPlayer:FindFirstChildOfClass("PlayerGui"))
+		push(localPlayer:FindFirstChildOfClass("Backpack"))
+		push(localPlayer.Character)
+	end
+
+	return roots
+end
+
+local function buildRemoteBrowserList()
+	local remotes = {}
+	local seen = {}
+
+	for _, root in ipairs(collectRemoteBrowserRoots()) do
+		if isRemoteLike(root) and not seen[root] then
+			seen[root] = true
+			table.insert(remotes, root)
+		end
+
+		for _, descendant in ipairs(root:GetDescendants()) do
+			if isRemoteLike(descendant) and not seen[descendant] then
+				seen[descendant] = true
+				table.insert(remotes, descendant)
+			end
+		end
+	end
+
+	table.sort(remotes, function(left, right)
+		return string.lower(getRemotePath(left)) < string.lower(getRemotePath(right))
+	end)
+
+	return remotes
+end
+
+local function formatRemoteValue(value, depth)
+	depth = depth or 0
+	if depth > 2 then
+		return "..."
+	end
+
+	local valueType = typeof(value)
+	if valueType == "Instance" then
+		return value:GetFullName()
+	elseif valueType == "string" then
+		return string.format("%q", value)
+	elseif valueType == "Vector3" then
+		return ("Vector3(%s, %s, %s)"):format(math.floor(value.X * 100) / 100, math.floor(value.Y * 100) / 100, math.floor(value.Z * 100) / 100)
+	elseif valueType == "CFrame" then
+		return "CFrame"
+	elseif type(value) == "table" then
+		local parts = {}
+		local count = 0
+		for key, item in pairs(value) do
+			count = count + 1
+			if count > 4 then
+				table.insert(parts, "...")
+				break
+			end
+			table.insert(parts, ("%s=%s"):format(tostring(key), formatRemoteValue(item, depth + 1)))
+		end
+		return "{" .. table.concat(parts, ", ") .. "}"
+	end
+
+	return tostring(value)
+end
+
+local function formatRemoteArgs(args)
+	local parts = {}
+	for index, value in ipairs(args or {}) do
+		parts[index] = formatRemoteValue(value, 0)
+	end
+	return table.concat(parts, ", ")
 end
 
 local function formatCodeView(chunk, showRawOpcodes)
@@ -747,6 +860,13 @@ local function makeState(config)
 		scriptBrowserTree = {},
 		scriptBrowserError = nil,
 		expandedNodes = {},
+		remoteFilterText = "",
+		remoteLogs = {},
+		remoteList = {},
+		selectedRemotePath = nil,
+		remoteWatcherEnabled = false,
+		remoteHookInstalled = false,
+		remoteHookError = nil,
 		lastResult = nil,
 		lastError = nil,
 		lastLoadedSourceMode = nil,
@@ -845,7 +965,7 @@ local function makeOutputViewer(parent)
 		Position = UDim2.fromOffset(0, 0),
 		ScrollBarImageColor3 = NativeUi.Theme.TextDim,
 		ScrollBarThickness = 7,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollingDirection = Enum.ScrollingDirection.XY,
 		Size = UDim2.new(1, 0, 1, 0),
 		Parent = parent,
 	})
@@ -864,21 +984,22 @@ local function makeOutputViewer(parent)
 		Text = "",
 		TextColor3 = NativeUi.Theme.Text,
 		TextSize = 13,
-		TextWrapped = true,
+		TextWrapped = false,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Parent = scroll,
 	})
 
 	local function syncCanvas()
-		local width = math.max(220, scroll.AbsoluteSize.X - padding * 2 - 10)
 		local text = codeLabel.Text ~= "" and codeLabel.Text or " "
 		local ok, bounds = pcall(function()
-			return TextService:GetTextSize(text, codeLabel.TextSize, codeLabel.Font, Vector2.new(width, 100000))
+			return TextService:GetTextSize(text, codeLabel.TextSize, codeLabel.Font, Vector2.new(100000, 100000))
 		end)
 
 		local height = scroll.AbsoluteSize.Y
+		local width = math.max(220, scroll.AbsoluteSize.X - padding * 2 - 10)
 		if ok and bounds then
+			width = math.max(width, bounds.X + 20)
 			height = math.max(height, bounds.Y + padding * 2 + 6)
 		else
 			local lineCount = math.max(1, #splitLines(text))
@@ -886,7 +1007,7 @@ local function makeOutputViewer(parent)
 		end
 
 		codeLabel.Size = UDim2.fromOffset(width, height - padding * 2)
-		scroll.CanvasSize = UDim2.fromOffset(0, height)
+		scroll.CanvasSize = UDim2.fromOffset(width + padding * 2, height)
 	end
 
 	return scroll, codeLabel, syncCanvas
@@ -1192,7 +1313,7 @@ local function createOverlayLayers(screenGui, refs)
 		Name = "SuiteControls",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -18),
-		Size = UDim2.fromOffset(646, 58),
+		Size = UDim2.fromOffset(760, 58),
 		ZIndex = 38,
 	}, 24, NativeUi.Theme.Border, 0.08)
 	SuiteComponents.stylePanel(suiteDock, SuiteTheme, {
@@ -1237,19 +1358,20 @@ local function createOverlayLayers(screenGui, refs)
 	local function makeDockButton(index, text)
 		return NativeUi.makeButton(suiteDock, text, {
 			Position = UDim2.fromOffset(104 + (index - 1) * 86, 14),
-			Size = UDim2.fromOffset(76, 30),
-			TextSize = 11,
+			Size = UDim2.fromOffset(82, 30),
+			TextSize = 10,
 			ZIndex = 39,
 			Palette = dockButtonPalette,
 		})
 	end
 
-	refs.dockAssistButton = makeDockButton(1, "ASSIST")
-	refs.dockEspButton = makeDockButton(2, "ESP")
-	refs.dockSpyButton = makeDockButton(3, "SPY")
-	refs.dockCombatButton = makeDockButton(4, "COMBAT")
-	refs.dockBuildButton = makeDockButton(5, "BUILD")
-	refs.dockCodeButton = makeDockButton(6, "CODE")
+	refs.dockAssistButton = makeDockButton(1, UI_ICON.main .. " ASSIST")
+	refs.dockEspButton = makeDockButton(2, UI_ICON.esp .. " ESP")
+	refs.dockSpyButton = makeDockButton(3, UI_ICON.spy .. " SPY")
+	refs.dockCombatButton = makeDockButton(4, UI_ICON.guns .. " COMBAT")
+	refs.dockBuildButton = makeDockButton(5, UI_ICON.build .. " BUILD")
+	refs.dockRemoteButton = makeDockButton(6, UI_ICON.remote .. " REMOTE")
+	refs.dockCodeButton = makeDockButton(7, UI_ICON.code .. " CODE")
 end
 
 local function createSpyWorkspace(spyWorkspace, refs)
@@ -1421,6 +1543,98 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	})
 end
 
+local function createRemoteWorkspace(remoteWorkspace, refs)
+	refs.remoteListPanel = NativeUi.makePanel(remoteWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(320, 100),
+	})
+	SuiteComponents.stylePanel(refs.remoteListPanel, SuiteTheme, SuiteTheme.Variants.Card)
+
+	local listTitle = makeSectionTitle(refs.remoteListPanel, UI_ICON.remote .. " Remotes")
+	listTitle.Position = UDim2.fromOffset(12, 12)
+
+	refs.remoteCountLabel = NativeUi.makeLabel(refs.remoteListPanel, "Scan ready", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 11,
+		Position = UDim2.fromOffset(12, 36),
+		Size = UDim2.new(1, -24, 0, 16),
+	})
+
+	refs.remoteSearchBox = NativeUi.makeTextBox(refs.remoteListPanel, "", {
+		PlaceholderText = "Filter remotes",
+		Position = UDim2.fromOffset(12, 62),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	refs.remoteListScroll, refs.remoteListContent = NativeUi.makeScrollList(refs.remoteListPanel, {
+		Position = UDim2.fromOffset(12, 104),
+		Size = UDim2.new(1, -24, 1, -116),
+		Padding = 5,
+		ContentPadding = 8,
+		BackgroundColor3 = NativeUi.Theme.Surface,
+	})
+	SuiteComponents.decorateScroll(refs.remoteListScroll, SuiteTheme, SuiteTheme.Variants.Control)
+
+	refs.remoteLogPanel = NativeUi.makePanel(remoteWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(336, 0),
+		Size = UDim2.fromOffset(520, 100),
+	})
+	SuiteComponents.stylePanel(refs.remoteLogPanel, SuiteTheme, SuiteTheme.Variants.Card)
+
+	local logTitle = makeSectionTitle(refs.remoteLogPanel, UI_ICON.watch .. " Traffic Log")
+	logTitle.Position = UDim2.fromOffset(12, 12)
+
+	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Watcher idle", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 11,
+		Position = UDim2.fromOffset(12, 36),
+		Size = UDim2.new(1, -24, 0, 16),
+	})
+
+	refs.remoteLogHost = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(12, 62),
+		Size = UDim2.new(1, -24, 1, -74),
+		Parent = refs.remoteLogPanel,
+	})
+	refs.remoteLogScroll, refs.remoteLogLabel, refs.syncRemoteLogCanvas = makeOutputViewer(refs.remoteLogHost)
+
+	refs.remoteControlPanel = NativeUi.makePanel(remoteWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(872, 0),
+		Size = UDim2.fromOffset(250, 100),
+	})
+	SuiteComponents.stylePanel(refs.remoteControlPanel, SuiteTheme, SuiteTheme.Variants.Card)
+
+	local controlTitle = makeSectionTitle(refs.remoteControlPanel, "Controls")
+	controlTitle.Position = UDim2.fromOffset(12, 12)
+
+	refs.remoteWatcherToggle = makeToggleRow(refs.remoteControlPanel, 42, "Remote Watcher", "Logs client remote calls when hook support exists, plus server events where possible.")
+
+	refs.scanRemotesButton = NativeUi.makeButton(refs.remoteControlPanel, UI_ICON.refresh .. " Scan Remotes", {
+		Position = UDim2.fromOffset(12, 106),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	refs.clearRemoteLogButton = NativeUi.makeButton(refs.remoteControlPanel, UI_ICON.clear .. " Clear Logs", {
+		Position = UDim2.fromOffset(12, 144),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	refs.remoteInfoLabel = makeBodyLabel(refs.remoteControlPanel, "Read-only debugging. This tab does not fire remotes or replay payloads.", {
+		Position = UDim2.fromOffset(12, 188),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+end
+
 local function createGui(state)
 	destroyExistingGui()
 
@@ -1518,7 +1732,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -32, 0, 16),
 	})
 
-	local mainTabButton = NativeUi.makeButton(navRail, "  Main", {
+	local mainTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.main .. " Main", {
 		Position = UDim2.fromOffset(12, 88),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -1526,7 +1740,7 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local espTabButton = NativeUi.makeButton(navRail, "  ESP", {
+	local espTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.esp .. " ESP", {
 		Position = UDim2.fromOffset(12, 126),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -1534,7 +1748,7 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local spyTabButton = NativeUi.makeButton(navRail, "  Spy", {
+	local spyTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.spy .. " Spy", {
 		Position = UDim2.fromOffset(12, 164),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -1542,7 +1756,7 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local gunsTabButton = NativeUi.makeButton(navRail, "  Guns", {
+	local gunsTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.guns .. " Guns", {
 		Position = UDim2.fromOffset(12, 202),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -1550,7 +1764,7 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local buildTabButton = NativeUi.makeButton(navRail, "  Build", {
+	local buildTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.build .. " Build", {
 		Position = UDim2.fromOffset(12, 240),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -1558,8 +1772,16 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Code", {
+	local remoteTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.remote .. " Remote", {
 		Position = UDim2.fromOffset(12, 278),
+		Size = UDim2.new(1, -24, 0, 32),
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = navButtonPalette,
+	})
+
+	local bytecodeTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.code .. " Code", {
+		Position = UDim2.fromOffset(12, 316),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1752,6 +1974,14 @@ local function createGui(state)
 		Parent = workspaceShell,
 	})
 
+	local remoteWorkspace = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		Parent = workspaceShell,
+	})
+
 	local mainScroll, mainContent = NativeUi.makeScrollList(mainWorkspace, {
 		Position = UDim2.fromOffset(12, 12),
 		Size = UDim2.new(1, -24, 1, -24),
@@ -1915,6 +2145,7 @@ local function createGui(state)
 	local wellDistanceSlider = makeSliderRow(espWellsPanel, 132, "Distance")
 
 	createSpyWorkspace(spyWorkspace, refs)
+	createRemoteWorkspace(remoteWorkspace, refs)
 
 	local scriptPanel = NativeUi.makePanel(bytecodeWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
@@ -1979,7 +2210,7 @@ local function createGui(state)
 		Size = UDim2.new(1, -90, 0, 16),
 	})
 
-	local refreshTreeButton = NativeUi.makeButton(scriptHeader, "Refresh", {
+	local refreshTreeButton = NativeUi.makeButton(scriptHeader, UI_ICON.refresh .. " Refresh", {
 		Position = UDim2.new(1, -80, 0, 0),
 		Size = UDim2.fromOffset(80, 26),
 		TextSize = 12,
@@ -2013,14 +2244,14 @@ local function createGui(state)
 	outputTitle.Position = UDim2.fromOffset(0, 0)
 	outputTitle.Size = UDim2.new(1, -218, 0, 20)
 
-	local copyOpcodesButton = NativeUi.makeButton(outputHeader, "Copy Opcodes", {
+	local copyOpcodesButton = NativeUi.makeButton(outputHeader, UI_ICON.copy .. " Opcodes", {
 		Position = UDim2.new(1, -210, 0, 0),
 		Size = UDim2.fromOffset(100, 24),
 		TextSize = 11,
 		CornerRadius = 8,
 	})
 
-	local copyDecompileButton = NativeUi.makeButton(outputHeader, "Copy Decompile", {
+	local copyDecompileButton = NativeUi.makeButton(outputHeader, UI_ICON.copy .. " Decompile", {
 		Position = UDim2.new(1, -104, 0, 0),
 		Size = UDim2.fromOffset(104, 24),
 		TextSize = 11,
@@ -2132,13 +2363,13 @@ local function createGui(state)
 		TextSize = 12,
 	})
 
-	local loadButton = NativeUi.makeButton(inputSection, "Load", {
+	local loadButton = NativeUi.makeButton(inputSection, UI_ICON.load .. " Load", {
 		Position = UDim2.fromOffset(12, 122),
 		Size = UDim2.fromOffset(74, 28),
 		TextSize = 12,
 	})
 
-	local reloadButton = NativeUi.makeButton(inputSection, "Reload", {
+	local reloadButton = NativeUi.makeButton(inputSection, UI_ICON.refresh .. " Reload", {
 		Position = UDim2.fromOffset(94, 122),
 		Size = UDim2.fromOffset(74, 28),
 		TextSize = 12,
@@ -2655,6 +2886,8 @@ local function createGui(state)
 		gunsWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		buildWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		remoteWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
+		remoteWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		mainScroll.Size = UDim2.new(1, -24, 1, -24)
 
 		local espResourceWidth = clamp(math.floor((workspaceWidth - state.espPlayersWidth - panelGap * 2) * 0.5), 260, 360)
@@ -2689,6 +2922,23 @@ local function createGui(state)
 		refs.spySupportPanel.Position = UDim2.fromOffset(spySelectorWidth + spyReconWidth + panelGap * 2, 0)
 		refs.spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
 
+		local remoteListWidth = 320
+		local remoteControlWidth = 260
+		local remoteLogWidth = workspaceWidth - remoteListWidth - remoteControlWidth - panelGap * 2
+		if remoteLogWidth < 360 then
+			local remoteDeficit = 360 - remoteLogWidth
+			remoteControlWidth = math.max(220, remoteControlWidth - remoteDeficit)
+			remoteLogWidth = workspaceWidth - remoteListWidth - remoteControlWidth - panelGap * 2
+		end
+		refs.remoteListPanel.Size = UDim2.fromOffset(remoteListWidth, workspaceHeight)
+		refs.remoteListScroll.Size = UDim2.new(1, -24, 1, -116)
+		refs.remoteLogPanel.Position = UDim2.fromOffset(remoteListWidth + panelGap, 0)
+		refs.remoteLogPanel.Size = UDim2.fromOffset(remoteLogWidth, workspaceHeight)
+		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -74)
+		refs.remoteLogScroll.Size = UDim2.new(1, 0, 1, 0)
+		refs.remoteControlPanel.Position = UDim2.fromOffset(remoteListWidth + remoteLogWidth + panelGap * 2, 0)
+		refs.remoteControlPanel.Size = UDim2.fromOffset(remoteControlWidth, workspaceHeight)
+
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
 		local maxInspector = math.max(280, workspaceWidth - state.bytecodeSidebarWidth - 420)
 		state.bytecodeSidebarWidth = clamp(state.bytecodeSidebarWidth, 240, maxSidebar)
@@ -2714,6 +2964,7 @@ local function createGui(state)
 		treeScroll.Size = UDim2.new(1, -24, 1, -120)
 		outputViewerHost.Size = UDim2.new(1, -24, 1, -116)
 		outputScroll.Size = UDim2.new(1, 0, 1, 0)
+		refs.syncRemoteLogCanvas()
 		inspectorScroll.Size = UDim2.new(1, -24, 1, -24)
 		gunsScroll.Size = UDim2.new(1, -24, 1, -24)
 		buildingScroll.Size = UDim2.new(1, -24, 1, -24)
@@ -2757,6 +3008,7 @@ local function createGui(state)
 	refs.espTabButton = espTabButton
 	refs.spyTabButton = spyTabButton
 	refs.gunsTabButton = gunsTabButton
+	refs.remoteTabButton = remoteTabButton
 	refs.bytecodeTabButton = bytecodeTabButton
 	refs.buildTabButton = buildTabButton
 	refs.bytecodeSplitter = bytecodeSplitter
@@ -2772,6 +3024,7 @@ local function createGui(state)
 	refs.bytecodeWorkspace = bytecodeWorkspace
 	refs.gunsWorkspace = gunsWorkspace
 	refs.buildWorkspace = buildWorkspace
+	refs.remoteWorkspace = remoteWorkspace
 	refs.mainStatusLabel = mainStatusLabel
 	refs.espSelectedPlayersLabel = espSelectedPlayersLabel
 	refs.espPlayerSearchBox = espPlayerSearchBox
@@ -3089,6 +3342,12 @@ function BytecodeViewer.start(config)
 			signal.badge = "ROUTE"
 			signal.level = "info"
 			signal.width = 280
+		elseif state.activeTab == "remote" then
+			signal.title = "Remote"
+			signal.detail = state.remoteWatcherEnabled and "Remote watcher active" or "Remote watcher idle"
+			signal.badge = state.remoteWatcherEnabled and "WATCH" or "IDLE"
+			signal.level = state.remoteWatcherEnabled and "warning" or "info"
+			signal.width = 306
 		elseif state.activeTab == "bytecode" then
 			signal.title = "Code"
 			signal.detail = state.lastResult and "Decompiler output loaded" or "Script inspection ready"
@@ -3715,7 +3974,7 @@ function BytecodeViewer.start(config)
 		if not ok then
 			outputText = ("Decompiler/view error:\n%s"):format(tostring(outputText))
 			refs.outputCodeLabel.TextColor3 = NativeUi.Theme.Error
-			refs.outputCodeLabel.Text = outputText
+			refs.outputCodeLabel.Text = withLineNumbers(outputText)
 			refs.outputSummaryLabel.Text = "The selected view failed. Switch to Code view for raw opcode output."
 			refs.chunkSummaryLabel.Text = "View failed"
 			setStatus("View error", NativeUi.Theme.Error)
@@ -3730,7 +3989,7 @@ function BytecodeViewer.start(config)
 			refs.outputCodeLabel.TextColor3 = NativeUi.Theme.Text
 		end
 
-		refs.outputCodeLabel.Text = outputText
+		refs.outputCodeLabel.Text = withLineNumbers(outputText)
 		refs.outputSummaryLabel.Text = ("version=%s  protos=%s  mode=%s  source=%s"):format(
 			tostring(chunk.version),
 			tostring(chunk.protoCount or 0),
@@ -3757,8 +4016,8 @@ function BytecodeViewer.start(config)
 	local renderTreeView
 	local scriptBrowserRefreshQueued = false
 
-	local function refreshScriptBrowser(forceGcScan)
-		state.scriptBrowserTree = buildScriptBrowserTree(forceGcScan == true)
+	local function refreshScriptBrowser(forceNilScan)
+		state.scriptBrowserTree = buildScriptBrowserTree(forceNilScan == true)
 		state.scriptBrowserError = nil
 	end
 
@@ -3822,6 +4081,180 @@ function BytecodeViewer.start(config)
 
 		trackConnection(Workspace.DescendantAdded:Connect(handleScriptBrowserAdded))
 		trackConnection(Workspace.DescendantRemoving:Connect(handleScriptBrowserRemoving))
+	end
+
+	local renderRemoteList
+	local renderRemoteLog
+	local connectRemoteEvent
+	local remoteEventConnections = {}
+
+	local function appendRemoteLog(direction, remote, method, args)
+		local line = ("[%s] %s %s(%s)"):format(
+			direction or "?",
+			getRemotePath(remote),
+			tostring(method or "?"),
+			formatRemoteArgs(args or {})
+		)
+
+		table.insert(state.remoteLogs, 1, line)
+		while #state.remoteLogs > 180 do
+			table.remove(state.remoteLogs)
+		end
+
+		if renderRemoteLog ~= nil then
+			renderRemoteLog()
+		end
+	end
+
+	local function scanRemoteList()
+		state.remoteList = buildRemoteBrowserList()
+		for _, remote in ipairs(state.remoteList) do
+			if remoteEventConnections[remote] == nil then
+				connectRemoteEvent(remote)
+			end
+		end
+		if renderRemoteList ~= nil then
+			renderRemoteList()
+		end
+	end
+
+	local function installRemoteNamecallWatcher()
+		if state.remoteHookInstalled then
+			return true
+		end
+
+		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" or type(getnamecallmethod) ~= "function" or type(newcclosure) ~= "function" then
+			state.remoteHookError = "Namecall hook APIs unavailable; server-to-client events can still be observed."
+			return false
+		end
+
+		local metatable = getrawmetatable(game)
+		local originalNamecall = metatable.__namecall
+		local ok, err = pcall(function()
+			setreadonly(metatable, false)
+			metatable.__namecall = newcclosure(function(self, ...)
+				local method = getnamecallmethod()
+				if state.remoteWatcherEnabled and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
+					appendRemoteLog("OUT", self, method, { ... })
+				end
+				return originalNamecall(self, ...)
+			end)
+			setreadonly(metatable, true)
+		end)
+
+		if not ok then
+			state.remoteHookError = "Namecall hook failed: " .. tostring(err)
+			pcall(function()
+				setreadonly(metatable, true)
+			end)
+			return false
+		end
+
+		state.remoteHookInstalled = true
+		state.remoteHookError = nil
+		trackCleanup(function()
+			pcall(function()
+				setreadonly(metatable, false)
+				metatable.__namecall = originalNamecall
+				setreadonly(metatable, true)
+			end)
+		end)
+		return true
+	end
+
+	connectRemoteEvent = function(remote)
+		if not remote:IsA("RemoteEvent") and remote.ClassName ~= "UnreliableRemoteEvent" then
+			return
+		end
+
+		if remoteEventConnections[remote] ~= nil then
+			return
+		end
+
+		remoteEventConnections[remote] = trackConnection(remote.OnClientEvent:Connect(function(...)
+			if state.remoteWatcherEnabled then
+				appendRemoteLog("IN", remote, "OnClientEvent", { ... })
+			end
+		end))
+	end
+
+	renderRemoteLog = function()
+		if #state.remoteLogs == 0 then
+			refs.remoteLogLabel.Text = withLineNumbers("No remote traffic logged yet.")
+		else
+			refs.remoteLogLabel.Text = withLineNumbers(table.concat(state.remoteLogs, "\n"))
+		end
+		refs.remoteLogStatusLabel.Text = state.remoteWatcherEnabled and "Watcher active" or "Watcher idle"
+		if state.remoteHookError ~= nil then
+			refs.remoteLogStatusLabel.Text = state.remoteHookError
+		end
+		refs.syncRemoteLogCanvas()
+	end
+
+	renderRemoteList = function()
+		NativeUi.clear(refs.remoteListContent)
+		local shown = 0
+		local filterText = state.remoteFilterText
+
+		for _, remote in ipairs(state.remoteList) do
+			local path = getRemotePath(remote)
+			if filterText == "" or containsFilter(path, filterText) or containsFilter(remote.ClassName, filterText) then
+				shown = shown + 1
+				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]"):format(UI_ICON.remote, path, remote.ClassName), {
+					Font = Enum.Font.Code,
+					Size = UDim2.new(1, 0, 0, 26),
+					TextSize = 11,
+					TextXAlignment = Enum.TextXAlignment.Left,
+				})
+				NativeUi.setButtonSelected(button, state.selectedRemotePath == path)
+				button.MouseButton1Click:Connect(function()
+					state.selectedRemotePath = path
+					appendRemoteLog("SEL", remote, remote.ClassName, {})
+					renderRemoteList()
+					syncControlState()
+				end)
+			end
+		end
+
+		refs.remoteCountLabel.Text = ("Remotes: %d visible / %d total"):format(shown, #state.remoteList)
+		if shown == 0 then
+			NativeUi.makeLabel(refs.remoteListContent, "No remotes match the current filter.", {
+				TextColor3 = NativeUi.Theme.TextMuted,
+				TextWrapped = true,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				AutomaticSize = Enum.AutomaticSize.Y,
+				Size = UDim2.new(1, 0, 0, 0),
+			})
+		end
+	end
+
+	local function addRemoteToList(remote)
+		if not isRemoteLike(remote) then
+			return
+		end
+
+		for _, existing in ipairs(state.remoteList) do
+			if existing == remote then
+				return
+			end
+		end
+
+		table.insert(state.remoteList, remote)
+		table.sort(state.remoteList, function(left, right)
+			return string.lower(getRemotePath(left)) < string.lower(getRemotePath(right))
+		end)
+		connectRemoteEvent(remote)
+		renderRemoteList()
+	end
+
+	local function bindRemoteMutationWatchers()
+		local watchedRoots = {}
+		for _, root in ipairs(collectRemoteBrowserRoots()) do
+			if typeof(root) == "Instance" and not watchedRoots[root] then
+				watchedRoots[root] = true
+				trackConnection(root.DescendantAdded:Connect(addRemoteToList))
+			end
+		end
 	end
 
 	local function isNodeExpanded(node)
@@ -4793,6 +5226,7 @@ function BytecodeViewer.start(config)
 		refs.gunsWorkspace.Visible = bodyVisible and state.activeTab == "guns"
 		refs.bytecodeWorkspace.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.buildWorkspace.Visible = bodyVisible and state.activeTab == "build"
+		refs.remoteWorkspace.Visible = bodyVisible and state.activeTab == "remote"
 		refs.bytecodeSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.inspectorSplitter.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.rightResizeHandle.Visible = not state.isMinimized
@@ -4807,11 +5241,13 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonSelected(refs.gunsTabButton, state.activeTab == "guns")
 		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
 		NativeUi.setButtonSelected(refs.buildTabButton, state.activeTab == "build")
+		NativeUi.setButtonSelected(refs.remoteTabButton, state.activeTab == "remote")
 		NativeUi.setButtonSelected(refs.dockAssistButton, state.activeTab == "main")
 		NativeUi.setButtonSelected(refs.dockEspButton, state.activeTab == "esp")
 		NativeUi.setButtonSelected(refs.dockSpyButton, state.activeTab == "spy")
 		NativeUi.setButtonSelected(refs.dockCombatButton, state.activeTab == "guns")
 		NativeUi.setButtonSelected(refs.dockBuildButton, state.activeTab == "build")
+		NativeUi.setButtonSelected(refs.dockRemoteButton, state.activeTab == "remote")
 		NativeUi.setButtonSelected(refs.dockCodeButton, state.activeTab == "bytecode")
 		refs.workspaceKickerLabel.Text = workspaceCopy.kicker
 		refs.workspaceTitleLabel.Text = workspaceCopy.title
@@ -4838,6 +5274,7 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.iridiumToggle, state.espObjectToggles.iridium)
 		syncToggleButton(refs.spireWellToggle, state.espObjectToggles.spireWell)
 		syncToggleButton(refs.wellToggle, state.espObjectToggles.well)
+		syncToggleButton(refs.remoteWatcherToggle, state.remoteWatcherEnabled)
 		NativeUi.setButtonSelected(refs.aimNearestButton, state.aimTargetPart == "nearest")
 		NativeUi.setButtonSelected(refs.aimHeadButton, state.aimTargetPart == "head")
 		NativeUi.setButtonSelected(refs.aimTorsoButton, state.aimTargetPart == "torso")
@@ -4854,6 +5291,7 @@ function BytecodeViewer.start(config)
 		refs.targetBox.Text = getActiveTargetText()
 		refs.filterBox.Text = state.filterText
 		refs.treeSearchBox.Text = state.treeFilterText
+		refs.remoteSearchBox.Text = state.remoteFilterText
 		refs.espPlayerSearchBox.Text = state.espPlayerFilterText
 		refs.activeTargetLabel.Text = ("Active target: %s"):format(getActiveTargetText() ~= "" and getActiveTargetText() or "-")
 		refs.espSelectedPlayersLabel.Text = state.highlightAllPlayers
@@ -5058,6 +5496,7 @@ function BytecodeViewer.start(config)
 	trackConnection(Workspace.DescendantAdded:Connect(handleEspDescendantMutation))
 	trackConnection(Workspace.DescendantRemoving:Connect(handleEspDescendantMutation))
 	bindScriptBrowserMutationWatchers()
+	bindRemoteMutationWatchers()
 
 	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
 	trackConnection(Players.PlayerAdded:Connect(function(player)
@@ -5116,6 +5555,10 @@ function BytecodeViewer.start(config)
 		state.activeTab = "guns"
 		syncControlState()
 	end))
+	trackConnection(refs.remoteTabButton.MouseButton1Click:Connect(function()
+		state.activeTab = "remote"
+		syncControlState()
+	end))
 	trackConnection(refs.bytecodeTabButton.MouseButton1Click:Connect(function()
 		state.activeTab = "bytecode"
 		syncControlState()
@@ -5142,6 +5585,10 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.dockBuildButton.MouseButton1Click:Connect(function()
 		state.activeTab = "build"
+		syncControlState()
+	end))
+	trackConnection(refs.dockRemoteButton.MouseButton1Click:Connect(function()
+		state.activeTab = "remote"
 		syncControlState()
 	end))
 	trackConnection(refs.dockCodeButton.MouseButton1Click:Connect(function()
@@ -5232,6 +5679,10 @@ function BytecodeViewer.start(config)
 		state.treeFilterText = refs.treeSearchBox.Text
 		renderTreeView()
 	end))
+	trackConnection(refs.remoteSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		state.remoteFilterText = refs.remoteSearchBox.Text
+		renderRemoteList()
+	end))
 	trackConnection(refs.espPlayerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		state.espPlayerFilterText = refs.espPlayerSearchBox.Text
 		refreshEspPlayersList()
@@ -5252,6 +5703,23 @@ function BytecodeViewer.start(config)
 		reconcilePlayerHighlights()
 		refreshEspPlayersList()
 		syncControlState()
+	end))
+	trackConnection(refs.remoteWatcherToggle.toggle.MouseButton1Click:Connect(function()
+		state.remoteWatcherEnabled = not state.remoteWatcherEnabled
+		if state.remoteWatcherEnabled then
+			installRemoteNamecallWatcher()
+			scanRemoteList()
+		end
+		renderRemoteLog()
+		syncControlState()
+	end))
+	trackConnection(refs.scanRemotesButton.MouseButton1Click:Connect(function()
+		scanRemoteList()
+		renderRemoteLog()
+	end))
+	trackConnection(refs.clearRemoteLogButton.MouseButton1Click:Connect(function()
+		state.remoteLogs = {}
+		renderRemoteLog()
 	end))
 	trackConnection(refs.spyClearButton.MouseButton1Click:Connect(function()
 		state.selectedPlayerName = ""
@@ -5373,6 +5841,8 @@ function BytecodeViewer.start(config)
 	refreshPlayersList()
 	refreshEspPlayersList()
 	refreshScriptBrowser(false)
+	renderRemoteList()
+	renderRemoteLog()
 	reconcilePlayerHighlights()
 	reconcileObjectHighlights()
 	syncControlState()
