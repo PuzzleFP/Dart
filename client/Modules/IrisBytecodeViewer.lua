@@ -5558,17 +5558,17 @@ function BytecodeViewer.start(config)
 			height = 44,
 		}
 
-		local threatSignal = getIntelligenceThreatSignal and getIntelligenceThreatSignal() or nil
-		if threatSignal ~= nil and not state.isMinimized then
-			signal = threatSignal
-		end
-
 		if state.isMinimized then
 			signal.title = "Dart"
 			signal.detail = "Suite minimized"
 			signal.badge = "LIVE"
 			signal.level = "info"
 			signal.width = 244
+		end
+
+		local threatSignal = getIntelligenceThreatSignal and getIntelligenceThreatSignal() or nil
+		if threatSignal ~= nil then
+			signal = threatSignal
 		end
 
 		local detailLength = #tostring(signal.detail or "")
