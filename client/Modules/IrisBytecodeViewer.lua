@@ -5205,7 +5205,7 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	getIntelligenceThreatSignal = function()
+	refs.getIntelligenceThreatSignal = function()
 		local threat = state.intelligenceThreat
 		if threat == nil then
 			return nil
@@ -5546,8 +5546,6 @@ function BytecodeViewer.start(config)
 		setOverlayStroke(chip.frame, color, level == "neutral" and 0.32 or 0.08)
 	end
 
-	local getIntelligenceThreatSignal
-
 	local function buildSuiteTelemetry()
 		local signal = {
 			title = "Dart",
@@ -5566,7 +5564,7 @@ function BytecodeViewer.start(config)
 			signal.width = 244
 		end
 
-		local threatSignal = getIntelligenceThreatSignal and getIntelligenceThreatSignal() or nil
+		local threatSignal = refs.getIntelligenceThreatSignal and refs.getIntelligenceThreatSignal() or nil
 		if threatSignal ~= nil then
 			signal = threatSignal
 		end
