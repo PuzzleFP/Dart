@@ -587,6 +587,15 @@ local function collectReturnValues(context, baseRegister, fieldB)
 	return values
 end
 
+local function resolveChildProtoIndex(proto, childIndex)
+	local children = proto.childProtoIndices
+	if type(children) == "table" and children[childIndex + 1] ~= nil then
+		return children[childIndex + 1]
+	end
+
+	return childIndex
+end
+
 local function makeClosureValue(protoIndex)
 	return {
 		kind = "closure",
@@ -1079,7 +1088,7 @@ local function handleInstruction(context, instruction)
 			context.openResult = nil
 		end
 	elseif name == "NEWCLOSURE" then
-		local closure = makeClosureValue(fields.D)
+		local closure = makeClosureValue(resolveChildProtoIndex(proto, fields.D))
 		setRegister(context, fields.A, closure)
 		context.pendingClosure = closure
 	elseif name == "DUPCLOSURE" then
