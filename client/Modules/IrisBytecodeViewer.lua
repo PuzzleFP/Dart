@@ -1741,13 +1741,14 @@ local function createOverlayLayers(screenGui, refs)
 		ZIndex = 41,
 	})
 
-	refs.dynamicIslandDetail = NativeUi.makeLabel(dynamicIsland, "Ready", {
+	refs.dynamicIslandDetail = NativeUi.makeLabel(dynamicIsland, "", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 11,
 		Position = UDim2.fromOffset(48, 28),
 		Size = UDim2.new(1, -92, 0, 14),
 		TextWrapped = true,
+		Visible = false,
 		ZIndex = 41,
 	})
 
@@ -5516,11 +5517,11 @@ function BytecodeViewer.start(config)
 		local activeEsp = anyEspSignalEnabled()
 		local signal = {
 			title = "Dart",
-			detail = "Client intelligence active",
+			detail = "",
 			badge = "READY",
 			level = "success",
-			width = 252,
-			height = 52,
+			width = 184,
+			height = 44,
 		}
 
 		if state.autoFireEnabled then
@@ -5780,6 +5781,8 @@ function BytecodeViewer.start(config)
 
 		refs.dynamicIslandTitle.Text = signal.title
 		refs.dynamicIslandDetail.Text = signal.detail
+		refs.dynamicIslandDetail.Visible = tostring(signal.detail or "") ~= ""
+		refs.dynamicIslandTitle.Position = refs.dynamicIslandDetail.Visible and UDim2.fromOffset(48, 10) or UDim2.fromOffset(48, 13)
 		refs.dynamicIslandBadge.Text = signal.badge
 		refs.dynamicIslandDot.BackgroundColor3 = color
 		refs.dynamicIslandDot.Position = UDim2.fromOffset(28, math.floor(islandHeight / 2))
