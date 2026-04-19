@@ -4333,6 +4333,63 @@ function BytecodeViewer.start(config)
 		end
 	end
 
+	local function installDirectRemoteMethodHooks(makeHookClosure)
+		if remoteHookBridge.directHooksInstalled then
+			return true
+		end
+
+		if type(hookfunction) ~= "function" then
+			return false
+		end
+
+		local installedAny = false
+		remoteHookBridge.directHooks = remoteHookBridge.directHooks or {}
+
+		local function hookClassMethod(className, methodName)
+			if remoteHookBridge.directHooks[className .. "." .. methodName] ~= nil then
+				return true
+			end
+
+			local okCreate, sample = pcall(function()
+				return Instance.new(className)
+			end)
+			if not okCreate or sample == nil then
+				return false
+			end
+
+			local originalMethod = sample[methodName]
+			sample:Destroy()
+			if type(originalMethod) ~= "function" then
+				return false
+			end
+
+			local hookedOriginal
+			local okHook = pcall(function()
+				hookedOriginal = hookfunction(originalMethod, makeHookClosure(function(self, ...)
+					local bridge = getGlobalScope().__DartRemoteHookBridge
+					if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) then
+						bridge.callback(self, methodName, packRemoteArgs(...))
+					end
+					return hookedOriginal(self, ...)
+				end))
+			end)
+
+			if okHook then
+				remoteHookBridge.directHooks[className .. "." .. methodName] = hookedOriginal
+				installedAny = true
+				return true
+			end
+
+			return false
+		end
+
+		hookClassMethod("RemoteEvent", "FireServer")
+		hookClassMethod("UnreliableRemoteEvent", "FireServer")
+		hookClassMethod("RemoteFunction", "InvokeServer")
+		remoteHookBridge.directHooksInstalled = installedAny
+		return installedAny
+	end
+
 	remoteHookBridge.callback = function(remote, method, args)
 		if state.remoteWatcherEnabled then
 			appendRemoteLog("OUT", remote, method, args)
@@ -4373,6 +4430,8 @@ function BytecodeViewer.start(config)
 			return fn
 		end
 
+		local directHookInstalled = installDirectRemoteMethodHooks(makeHookClosure)
+
 		if type(hookmetamethod) == "function" then
 			if remoteHookBridge.namecallInstalled then
 				state.remoteHookInstalled = true
@@ -4406,7 +4465,13 @@ function BytecodeViewer.start(config)
 		end
 
 		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" then
-			state.remoteHookError = state.remoteHookError or "Namecall hook APIs unavailable; server-to-client events can still be observed."
+			if directHookInstalled then
+				state.remoteHookInstalled = true
+				state.remoteHookError = nil
+				remoteHookBridge.enabled = true
+				return true
+			end
+			state.remoteHookError = state.remoteHookError or "Namecall/direct hook APIs unavailable; server-to-client events can still be observed."
 			return false
 		end
 
