@@ -803,6 +803,25 @@ local function makeToggleRow(parent, y, labelText, description)
 	}
 end
 
+local function makeOverlayPanel(parent, properties, radius, strokeColor, strokeTransparency)
+	local panel = NativeUi.create("Frame", {
+		BackgroundColor3 = NativeUi.Theme.Overlay,
+		BackgroundTransparency = 0.02,
+		BorderSizePixel = 0,
+		Parent = parent,
+	})
+
+	for key, value in pairs(properties or {}) do
+		if key ~= "CornerRadius" then
+			panel[key] = value
+		end
+	end
+
+	NativeUi.corner(panel, radius or ((properties and properties.CornerRadius) or 18))
+	NativeUi.stroke(panel, strokeColor or NativeUi.Theme.Border, 1, strokeTransparency or 0.1)
+	return panel
+end
+
 local function createGui(state)
 	destroyExistingGui()
 
@@ -823,6 +842,224 @@ local function createGui(state)
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = CoreGui,
 	})
+
+	local dynamicIsland = makeOverlayPanel(screenGui, {
+		Name = "DynamicIsland",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 18),
+		Size = UDim2.fromOffset(220, 52),
+		ZIndex = 40,
+	}, 26, NativeUi.Theme.Border, 0.05)
+
+	local dynamicIslandDot = NativeUi.create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = NativeUi.Theme.Success,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(28, 26),
+		Size = UDim2.fromOffset(9, 9),
+		ZIndex = 41,
+		Parent = dynamicIsland,
+	})
+	NativeUi.corner(dynamicIslandDot, 999)
+
+	local dynamicIslandTitle = NativeUi.makeLabel(dynamicIsland, "Assist", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		Position = UDim2.fromOffset(48, 10),
+		Size = UDim2.new(1, -92, 0, 18),
+		ZIndex = 41,
+	})
+
+	local dynamicIslandDetail = NativeUi.makeLabel(dynamicIsland, "Ready",
+		{
+			Font = Enum.Font.Code,
+			TextColor3 = NativeUi.Theme.TextDim,
+			TextSize = 10,
+			Position = UDim2.fromOffset(48, 28),
+			Size = UDim2.new(1, -92, 0, 14),
+			ZIndex = 41,
+		}
+	)
+
+	local dynamicIslandBadge = NativeUi.makeLabel(dynamicIsland, "LIVE", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Position = UDim2.new(1, -68, 0, 17),
+		Size = UDim2.fromOffset(48, 18),
+		ZIndex = 41,
+	})
+
+	local microHud = NativeUi.create("Frame", {
+		Name = "MicroHud",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(14, 92),
+		Size = UDim2.fromOffset(248, 136),
+		ZIndex = 35,
+		Parent = screenGui,
+	})
+
+	local function makeMicroChip(index, labelText)
+		local chip = makeOverlayPanel(microHud, {
+			Position = UDim2.fromOffset(0, (index - 1) * 44),
+			Size = UDim2.fromOffset(228, 38),
+			ZIndex = 35,
+		}, 14, NativeUi.Theme.Border, 0.16)
+
+		local dot = NativeUi.create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = NativeUi.Theme.Info,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(19, 19),
+			Size = UDim2.fromOffset(8, 8),
+			ZIndex = 36,
+			Parent = chip,
+		})
+		NativeUi.corner(dot, 999)
+
+		local titleLabel = NativeUi.makeLabel(chip, labelText, {
+			Font = Enum.Font.GothamSemibold,
+			TextSize = 11,
+			Position = UDim2.fromOffset(34, 5),
+			Size = UDim2.new(1, -44, 0, 14),
+			ZIndex = 36,
+		})
+
+		local detailLabel = NativeUi.makeLabel(chip, "Ready", {
+			Font = Enum.Font.Code,
+			TextColor3 = NativeUi.Theme.TextDim,
+			TextSize = 10,
+			Position = UDim2.fromOffset(34, 19),
+			Size = UDim2.new(1, -44, 0, 13),
+			ZIndex = 36,
+		})
+
+		return {
+			frame = chip,
+			dot = dot,
+			title = titleLabel,
+			detail = detailLabel,
+		}
+	end
+
+	local microHookChip = makeMicroChip(1, "Hook")
+	local microTargetChip = makeMicroChip(2, "Target")
+	local microRiskChip = makeMicroChip(3, "Risk")
+
+	local alertRail = NativeUi.create("Frame", {
+		Name = "AlertRail",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.new(1, -322, 0, 94),
+		Size = UDim2.fromOffset(306, 252),
+		ZIndex = 35,
+		Parent = screenGui,
+	})
+
+	local function makeAlertCard(index)
+		local card = makeOverlayPanel(alertRail, {
+			Position = UDim2.fromOffset(0, (index - 1) * 84),
+			Size = UDim2.fromOffset(306, 74),
+			ZIndex = 35,
+		}, 16, NativeUi.Theme.Border, 0.18)
+
+		local levelLabel = NativeUi.makeLabel(card, "INFO", {
+			Font = Enum.Font.Code,
+			TextColor3 = NativeUi.Theme.TextDim,
+			TextSize = 10,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.fromOffset(14, 10),
+			Size = UDim2.new(1, -28, 0, 14),
+			ZIndex = 36,
+		})
+
+		local titleLabel = NativeUi.makeLabel(card, "Ready", {
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			Position = UDim2.fromOffset(14, 27),
+			Size = UDim2.new(1, -28, 0, 18),
+			ZIndex = 36,
+		})
+
+		local detailLabel = NativeUi.makeLabel(card, "Suite initialized", {
+			TextColor3 = NativeUi.Theme.TextDim,
+			TextSize = 11,
+			Position = UDim2.fromOffset(14, 47),
+			Size = UDim2.new(1, -28, 0, 14),
+			ZIndex = 36,
+		})
+
+		return {
+			frame = card,
+			level = levelLabel,
+			title = titleLabel,
+			detail = detailLabel,
+		}
+	end
+
+	local alertCards = {
+		makeAlertCard(1),
+		makeAlertCard(2),
+		makeAlertCard(3),
+	}
+
+	local suiteDock = makeOverlayPanel(screenGui, {
+		Name = "SuiteControls",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -18),
+		Size = UDim2.fromOffset(646, 58),
+		ZIndex = 38,
+	}, 24, NativeUi.Theme.Border, 0.08)
+
+	local suiteDockTitle = NativeUi.makeLabel(suiteDock, "SUITE", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		Position = UDim2.fromOffset(18, 11),
+		Size = UDim2.fromOffset(80, 14),
+		ZIndex = 39,
+	})
+
+	local suiteDockDetail = NativeUi.makeLabel(suiteDock, "states",
+		{
+			Font = Enum.Font.Code,
+			TextColor3 = NativeUi.Theme.TextDim,
+			TextSize = 10,
+			Position = UDim2.fromOffset(18, 29),
+			Size = UDim2.fromOffset(80, 14),
+			ZIndex = 39,
+		}
+	)
+
+	local dockButtonPalette = {
+		Base = NativeUi.Theme.Surface,
+		Hover = NativeUi.Theme.SurfaceHover,
+		Pressed = NativeUi.Theme.SurfaceActive,
+		Selected = NativeUi.Theme.SurfaceActive,
+		Disabled = Color3.fromRGB(17, 20, 26),
+		Text = NativeUi.Theme.TextMuted,
+		SelectedText = NativeUi.Theme.Text,
+		DisabledText = NativeUi.Theme.TextDim,
+	}
+
+	local function makeDockButton(index, text)
+		return NativeUi.makeButton(suiteDock, text, {
+			Position = UDim2.fromOffset(104 + (index - 1) * 86, 14),
+			Size = UDim2.fromOffset(76, 30),
+			TextSize = 11,
+			ZIndex = 39,
+			Palette = dockButtonPalette,
+		})
+	end
+
+	local dockAssistButton = makeDockButton(1, "ASSIST")
+	local dockEspButton = makeDockButton(2, "ESP")
+	local dockSpyButton = makeDockButton(3, "SPY")
+	local dockCombatButton = makeDockButton(4, "COMBAT")
+	local dockBuildButton = makeDockButton(5, "BUILD")
+	local dockCodeButton = makeDockButton(6, "CODE")
 
 	local main = NativeUi.makePanel(screenGui, {
 		Name = "Main",
@@ -864,14 +1101,13 @@ local function createGui(state)
 	})
 
 	local topBar = NativeUi.create("Frame", {
-		BackgroundColor3 = NativeUi.Theme.Panel,
+		BackgroundColor3 = NativeUi.Theme.Background,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(contentX, 12),
 		Size = UDim2.new(1, -(contentX + 12), 0, 40),
 		Parent = main,
 	})
-	NativeUi.corner(topBar, 12)
-	NativeUi.stroke(topBar, NativeUi.Theme.Border, 1, 0.18)
 
 	local title = NativeUi.makeLabel(navRail, "Eclipsis", {
 		Font = Enum.Font.GothamBold,
@@ -903,7 +1139,7 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local gunsTabButton = NativeUi.makeButton(navRail, "  Guns", {
+	local spyTabButton = NativeUi.makeButton(navRail, "  Spy", {
 		Position = UDim2.fromOffset(12, 164),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -911,7 +1147,7 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local buildTabButton = NativeUi.makeButton(navRail, "  Build", {
+	local gunsTabButton = NativeUi.makeButton(navRail, "  Guns", {
 		Position = UDim2.fromOffset(12, 202),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
@@ -919,8 +1155,16 @@ local function createGui(state)
 		Palette = navButtonPalette,
 	})
 
-	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Bytecode", {
+	local buildTabButton = NativeUi.makeButton(navRail, "  Build", {
 		Position = UDim2.fromOffset(12, 240),
+		Size = UDim2.new(1, -24, 0, 32),
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Palette = navButtonPalette,
+	})
+
+	local bytecodeTabButton = NativeUi.makeButton(navRail, "  Code", {
+		Position = UDim2.fromOffset(12, 278),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -941,6 +1185,7 @@ local function createGui(state)
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Position = UDim2.new(1, -280, 0, 0),
 		Size = UDim2.fromOffset(210, 40),
+		Visible = false,
 	})
 
 	local minimizeButton = NativeUi.makeButton(topBar, "-", {
@@ -964,6 +1209,14 @@ local function createGui(state)
 		},
 	})
 
+	local workspaceShell = NativeUi.makePanel(main, {
+		Name = "WorkspaceShell",
+		BackgroundColor3 = NativeUi.Theme.Shell,
+		Position = UDim2.fromOffset(contentX, 60),
+		Size = UDim2.new(1, -(contentX + 12), 1, -72),
+		CornerRadius = 14,
+	})
+
 	local mainWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -973,6 +1226,14 @@ local function createGui(state)
 	})
 
 	local espWorkspace = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(contentX, 60),
+		Size = UDim2.new(1, -(contentX + 12), 1, -72),
+		Parent = main,
+	})
+
+	local spyWorkspace = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(contentX, 60),
@@ -1162,6 +1423,154 @@ local function createGui(state)
 	local spireWellToggle = makeToggleRow(espWellsPanel, 40, "Spire Well", "Maps to SpireOpenLarge1 in Workspace.Map and only shows entries within the selected distance.")
 	local wellToggle = makeToggleRow(espWellsPanel, 86, "Well", "Maps to Top1 in Workspace.Map and only shows entries within the selected distance.")
 	local wellDistanceSlider = makeSliderRow(espWellsPanel, 132, "Distance")
+
+	local spySelectorPanel = NativeUi.makePanel(spyWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(300, 100),
+	})
+
+	local spySelectorTitle = makeSectionTitle(spySelectorPanel, "Member Selection")
+	spySelectorTitle.Position = UDim2.fromOffset(12, 12)
+
+	local spySelectorHint = NativeUi.makeLabel(spySelectorPanel, "Pick one target to focus recon. ESP stays broad; Spy stays narrow.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(12, 34),
+		Size = UDim2.new(1, -24, 0, 34),
+	})
+
+	local spyClearButton = NativeUi.makeButton(spySelectorPanel, "Clear Focus", {
+		Position = UDim2.fromOffset(12, 76),
+		Size = UDim2.fromOffset(104, 28),
+		TextSize = 11,
+	})
+
+	local spyMemberScroll, spyMemberContent = NativeUi.makeScrollList(spySelectorPanel, {
+		Position = UDim2.fromOffset(12, 114),
+		Size = UDim2.new(1, -24, 1, -126),
+		Padding = 6,
+		ContentPadding = 8,
+		BackgroundColor3 = NativeUi.Theme.Surface,
+	})
+
+	local spyReconPanel = NativeUi.makePanel(spyWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(316, 0),
+		Size = UDim2.fromOffset(520, 100),
+	})
+
+	local spyReconTitle = NativeUi.makeLabel(spyReconPanel, "Spy Intel", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		Position = UDim2.fromOffset(16, 18),
+		Size = UDim2.new(1, -32, 0, 24),
+	})
+
+	local spyReconSubtitle = NativeUi.makeLabel(spyReconPanel, "Focused target intelligence. One read, low clutter.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 43),
+		Size = UDim2.new(1, -32, 0, 16),
+	})
+
+	local spyThreatPill = NativeUi.makeLabel(spyReconPanel, "IDLE", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Position = UDim2.new(1, -116, 0, 22),
+		Size = UDim2.fromOffset(92, 16),
+	})
+
+	local spyFigure = NativeUi.create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		BackgroundColor3 = NativeUi.Theme.Surface,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0.5, 0, 0, 96),
+		Size = UDim2.fromOffset(96, 132),
+		Parent = spyReconPanel,
+	})
+	NativeUi.corner(spyFigure, 44)
+	NativeUi.stroke(spyFigure, NativeUi.Theme.Border, 1, 0.18)
+
+	local spyTargetNameLabel = NativeUi.makeLabel(spyReconPanel, "No focus target", {
+		Font = Enum.Font.GothamBold,
+		TextSize = 20,
+		Position = UDim2.fromOffset(16, 260),
+		Size = UDim2.new(1, -32, 0, 26),
+	})
+
+	local spyTargetDetailLabel = NativeUi.makeLabel(spyReconPanel, "Select a member from the left panel.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 288),
+		Size = UDim2.new(1, -32, 0, 18),
+	})
+
+	local spyMetricDistanceLabel = NativeUi.makeLabel(spyReconPanel, "Distance: -", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 328),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	local spyMetricTeamLabel = NativeUi.makeLabel(spyReconPanel, "Team: -", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.new(0.5, 8, 0, 328),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	local spyMetricHealthLabel = NativeUi.makeLabel(spyReconPanel, "Health: -", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(16, 352),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	local spyMetricStateLabel = NativeUi.makeLabel(spyReconPanel, "State: waiting", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.new(0.5, 8, 0, 352),
+		Size = UDim2.new(0.5, -24, 0, 18),
+	})
+
+	local spySupportPanel = NativeUi.makePanel(spyWorkspace, {
+		BackgroundColor3 = NativeUi.Theme.Panel,
+		Position = UDim2.fromOffset(852, 0),
+		Size = UDim2.fromOffset(260, 100),
+	})
+
+	local spySituationTitle = makeSectionTitle(spySupportPanel, "Situation")
+	spySituationTitle.Position = UDim2.fromOffset(12, 12)
+
+	local spySituationSummary = makeBodyLabel(spySupportPanel, "No focus target selected. Pin a player to promote them into the intelligence capsule and alert rail.", {
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+
+	local spyActionsTitle = makeSectionTitle(spySupportPanel, "Quick Actions")
+	spyActionsTitle.Position = UDim2.fromOffset(12, 122)
+
+	local spyPinButton = NativeUi.makeButton(spySupportPanel, "Pin Target", {
+		Position = UDim2.fromOffset(12, 154),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	local spyHighlightButton = NativeUi.makeButton(spySupportPanel, "Toggle Highlight", {
+		Position = UDim2.fromOffset(12, 192),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
 
 	local scriptPanel = NativeUi.makePanel(bytecodeWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
@@ -1851,7 +2260,7 @@ local function createGui(state)
 		local width = main.AbsoluteSize.X
 		local height = main.AbsoluteSize.Y
 		local workspaceWidth = width - (contentX + 12)
-		local workspaceHeight = height - 72
+		local workspaceHeight = math.max(0, height - 72)
 		local panelGap = 16
 		local splitterWidth = 6
 
@@ -1867,9 +2276,12 @@ local function createGui(state)
 		navRail.Size = UDim2.fromOffset(navWidth, height - 24)
 		topBar.Position = UDim2.fromOffset(contentX, 12)
 		topBar.Size = UDim2.fromOffset(workspaceWidth, 40)
+		workspaceShell.Position = UDim2.fromOffset(contentX, 60)
+		workspaceShell.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		espWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
+		spyWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		bytecodeWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		gunsWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
 		buildWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
@@ -1890,6 +2302,22 @@ local function createGui(state)
 		espWellsPanel.Size = UDim2.fromOffset(espWellsWidth, workspaceHeight)
 		espPlayerSearchBox.Size = UDim2.new(1, -24, 0, 30)
 		espPlayerScroll.Size = UDim2.new(1, -24, 1, -154)
+
+		local spySelectorWidth = 300
+		local spySupportWidth = 260
+		local spyReconWidth = workspaceWidth - spySelectorWidth - spySupportWidth - panelGap * 2
+		if spyReconWidth < 340 then
+			local deficit = 340 - spyReconWidth
+			spySupportWidth = math.max(220, spySupportWidth - deficit)
+			spyReconWidth = workspaceWidth - spySelectorWidth - spySupportWidth - panelGap * 2
+		end
+
+		spySelectorPanel.Size = UDim2.fromOffset(spySelectorWidth, workspaceHeight)
+		spyMemberScroll.Size = UDim2.new(1, -24, 1, -126)
+		spyReconPanel.Position = UDim2.fromOffset(spySelectorWidth + panelGap, 0)
+		spyReconPanel.Size = UDim2.fromOffset(spyReconWidth, workspaceHeight)
+		spySupportPanel.Position = UDim2.fromOffset(spySelectorWidth + spyReconWidth + panelGap * 2, 0)
+		spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
 		local maxInspector = math.max(280, workspaceWidth - state.bytecodeSidebarWidth - 420)
@@ -1944,11 +2372,29 @@ local function createGui(state)
 
 	refs.gui = screenGui
 	refs.main = main
+	refs.dynamicIsland = dynamicIsland
+	refs.dynamicIslandDot = dynamicIslandDot
+	refs.dynamicIslandTitle = dynamicIslandTitle
+	refs.dynamicIslandDetail = dynamicIslandDetail
+	refs.dynamicIslandBadge = dynamicIslandBadge
+	refs.microHookChip = microHookChip
+	refs.microTargetChip = microTargetChip
+	refs.microRiskChip = microRiskChip
+	refs.alertCards = alertCards
+	refs.suiteDock = suiteDock
+	refs.dockAssistButton = dockAssistButton
+	refs.dockEspButton = dockEspButton
+	refs.dockSpyButton = dockSpyButton
+	refs.dockCombatButton = dockCombatButton
+	refs.dockBuildButton = dockBuildButton
+	refs.dockCodeButton = dockCodeButton
+	refs.workspaceShell = workspaceShell
 	refs.minimizeButton = minimizeButton
 	refs.closeButton = closeButton
 	refs.suiteStatus = suiteStatus
 	refs.mainTabButton = mainTabButton
 	refs.espTabButton = espTabButton
+	refs.spyTabButton = spyTabButton
 	refs.gunsTabButton = gunsTabButton
 	refs.bytecodeTabButton = bytecodeTabButton
 	refs.buildTabButton = buildTabButton
@@ -1961,9 +2407,23 @@ local function createGui(state)
 	refs.bottomRightResizeHandle = bottomRightResizeHandle
 	refs.mainWorkspace = mainWorkspace
 	refs.espWorkspace = espWorkspace
+	refs.spyWorkspace = spyWorkspace
 	refs.bytecodeWorkspace = bytecodeWorkspace
 	refs.gunsWorkspace = gunsWorkspace
 	refs.buildWorkspace = buildWorkspace
+	refs.spyMemberContent = spyMemberContent
+	refs.spyClearButton = spyClearButton
+	refs.spyThreatPill = spyThreatPill
+	refs.spyFigure = spyFigure
+	refs.spyTargetNameLabel = spyTargetNameLabel
+	refs.spyTargetDetailLabel = spyTargetDetailLabel
+	refs.spyMetricDistanceLabel = spyMetricDistanceLabel
+	refs.spyMetricTeamLabel = spyMetricTeamLabel
+	refs.spyMetricHealthLabel = spyMetricHealthLabel
+	refs.spyMetricStateLabel = spyMetricStateLabel
+	refs.spySituationSummary = spySituationSummary
+	refs.spyPinButton = spyPinButton
+	refs.spyHighlightButton = spyHighlightButton
 	refs.mainStatusLabel = mainStatusLabel
 	refs.espSelectedPlayersLabel = espSelectedPlayersLabel
 	refs.espPlayerSearchBox = espPlayerSearchBox
@@ -2139,6 +2599,248 @@ function BytecodeViewer.start(config)
 
 	local function getCurrentCamera()
 		return Workspace.CurrentCamera
+	end
+
+	local function getPlayerRootPart(player)
+		local character = player and player.Character
+		if character == nil then
+			return nil
+		end
+
+		return character:FindFirstChild("HumanoidRootPart")
+			or character:FindFirstChild("UpperTorso")
+			or character:FindFirstChild("Torso")
+			or character.PrimaryPart
+	end
+
+	local function getFocusedSpyPlayer()
+		if state.selectedPlayerName == "" then
+			return nil
+		end
+
+		local player = Players:FindFirstChild(state.selectedPlayerName)
+		if player == nil or player == Players.LocalPlayer then
+			return nil
+		end
+
+		return player
+	end
+
+	local function getPlayerDistanceText(player)
+		local localRoot = getPlayerRootPart(Players.LocalPlayer)
+		local targetRoot = getPlayerRootPart(player)
+		if localRoot == nil or targetRoot == nil then
+			return "-"
+		end
+
+		return ("%dm"):format(math.floor((localRoot.Position - targetRoot.Position).Magnitude + 0.5))
+	end
+
+	local function getPlayerTeamText(player)
+		if player == nil then
+			return "-"
+		end
+
+		if player.Team ~= nil then
+			return player.Team.Name
+		end
+
+		return tostring(player.TeamColor)
+	end
+
+	local function getPlayerHealthText(player)
+		local character = player and player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid == nil then
+			return "-"
+		end
+
+		return ("%d/%d"):format(math.floor(humanoid.Health + 0.5), math.floor(humanoid.MaxHealth + 0.5))
+	end
+
+	local function anyEspSignalEnabled()
+		if state.highlightAllPlayers then
+			return true
+		end
+
+		for _, enabled in pairs(state.espObjectToggles) do
+			if enabled then
+				return true
+			end
+		end
+
+		for _ in pairs(state.highlightedPlayers) do
+			return true
+		end
+
+		return false
+	end
+
+	local function setOverlayStroke(frame, color, transparency)
+		local stroke = frame and frame:FindFirstChildOfClass("UIStroke")
+		if stroke ~= nil then
+			stroke.Color = color
+			stroke.Transparency = transparency or stroke.Transparency
+		end
+	end
+
+	local function getLevelColor(level)
+		if level == "critical" then
+			return NativeUi.Theme.Critical
+		elseif level == "warning" then
+			return NativeUi.Theme.Warning
+		elseif level == "success" then
+			return NativeUi.Theme.Success
+		elseif level == "info" then
+			return NativeUi.Theme.Info
+		end
+
+		return NativeUi.Theme.TextDim
+	end
+
+	local function setHudChip(chip, title, detail, level)
+		local color = getLevelColor(level)
+		chip.title.Text = title
+		chip.detail.Text = detail
+		chip.dot.BackgroundColor3 = color
+		setOverlayStroke(chip.frame, color, level == "neutral" and 0.32 or 0.08)
+	end
+
+	local function buildSuiteTelemetry()
+		local focusedPlayer = getFocusedSpyPlayer()
+		local activeEsp = anyEspSignalEnabled()
+		local signal = {
+			title = "Assist",
+			detail = "Movement and utility ready",
+			badge = "READY",
+			level = "success",
+			width = 220,
+		}
+
+		if state.activeTab == "esp" then
+			signal.title = "Visibility"
+			signal.detail = activeEsp and "ESP filters active" or "Fast scan tools idle"
+			signal.badge = activeEsp and "WATCH" or "IDLE"
+			signal.level = activeEsp and "warning" or "info"
+			signal.width = 292
+		elseif state.activeTab == "spy" then
+			signal.title = focusedPlayer and "Recon" or "Spy"
+			signal.detail = focusedPlayer and (focusedPlayer.Name .. " focus") or "Select one target"
+			signal.badge = focusedPlayer and "LIVE" or "IDLE"
+			signal.level = focusedPlayer and "warning" or "info"
+			signal.width = focusedPlayer and 326 or 242
+		elseif state.activeTab == "guns" then
+			signal.title = "Combat"
+			signal.detail = state.aimbotEnabled and "Ctrl lock armed" or "Scoped settings idle"
+			signal.badge = state.aimbotEnabled and "ARMED" or "SAFE"
+			signal.level = state.aimbotEnabled and "warning" or "info"
+			signal.width = 300
+		elseif state.activeTab == "build" then
+			signal.title = "Build"
+			signal.detail = "Placement utilities staged"
+			signal.badge = "ROUTE"
+			signal.level = "info"
+			signal.width = 280
+		elseif state.activeTab == "bytecode" then
+			signal.title = "Code"
+			signal.detail = state.lastResult and "Decompiler output loaded" or "Script inspection ready"
+			signal.badge = state.lastResult and "LOADED" or "READY"
+			signal.level = state.lastResult and "success" or "info"
+			signal.width = 318
+		end
+
+		if state.isMinimized then
+			signal.title = "Eclipsis"
+			signal.detail = "Suite minimized"
+			signal.badge = "LIVE"
+			signal.level = "info"
+			signal.width = 244
+		end
+
+		return signal
+	end
+
+	local function updateSpyReadout()
+		local player = getFocusedSpyPlayer()
+		if player == nil then
+			refs.spyThreatPill.Text = "IDLE"
+			refs.spyThreatPill.TextColor3 = NativeUi.Theme.TextDim
+			refs.spyFigure.BackgroundColor3 = NativeUi.Theme.Surface
+			refs.spyTargetNameLabel.Text = "No focus target"
+			refs.spyTargetDetailLabel.Text = "Select a member from the left panel."
+			refs.spyMetricDistanceLabel.Text = "Distance: -"
+			refs.spyMetricTeamLabel.Text = "Team: -"
+			refs.spyMetricHealthLabel.Text = "Health: -"
+			refs.spyMetricStateLabel.Text = "State: waiting"
+			refs.spySituationSummary.Text = "No focus target selected. Pin a player to promote them into the intelligence capsule and alert rail."
+			NativeUi.setButtonDisabled(refs.spyPinButton, true)
+			NativeUi.setButtonDisabled(refs.spyHighlightButton, true)
+			return
+		end
+
+		local teamColor = player.TeamColor and player.TeamColor.Color or NativeUi.Theme.Warning
+		refs.spyThreatPill.Text = "FOCUSED"
+		refs.spyThreatPill.TextColor3 = NativeUi.Theme.Warning
+		refs.spyFigure.BackgroundColor3 = teamColor
+		refs.spyTargetNameLabel.Text = player.DisplayName ~= player.Name and (player.DisplayName .. " @" .. player.Name) or player.Name
+		refs.spyTargetDetailLabel.Text = ("%s team read"):format(getPlayerTeamText(player))
+		refs.spyMetricDistanceLabel.Text = "Distance: " .. getPlayerDistanceText(player)
+		refs.spyMetricTeamLabel.Text = "Team: " .. getPlayerTeamText(player)
+		refs.spyMetricHealthLabel.Text = "Health: " .. getPlayerHealthText(player)
+		refs.spyMetricStateLabel.Text = player.Character == nil and "State: no character" or "State: visible"
+		refs.spySituationSummary.Text = ("%s is pinned for focused recon. Use ESP for broad visibility; keep Spy on one target."):format(player.Name)
+		NativeUi.setButtonDisabled(refs.spyPinButton, false)
+		NativeUi.setButtonDisabled(refs.spyHighlightButton, false)
+	end
+
+	local function updateSuiteOverlays()
+		local focusedPlayer = getFocusedSpyPlayer()
+		local signal = buildSuiteTelemetry()
+		local color = getLevelColor(signal.level)
+
+		refs.dynamicIslandTitle.Text = signal.title
+		refs.dynamicIslandDetail.Text = signal.detail
+		refs.dynamicIslandBadge.Text = signal.badge
+		refs.dynamicIslandDot.BackgroundColor3 = color
+		setOverlayStroke(refs.dynamicIsland, color, signal.level == "info" and 0.18 or 0.04)
+		NativeUi.tween(refs.dynamicIsland, 0.18, {
+			Size = UDim2.fromOffset(signal.width, 52),
+		})
+
+		setHudChip(refs.microHookChip, "Hook", "stable", "success")
+		setHudChip(refs.microTargetChip, "Target", focusedPlayer and focusedPlayer.Name or "none pinned", focusedPlayer and "warning" or "neutral")
+		setHudChip(refs.microRiskChip, "Risk", signal.level == "warning" and "elevated" or "low", signal.level)
+
+		local alerts = {
+			{
+				level = signal.level,
+				title = signal.title .. " signal",
+				detail = signal.detail,
+			},
+			{
+				level = state.aimbotEnabled and "warning" or "info",
+				title = state.aimbotEnabled and "Combat armed" or "Combat idle",
+				detail = state.aimbotEnabled and "Ctrl lock can acquire targets" or "Aimbot disabled",
+			},
+			{
+				level = anyEspSignalEnabled() and "warning" or "info",
+				title = anyEspSignalEnabled() and "ESP active" or "ESP quiet",
+				detail = state.highlightAllPlayers and "All players highlighted" or "Selective visibility only",
+			},
+		}
+
+		for index, card in ipairs(refs.alertCards) do
+			local alert = alerts[index]
+			card.frame.Visible = alert ~= nil
+			if alert ~= nil then
+				local alertColor = getLevelColor(alert.level)
+				card.level.Text = string.upper(alert.level)
+				card.level.TextColor3 = alertColor
+				card.title.Text = alert.title
+				card.detail.Text = alert.detail
+				setOverlayStroke(card.frame, alertColor, alert.level == "info" and 0.26 or 0.08)
+			end
+		end
 	end
 
 	local function shouldSkipAimbotPlayer(player)
@@ -3400,15 +4102,66 @@ function BytecodeViewer.start(config)
 		playerTeamConnections[player] = {
 			player:GetPropertyChangedSignal("Team"):Connect(function()
 				reconcilePlayerHighlights()
+				if refreshPlayersList then
+					refreshPlayersList()
+				end
+				if syncControlState then
+					syncControlState()
+				end
 			end),
 			player:GetPropertyChangedSignal("TeamColor"):Connect(function()
 				reconcilePlayerHighlights()
+				if refreshPlayersList then
+					refreshPlayersList()
+				end
+				if syncControlState then
+					syncControlState()
+				end
 			end),
 		}
 	end
 
 	refreshPlayersList = function()
-		return
+		NativeUi.clear(refs.spyMemberContent)
+
+		local players = Players:GetPlayers()
+		table.sort(players, function(left, right)
+			return string.lower(left.Name) < string.lower(right.Name)
+		end)
+
+		local shown = 0
+		for _, player in ipairs(players) do
+			if player ~= Players.LocalPlayer then
+				ensurePlayerCharacterConnection(player)
+				ensurePlayerTeamConnection(player)
+
+				shown = shown + 1
+				local teamText = getPlayerTeamText(player)
+				local label = player.DisplayName ~= player.Name and (player.DisplayName .. " @" .. player.Name) or player.Name
+				local button = NativeUi.makeButton(refs.spyMemberContent, label .. "  /  " .. teamText, {
+					Size = UDim2.new(1, 0, 0, 32),
+					TextSize = 12,
+					TextXAlignment = Enum.TextXAlignment.Left,
+				})
+
+				NativeUi.setButtonSelected(button, state.selectedPlayerName == player.Name)
+				button.MouseButton1Click:Connect(function()
+					state.selectedPlayerName = state.selectedPlayerName == player.Name and "" or player.Name
+					refreshPlayersList()
+					syncControlState()
+				end)
+			end
+		end
+
+		if shown == 0 then
+			NativeUi.makeLabel(refs.spyMemberContent, "No other players are currently available.", {
+				TextColor3 = NativeUi.Theme.TextMuted,
+				TextWrapped = true,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				AutomaticSize = Enum.AutomaticSize.Y,
+				Size = UDim2.new(1, 0, 0, 0),
+			})
+		end
 	end
 
 	local function countHighlightedPlayers()
@@ -3573,8 +4326,10 @@ function BytecodeViewer.start(config)
 
 	syncControlState = function()
 		local bodyVisible = not state.isMinimized
+		refs.workspaceShell.Visible = bodyVisible
 		refs.mainWorkspace.Visible = bodyVisible and state.activeTab == "main"
 		refs.espWorkspace.Visible = bodyVisible and state.activeTab == "esp"
+		refs.spyWorkspace.Visible = bodyVisible and state.activeTab == "spy"
 		refs.gunsWorkspace.Visible = bodyVisible and state.activeTab == "guns"
 		refs.bytecodeWorkspace.Visible = bodyVisible and state.activeTab == "bytecode"
 		refs.buildWorkspace.Visible = bodyVisible and state.activeTab == "build"
@@ -3588,9 +4343,16 @@ function BytecodeViewer.start(config)
 
 		NativeUi.setButtonSelected(refs.mainTabButton, state.activeTab == "main")
 		NativeUi.setButtonSelected(refs.espTabButton, state.activeTab == "esp")
+		NativeUi.setButtonSelected(refs.spyTabButton, state.activeTab == "spy")
 		NativeUi.setButtonSelected(refs.gunsTabButton, state.activeTab == "guns")
 		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
 		NativeUi.setButtonSelected(refs.buildTabButton, state.activeTab == "build")
+		NativeUi.setButtonSelected(refs.dockAssistButton, state.activeTab == "main")
+		NativeUi.setButtonSelected(refs.dockEspButton, state.activeTab == "esp")
+		NativeUi.setButtonSelected(refs.dockSpyButton, state.activeTab == "spy")
+		NativeUi.setButtonSelected(refs.dockCombatButton, state.activeTab == "guns")
+		NativeUi.setButtonSelected(refs.dockBuildButton, state.activeTab == "build")
+		NativeUi.setButtonSelected(refs.dockCodeButton, state.activeTab == "bytecode")
 		NativeUi.setButtonSelected(refs.scriptModeButton, state.sourceMode == "script")
 		NativeUi.setButtonSelected(refs.fileModeButton, state.sourceMode == "file")
 		NativeUi.setButtonSelected(refs.binaryButton, state.inputFormat == "binary")
@@ -3651,6 +4413,9 @@ function BytecodeViewer.start(config)
 			refs.suiteStatus.Text = refs.inspectorStatusLabel.Text
 			refs.suiteStatus.TextColor3 = refs.inspectorStatusLabel.TextColor3
 		end
+
+		updateSpyReadout()
+		updateSuiteOverlays()
 	end
 
 	local function applyNumericAction(actionName, value, label)
@@ -3878,6 +4643,10 @@ function BytecodeViewer.start(config)
 		state.activeTab = "esp"
 		syncControlState()
 	end))
+	trackConnection(refs.spyTabButton.MouseButton1Click:Connect(function()
+		state.activeTab = "spy"
+		syncControlState()
+	end))
 	trackConnection(refs.gunsTabButton.MouseButton1Click:Connect(function()
 		state.activeTab = "guns"
 		syncControlState()
@@ -3888,6 +4657,30 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.buildTabButton.MouseButton1Click:Connect(function()
 		state.activeTab = "build"
+		syncControlState()
+	end))
+	trackConnection(refs.dockAssistButton.MouseButton1Click:Connect(function()
+		state.activeTab = "main"
+		syncControlState()
+	end))
+	trackConnection(refs.dockEspButton.MouseButton1Click:Connect(function()
+		state.activeTab = "esp"
+		syncControlState()
+	end))
+	trackConnection(refs.dockSpyButton.MouseButton1Click:Connect(function()
+		state.activeTab = "spy"
+		syncControlState()
+	end))
+	trackConnection(refs.dockCombatButton.MouseButton1Click:Connect(function()
+		state.activeTab = "guns"
+		syncControlState()
+	end))
+	trackConnection(refs.dockBuildButton.MouseButton1Click:Connect(function()
+		state.activeTab = "build"
+		syncControlState()
+	end))
+	trackConnection(refs.dockCodeButton.MouseButton1Click:Connect(function()
+		state.activeTab = "bytecode"
 		syncControlState()
 	end))
 	trackConnection(refs.refreshTreeButton.MouseButton1Click:Connect(function()
@@ -3993,6 +4786,32 @@ function BytecodeViewer.start(config)
 		state.highlightAllPlayers = false
 		reconcilePlayerHighlights()
 		refreshEspPlayersList()
+		syncControlState()
+	end))
+	trackConnection(refs.spyClearButton.MouseButton1Click:Connect(function()
+		state.selectedPlayerName = ""
+		refreshPlayersList()
+		syncControlState()
+	end))
+	trackConnection(refs.spyPinButton.MouseButton1Click:Connect(function()
+		refreshPlayersList()
+		syncControlState()
+	end))
+	trackConnection(refs.spyHighlightButton.MouseButton1Click:Connect(function()
+		local player = getFocusedSpyPlayer()
+		if player == nil then
+			return
+		end
+
+		if state.highlightedPlayers[player.Name] == true then
+			state.highlightedPlayers[player.Name] = nil
+		else
+			state.highlightedPlayers[player.Name] = true
+		end
+
+		reconcilePlayerHighlights()
+		refreshEspPlayersList()
+		refreshPlayersList()
 		syncControlState()
 	end))
 	trackConnection(refs.walkSlider.applyButton.MouseButton1Click:Connect(function()
