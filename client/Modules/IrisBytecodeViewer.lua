@@ -3641,6 +3641,17 @@ function BytecodeViewer.start(config)
 		return table.concat(filtered, "\n")
 	end
 
+	local function setOutputLoading(title, detail)
+		refs.outputSourceLabel.Text = title or "Loading"
+		refs.outputSourceLabel.TextColor3 = NativeUi.Theme.Info
+		refs.outputSummaryLabel.Text = detail or "Reading bytecode and preparing output..."
+		refs.outputCodeLabel.Text = "Loading...\n\nThe selected script is being decoded. Large scripts can take a moment."
+		refs.outputCodeLabel.TextColor3 = NativeUi.Theme.TextMuted
+		refs.chunkSummaryLabel.Text = "Loading"
+		setStatus(title or "Loading", NativeUi.Theme.Info)
+		refs.syncOutputCanvas()
+	end
+
 	local function copyOutputMode(viewMode, label)
 		if state.lastResult == nil then
 			setStatus("Nothing loaded to copy", NativeUi.Theme.Error)
@@ -3700,7 +3711,18 @@ function BytecodeViewer.start(config)
 		refs.outputSourceLabel.Text = ("Loaded: %s"):format(state.lastResult.sourceLabel or "<unknown>")
 		refs.outputSourceLabel.TextColor3 = sourceColor
 
-		local outputText = collectOutputText()
+		local ok, outputText = pcall(collectOutputText)
+		if not ok then
+			outputText = ("Decompiler/view error:\n%s"):format(tostring(outputText))
+			refs.outputCodeLabel.TextColor3 = NativeUi.Theme.Error
+			refs.outputCodeLabel.Text = outputText
+			refs.outputSummaryLabel.Text = "The selected view failed. Switch to Code view for raw opcode output."
+			refs.chunkSummaryLabel.Text = "View failed"
+			setStatus("View error", NativeUi.Theme.Error)
+			refs.syncOutputCanvas()
+			return
+		end
+
 		if outputText == "" then
 			outputText = "No lines match the current filter."
 			refs.outputCodeLabel.TextColor3 = NativeUi.Theme.TextMuted
@@ -3861,6 +3883,36 @@ function BytecodeViewer.start(config)
 		else
 			loadFileTarget()
 		end
+	end
+
+	local loadRequestId = 0
+
+	local function queueLoadCurrentTarget()
+		loadRequestId = loadRequestId + 1
+		local requestId = loadRequestId
+		local targetText = state.sourceMode == "script" and trimText(state.scriptPath) or trimText(state.filePath)
+
+		setOutputLoading("Loading target", targetText ~= "" and targetText or "No target selected yet.")
+
+		task.delay(0.03, function()
+			if cleaning or refs.main == nil or refs.main.Parent == nil or requestId ~= loadRequestId then
+				return
+			end
+
+			local ok, err = pcall(loadCurrentTarget)
+			if not ok and requestId == loadRequestId then
+				state.lastResult = nil
+				state.lastError = tostring(err)
+				renderOutputView()
+			end
+
+			if requestId == loadRequestId then
+				syncControlState()
+				if renderTreeView ~= nil then
+					renderTreeView()
+				end
+			end
+		end)
 	end
 
 	local function refreshMainFields()
@@ -4676,7 +4728,7 @@ function BytecodeViewer.start(config)
 				state.scriptPath = node.path
 				state.selectedScriptPath = node.path
 				refs.targetBox.Text = state.scriptPath
-				loadScriptTarget()
+				queueLoadCurrentTarget()
 				renderTreeView()
 				syncControlState()
 			end)
@@ -5102,7 +5154,7 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.loadButton.MouseButton1Click:Connect(function()
 		setActiveTargetText(refs.targetBox.Text)
-		loadCurrentTarget()
+		queueLoadCurrentTarget()
 		syncControlState()
 		renderTreeView()
 	end))
@@ -5117,7 +5169,7 @@ function BytecodeViewer.start(config)
 			end
 		end
 
-		loadCurrentTarget()
+		queueLoadCurrentTarget()
 		syncControlState()
 		renderTreeView()
 	end))

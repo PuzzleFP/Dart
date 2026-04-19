@@ -161,9 +161,13 @@ local CAPTURE_TYPES = {
 	[2] = "UPVAL",
 }
 
+local DEFAULT_MAX_STRUCTURED_DEPTH = 48
+local DEFAULT_MAX_EXPRESSION_DEPTH = 48
+
 local LUA_KEYWORDS = {
 	["and"] = true,
 	["break"] = true,
+	["continue"] = true,
 	["do"] = true,
 	["else"] = true,
 	["elseif"] = true,
@@ -308,7 +312,7 @@ local function getLocalNameAtPc(proto, register, pc)
 	end
 
 	for _, localInfo in ipairs(locals) do
-		if localInfo.register == register and localInfo.name and localInfo.name ~= "" then
+		if localInfo.register == register and isIdentifier(localInfo.name) then
 			local startPc = localInfo.startPc or 0
 			local endPc = localInfo.endPc or math.huge
 			if pc >= startPc and pc < endPc then
@@ -336,6 +340,8 @@ local function makeContext(proto, options)
 		usedAliases = {},
 		pendingClosure = nil,
 		openResult = nil,
+		structuredDepth = 0,
+		activeStructuredRanges = {},
 	}
 
 	for _, alias in pairs(context.options.registerAliases or {}) do
@@ -672,14 +678,27 @@ local function tableNodeFromConstant(proto, constant)
 	return node
 end
 
-local function renderTableNode(node, indent)
+local function renderTableNode(node, indent, seen, depth)
 	if node.name ~= nil then
 		return node.name
+	end
+
+	seen = seen or {}
+	depth = depth or 0
+
+	if seen[node] then
+		return "{ --[[ recursive table ]] }"
+	end
+
+	if depth > DEFAULT_MAX_EXPRESSION_DEPTH then
+		return "{ --[[ expression depth limit ]] }"
 	end
 
 	if #node.entries == 0 then
 		return "{}"
 	end
+
+	seen[node] = true
 
 	local currentIndent = string.rep("\t", indent or 0)
 	local childIndent = string.rep("\t", (indent or 0) + 1)
@@ -688,7 +707,7 @@ local function renderTableNode(node, indent)
 	}
 
 	for _, entry in ipairs(node.entries) do
-		local renderedValue = renderExpression(entry.value, (indent or 0) + 1)
+		local renderedValue = renderExpression(entry.value, (indent or 0) + 1, seen, depth + 1)
 		if entry.array then
 			table.insert(lines, ("%s%s,"):format(childIndent, renderedValue))
 		else
@@ -697,12 +716,13 @@ local function renderTableNode(node, indent)
 	end
 
 	table.insert(lines, currentIndent .. "}")
+	seen[node] = nil
 	return table.concat(lines, "\n")
 end
 
-renderExpression = function(value, indent)
+renderExpression = function(value, indent, seen, depth)
 	if type(value) == "table" and value.kind == "table" then
-		return renderTableNode(value, indent or 0)
+		return renderTableNode(value, indent or 0, seen, depth or 0)
 	end
 
 	return expressionText(value)
@@ -1298,12 +1318,51 @@ local function emitWithStatementSink(context, sink, callback)
 	return result
 end
 
+local function structuredRangeKey(startPc, endPc)
+	return tostring(startPc or "?") .. ":" .. tostring(endPc or "?")
+end
+
+local function enterStructuredRange(context, startPc, endPc)
+	if startPc == nil or endPc == nil or startPc >= endPc then
+		return false, "empty"
+	end
+
+	local maxDepth = context.options.maxStructuredDepth or DEFAULT_MAX_STRUCTURED_DEPTH
+	if (context.structuredDepth or 0) >= maxDepth then
+		return false, "depth"
+	end
+
+	local key = structuredRangeKey(startPc, endPc)
+	context.activeStructuredRanges = context.activeStructuredRanges or {}
+	if context.activeStructuredRanges[key] then
+		return false, "recursive"
+	end
+
+	context.structuredDepth = (context.structuredDepth or 0) + 1
+	context.activeStructuredRanges[key] = true
+	return true, key
+end
+
+local function leaveStructuredRange(context, key)
+	if key ~= nil and context.activeStructuredRanges ~= nil then
+		context.activeStructuredRanges[key] = nil
+	end
+
+	context.structuredDepth = math.max(0, (context.structuredDepth or 1) - 1)
+end
+
 local function decompileChildRange(context, instructions, pcToIndex, startPc, endPc)
+	if startPc == nil or endPc == nil or startPc >= endPc then
+		return {}
+	end
+
 	local statements = {}
 	local registers = cloneMap(context.registers)
 	local declaredLocals = cloneMap(context.declaredLocals)
 	local pendingClosure = context.pendingClosure
 	local openResult = context.openResult
+	local structuredDepth = context.structuredDepth
+	local activeStructuredRanges = cloneMap(context.activeStructuredRanges)
 
 	local ok, result = pcall(emitWithStatementSink, context, statements, function()
 		decompileStructuredRange(context, instructions, pcToIndex, startPc, endPc)
@@ -1313,9 +1372,13 @@ local function decompileChildRange(context, instructions, pcToIndex, startPc, en
 	context.declaredLocals = declaredLocals
 	context.pendingClosure = pendingClosure
 	context.openResult = openResult
+	context.structuredDepth = structuredDepth
+	context.activeStructuredRanges = activeStructuredRanges
 
 	if not ok then
-		error(result, 0)
+		return {
+			("--[[ structured child range failed: %s ]]"):format(tostring(result)),
+		}
 	end
 
 	return statements
@@ -1358,8 +1421,17 @@ local function tryEmitStructuredConditional(context, instructions, pcToIndex, in
 end
 
 decompileStructuredRange = function(context, instructions, pcToIndex, startPc, endPc)
+	local entered, keyOrReason = enterStructuredRange(context, startPc, endPc)
+	if not entered then
+		if keyOrReason ~= "empty" then
+			emit(context, ("--[[ structured control flow omitted: %s limit ]]"):format(tostring(keyOrReason)))
+		end
+		return
+	end
+
 	local index = pcToIndex[startPc]
 	if index == nil then
+		leaveStructuredRange(context, keyOrReason)
 		return
 	end
 
@@ -1377,6 +1449,8 @@ decompileStructuredRange = function(context, instructions, pcToIndex, startPc, e
 			index = index + 1
 		end
 	end
+
+	leaveStructuredRange(context, keyOrReason)
 end
 
 local function decompileStructuredProto(context)
@@ -1608,7 +1682,17 @@ local function analyzeProto(proto, options)
 	local context = makeContext(proto, options)
 
 	if proto.disassembly and proto.disassembly.instructions then
-		if options.structuredControlFlow == false or not decompileStructuredProto(context) then
+		local structuredOk = false
+		if options.structuredControlFlow ~= false then
+			local ok, result = pcall(decompileStructuredProto, context)
+			structuredOk = ok and result == true
+			if not ok then
+				context = makeContext(proto, options)
+				emit(context, ("--[[ structured decompile failed; linear fallback: %s ]]"):format(tostring(result)))
+			end
+		end
+
+		if not structuredOk then
 			for _, instruction in ipairs(proto.disassembly.instructions) do
 				handleInstruction(context, instruction)
 			end
