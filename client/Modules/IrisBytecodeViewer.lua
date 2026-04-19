@@ -370,12 +370,7 @@ local function isScriptLike(instance)
 end
 
 local function getGcScriptRegistryPath(scriptInstance)
-	local ok, debugId = pcall(function()
-		return scriptInstance:GetDebugId(0)
-	end)
-
-	local key = ok and type(debugId) == "string" and debugId ~= "" and debugId or scriptInstance:GetFullName()
-	return GC_SCRIPT_PATH_PREFIX .. key
+	return GC_SCRIPT_PATH_PREFIX .. scriptInstance:GetFullName()
 end
 
 local function getScriptFromGcValue(value)
@@ -384,16 +379,16 @@ local function getScriptFromGcValue(value)
 	end
 
 	if type(value) == "function" and type(getfenv) == "function" then
-		local ok, env = pcall(getfenv, value)
-		if ok and type(env) == "table" then
+		local env = getfenv(value)
+		if type(env) == "table" then
 			local scriptValue = rawget(env, "script")
 			if typeof(scriptValue) == "Instance" and isScriptLike(scriptValue) then
 				return scriptValue
 			end
 		end
 	elseif type(value) == "table" then
-		local ok, scriptValue = pcall(rawget, value, "script")
-		if ok and typeof(scriptValue) == "Instance" and isScriptLike(scriptValue) then
+		local scriptValue = rawget(value, "script")
+		if typeof(scriptValue) == "Instance" and isScriptLike(scriptValue) then
 			return scriptValue
 		end
 	end
@@ -424,8 +419,8 @@ local function buildGcScriptBrowserRoot()
 		return nil
 	end
 
-	local ok, objects = pcall(getgc)
-	if not ok or type(objects) ~= "table" then
+	local objects = getgc()
+	if type(objects) ~= "table" then
 		return nil
 	end
 
@@ -3687,16 +3682,60 @@ function BytecodeViewer.start(config)
 		refs.syncOutputCanvas()
 	end
 
+	local renderTreeView
+	local scriptBrowserRefreshQueued = false
+
 	local function refreshScriptBrowser()
-		local ok, result = pcall(buildScriptBrowserTree)
-		if ok then
-			state.scriptBrowserTree = result
-			state.scriptBrowserError = nil
+		state.scriptBrowserTree = buildScriptBrowserTree()
+		state.scriptBrowserError = nil
+	end
+
+	local function scheduleScriptBrowserRefresh()
+		if scriptBrowserRefreshQueued or cleaning then
 			return
 		end
 
-		state.scriptBrowserTree = {}
-		state.scriptBrowserError = result
+		scriptBrowserRefreshQueued = true
+		task.delay(0.18, function()
+			scriptBrowserRefreshQueued = false
+			if cleaning or refs.main == nil or refs.main.Parent == nil then
+				return
+			end
+
+			refreshScriptBrowser()
+			if renderTreeView ~= nil then
+				renderTreeView()
+			end
+		end)
+	end
+
+	local function handleScriptBrowserMutation(instance)
+		if typeof(instance) == "Instance" and isScriptLike(instance) then
+			scheduleScriptBrowserRefresh()
+		end
+	end
+
+	local function connectScriptBrowserRoot(root, watchedRoots)
+		if typeof(root) ~= "Instance" or watchedRoots[root] then
+			return
+		end
+
+		for watchedRoot in pairs(watchedRoots) do
+			if root:IsDescendantOf(watchedRoot) then
+				return
+			end
+		end
+
+		watchedRoots[root] = true
+		trackConnection(root.DescendantAdded:Connect(handleScriptBrowserMutation))
+		trackConnection(root.DescendantRemoving:Connect(handleScriptBrowserMutation))
+	end
+
+	local function bindScriptBrowserMutationWatchers()
+		local watchedRoots = {}
+		for _, root in ipairs(collectScriptBrowserRoots()) do
+			connectScriptBrowserRoot(root, watchedRoots)
+		end
 	end
 
 	local function isNodeExpanded(node)
@@ -4533,8 +4572,6 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	local renderTreeView
-
 	local function renderTreeNode(node)
 		local row = NativeUi.makeRow(refs.treeContent, 24)
 		row.BackgroundTransparency = 1
@@ -4904,6 +4941,7 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(Workspace.DescendantAdded:Connect(handleEspDescendantMutation))
 	trackConnection(Workspace.DescendantRemoving:Connect(handleEspDescendantMutation))
+	bindScriptBrowserMutationWatchers()
 
 	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
 	trackConnection(Players.PlayerAdded:Connect(function(player)
