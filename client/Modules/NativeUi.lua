@@ -352,7 +352,7 @@ function NativeUi.makeScrollList(parent, properties)
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
 		ScrollBarImageColor3 = NativeUi.Theme.TextDim,
-		ScrollBarThickness = properties.ScrollBarThickness or 6,
+		ScrollBarThickness = properties.ScrollBarThickness or 4,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Size = properties.Size or UDim2.new(1, 0, 1, 0),
 		TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",

@@ -714,10 +714,30 @@ local function buildRemoteBrowserList()
 	return remotes
 end
 
-local function formatRemoteValue(value, depth)
+local function packRemoteArgs(...)
+	return {
+		n = select("#", ...),
+		...,
+	}
+end
+
+local function getPackedArgCount(args)
+	if type(args) ~= "table" then
+		return 0
+	end
+
+	return tonumber(args.n) or #args
+end
+
+local function formatRemoteValue(value, depth, seen)
 	depth = depth or 0
-	if depth > 2 then
+	seen = seen or {}
+	if depth > 3 then
 		return "..."
+	end
+
+	if value == nil then
+		return "nil"
 	end
 
 	local valueType = typeof(value)
@@ -725,21 +745,38 @@ local function formatRemoteValue(value, depth)
 		return value:GetFullName()
 	elseif valueType == "string" then
 		return string.format("%q", value)
+	elseif valueType == "number" or valueType == "boolean" then
+		return tostring(value)
 	elseif valueType == "Vector3" then
 		return ("Vector3(%s, %s, %s)"):format(math.floor(value.X * 100) / 100, math.floor(value.Y * 100) / 100, math.floor(value.Z * 100) / 100)
+	elseif valueType == "Vector2" then
+		return ("Vector2(%s, %s)"):format(math.floor(value.X * 100) / 100, math.floor(value.Y * 100) / 100)
+	elseif valueType == "Color3" then
+		return ("Color3(%s, %s, %s)"):format(math.floor(value.R * 255), math.floor(value.G * 255), math.floor(value.B * 255))
+	elseif valueType == "BrickColor" then
+		return ("BrickColor(%q)"):format(value.Name)
+	elseif valueType == "EnumItem" then
+		return tostring(value)
 	elseif valueType == "CFrame" then
-		return "CFrame"
+		local position = value.Position
+		return ("CFrame(%s, %s, %s, ...)"):format(math.floor(position.X * 100) / 100, math.floor(position.Y * 100) / 100, math.floor(position.Z * 100) / 100)
 	elseif type(value) == "table" then
+		if seen[value] then
+			return "{...cycle...}"
+		end
+
+		seen[value] = true
 		local parts = {}
 		local count = 0
 		for key, item in pairs(value) do
 			count = count + 1
-			if count > 4 then
+			if count > 8 then
 				table.insert(parts, "...")
 				break
 			end
-			table.insert(parts, ("%s=%s"):format(tostring(key), formatRemoteValue(item, depth + 1)))
+			table.insert(parts, ("%s=%s"):format(formatRemoteValue(key, depth + 1, seen), formatRemoteValue(item, depth + 1, seen)))
 		end
+		seen[value] = nil
 		return "{" .. table.concat(parts, ", ") .. "}"
 	end
 
@@ -748,10 +785,25 @@ end
 
 local function formatRemoteArgs(args)
 	local parts = {}
-	for index, value in ipairs(args or {}) do
-		parts[index] = formatRemoteValue(value, 0)
+	local count = getPackedArgCount(args)
+	for index = 1, count do
+		parts[index] = formatRemoteValue(args[index], 0)
 	end
 	return table.concat(parts, ", ")
+end
+
+local function formatRemoteArgLines(args)
+	local lines = {}
+	local count = getPackedArgCount(args)
+	if count == 0 then
+		return "  <no args>"
+	end
+
+	for index = 1, count do
+		local value = args[index]
+		table.insert(lines, ("  [%d] %s = %s"):format(index, typeof(value), formatRemoteValue(value, 0)))
+	end
+	return table.concat(lines, "\n")
 end
 
 local function formatCodeView(chunk, showRawOpcodes)
@@ -867,6 +919,8 @@ local function makeState(config)
 		remoteWatcherEnabled = false,
 		remoteHookInstalled = false,
 		remoteHookError = nil,
+		notifications = {},
+		nextNotificationId = 0,
 		lastResult = nil,
 		lastError = nil,
 		lastLoadedSourceMode = nil,
@@ -926,8 +980,8 @@ local function makeSectionTitle(parent, text, accentColor)
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamSemibold,
 		Text = text,
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
 		Size = UDim2.new(1, 0, 0, 18),
 	})
 end
@@ -941,7 +995,7 @@ end
 local function makeBodyLabel(parent, text, properties)
 	local label = NativeUi.makeLabel(parent, text, {
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 11,
+		TextSize = 12,
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		AutomaticSize = Enum.AutomaticSize.Y,
@@ -964,7 +1018,7 @@ local function makeOutputViewer(parent)
 		CanvasSize = UDim2.fromOffset(0, 0),
 		Position = UDim2.fromOffset(0, 0),
 		ScrollBarImageColor3 = NativeUi.Theme.TextDim,
-		ScrollBarThickness = 7,
+		ScrollBarThickness = 4,
 		ScrollingDirection = Enum.ScrollingDirection.XY,
 		Size = UDim2.new(1, 0, 1, 0),
 		Parent = parent,
@@ -1040,7 +1094,7 @@ local function makeSliderRow(parent, y, labelText)
 	local applyButton = NativeUi.makeButton(row, "Set", {
 		Position = UDim2.new(1, -56, 0, 6),
 		Size = UDim2.fromOffset(44, 22),
-		TextSize = 10,
+		TextSize = 11,
 	})
 
 	local track = NativeUi.create("Frame", {
@@ -1133,7 +1187,7 @@ end
 local function makeOverlayPanel(parent, properties, radius, strokeColor, strokeTransparency)
 	local panel = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Overlay,
-		BackgroundTransparency = 0.02,
+		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		Parent = parent,
 	})
@@ -1148,7 +1202,7 @@ local function makeOverlayPanel(parent, properties, radius, strokeColor, strokeT
 	NativeUi.stroke(panel, strokeColor or NativeUi.Theme.Border, 1, strokeTransparency or 0.1)
 	SuiteComponents.stylePanel(panel, SuiteTheme, {
 		background = NativeUi.Theme.Overlay,
-		transparency = 0.08,
+		transparency = 0,
 		radius = radius or ((properties and properties.CornerRadius) or 18),
 		stroke = strokeColor or NativeUi.Theme.Border,
 		strokeTransparency = strokeTransparency or SuiteTheme.Transparency.StrokeStrong,
@@ -1189,80 +1243,29 @@ local function createOverlayLayers(screenGui, refs)
 
 	refs.dynamicIslandDetail = NativeUi.makeLabel(dynamicIsland, "Ready", {
 		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 10,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 11,
 		Position = UDim2.fromOffset(48, 28),
 		Size = UDim2.new(1, -92, 0, 14),
+		TextWrapped = true,
 		ZIndex = 41,
 	})
 
 	refs.dynamicIslandBadge = NativeUi.makeLabel(dynamicIsland, "LIVE", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 10,
+		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Position = UDim2.new(1, -68, 0, 17),
 		Size = UDim2.fromOffset(48, 18),
 		ZIndex = 41,
 	})
 
-	local microHud = NativeUi.create("Frame", {
-		Name = "MicroHud",
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(14, 92),
-		Size = UDim2.fromOffset(248, 136),
-		ZIndex = 35,
-		Parent = screenGui,
-	})
-
-	local function makeMicroChip(index, labelText)
-		local chip = makeOverlayPanel(microHud, {
-			Position = UDim2.fromOffset(0, (index - 1) * 44),
-			Size = UDim2.fromOffset(228, 38),
-			ZIndex = 35,
-		}, 14, NativeUi.Theme.Border, 0.16)
-		local dot = NativeUi.create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = NativeUi.Theme.Info,
-			BorderSizePixel = 0,
-			Position = UDim2.fromOffset(19, 19),
-			Size = UDim2.fromOffset(8, 8),
-			ZIndex = 36,
-			Parent = chip,
-		})
-		NativeUi.corner(dot, 999)
-
-		return {
-			frame = chip,
-			dot = dot,
-			title = NativeUi.makeLabel(chip, labelText, {
-				Font = Enum.Font.GothamSemibold,
-				TextSize = 11,
-				Position = UDim2.fromOffset(34, 5),
-				Size = UDim2.new(1, -44, 0, 14),
-				ZIndex = 36,
-			}),
-			detail = NativeUi.makeLabel(chip, "Ready", {
-				Font = Enum.Font.Code,
-				TextColor3 = NativeUi.Theme.TextDim,
-				TextSize = 10,
-				Position = UDim2.fromOffset(34, 19),
-				Size = UDim2.new(1, -44, 0, 13),
-				ZIndex = 36,
-			}),
-		}
-	end
-
-	refs.microHookChip = makeMicroChip(1, "Hook")
-	refs.microTargetChip = makeMicroChip(2, "Target")
-	refs.microRiskChip = makeMicroChip(3, "Risk")
-
 	local alertRail = NativeUi.create("Frame", {
 		Name = "AlertRail",
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.new(1, -322, 0, 94),
+		Position = UDim2.fromOffset(14, 92),
 		Size = UDim2.fromOffset(306, 252),
 		ZIndex = 35,
 		Parent = screenGui,
@@ -1279,8 +1282,8 @@ local function createOverlayLayers(screenGui, refs)
 			frame = card,
 			level = NativeUi.makeLabel(card, "INFO", {
 				Font = Enum.Font.Code,
-				TextColor3 = NativeUi.Theme.TextDim,
-				TextSize = 10,
+				TextColor3 = NativeUi.Theme.TextMuted,
+				TextSize = 11,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				Position = UDim2.fromOffset(14, 10),
 				Size = UDim2.new(1, -28, 0, 14),
@@ -1294,10 +1297,12 @@ local function createOverlayLayers(screenGui, refs)
 				ZIndex = 36,
 			}),
 			detail = NativeUi.makeLabel(card, "Suite initialized", {
-				TextColor3 = NativeUi.Theme.TextDim,
-				TextSize = 11,
+				TextColor3 = NativeUi.Theme.TextMuted,
+				TextSize = 12,
+				TextWrapped = true,
+				TextYAlignment = Enum.TextYAlignment.Top,
 				Position = UDim2.fromOffset(14, 47),
-				Size = UDim2.new(1, -28, 0, 14),
+				Size = UDim2.new(1, -28, 0, 20),
 				ZIndex = 36,
 			}),
 		}
@@ -1308,70 +1313,6 @@ local function createOverlayLayers(screenGui, refs)
 		makeAlertCard(2),
 		makeAlertCard(3),
 	}
-
-	local suiteDock = makeOverlayPanel(screenGui, {
-		Name = "SuiteControls",
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -18),
-		Size = UDim2.fromOffset(760, 58),
-		ZIndex = 38,
-	}, 24, NativeUi.Theme.Border, 0.08)
-	SuiteComponents.stylePanel(suiteDock, SuiteTheme, {
-		background = SuiteTheme.Colors.Shell,
-		transparency = 0.10,
-		radius = 26,
-		stroke = SuiteTheme.Colors.Stroke,
-		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
-		gradient = true,
-	})
-	refs.suiteDock = suiteDock
-
-	NativeUi.makeLabel(suiteDock, "SUITE", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 10,
-		Position = UDim2.fromOffset(18, 11),
-		Size = UDim2.fromOffset(80, 14),
-		ZIndex = 39,
-	})
-
-	NativeUi.makeLabel(suiteDock, "states", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 10,
-		Position = UDim2.fromOffset(18, 29),
-		Size = UDim2.fromOffset(80, 14),
-		ZIndex = 39,
-	})
-
-	local dockButtonPalette = {
-		Base = NativeUi.Theme.Surface,
-		Hover = NativeUi.Theme.SurfaceHover,
-		Pressed = NativeUi.Theme.SurfaceActive,
-		Selected = NativeUi.Theme.SurfaceActive,
-		Disabled = Color3.fromRGB(17, 20, 26),
-		Text = NativeUi.Theme.TextMuted,
-		SelectedText = NativeUi.Theme.Text,
-		DisabledText = NativeUi.Theme.TextDim,
-	}
-
-	local function makeDockButton(index, text)
-		return NativeUi.makeButton(suiteDock, text, {
-			Position = UDim2.fromOffset(104 + (index - 1) * 86, 14),
-			Size = UDim2.fromOffset(82, 30),
-			TextSize = 10,
-			ZIndex = 39,
-			Palette = dockButtonPalette,
-		})
-	end
-
-	refs.dockAssistButton = makeDockButton(1, UI_ICON.main .. " ASSIST")
-	refs.dockEspButton = makeDockButton(2, UI_ICON.esp .. " ESP")
-	refs.dockSpyButton = makeDockButton(3, UI_ICON.spy .. " SPY")
-	refs.dockCombatButton = makeDockButton(4, UI_ICON.guns .. " COMBAT")
-	refs.dockBuildButton = makeDockButton(5, UI_ICON.build .. " BUILD")
-	refs.dockRemoteButton = makeDockButton(6, UI_ICON.remote .. " REMOTE")
-	refs.dockCodeButton = makeDockButton(7, UI_ICON.code .. " CODE")
 end
 
 local function createSpyWorkspace(spyWorkspace, refs)
@@ -1386,8 +1327,8 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	spySelectorTitle.Position = UDim2.fromOffset(12, 12)
 
 	NativeUi.makeLabel(refs.spySelectorPanel, "Pick one target to focus recon. ESP stays broad; Spy stays narrow.", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Position = UDim2.fromOffset(12, 34),
@@ -1397,7 +1338,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	refs.spyClearButton = NativeUi.makeButton(refs.spySelectorPanel, "Clear Focus", {
 		Position = UDim2.fromOffset(12, 76),
 		Size = UDim2.fromOffset(104, 28),
-		TextSize = 11,
+		TextSize = 12,
 	})
 
 	refs.spyMemberScroll, refs.spyMemberContent = NativeUi.makeScrollList(refs.spySelectorPanel, {
@@ -1416,7 +1357,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	})
 	SuiteComponents.stylePanel(refs.spyReconPanel, SuiteTheme, {
 		background = SuiteTheme.Colors.Panel,
-		transparency = 0.14,
+		transparency = 0,
 		radius = SuiteTheme.Radius.CardLarge,
 		stroke = SuiteTheme.Colors.Stroke,
 		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
@@ -1431,7 +1372,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	})
 
 	NativeUi.makeLabel(refs.spyReconPanel, "Focused target intelligence. One read, low clutter.", {
-		TextColor3 = NativeUi.Theme.TextDim,
+		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
 		Position = UDim2.fromOffset(16, 43),
 		Size = UDim2.new(1, -32, 0, 16),
@@ -1439,8 +1380,8 @@ local function createSpyWorkspace(spyWorkspace, refs)
 
 	refs.spyThreatPill = NativeUi.makeLabel(refs.spyReconPanel, "IDLE", {
 		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 10,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Position = UDim2.new(1, -116, 0, 22),
 		Size = UDim2.fromOffset(92, 16),
@@ -1449,7 +1390,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	refs.spyFigure = NativeUi.create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundColor3 = NativeUi.Theme.Surface,
-		BackgroundTransparency = 0.08,
+		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0.5, 0, 0, 96),
 		Size = UDim2.fromOffset(96, 132),
@@ -1459,7 +1400,7 @@ local function createSpyWorkspace(spyWorkspace, refs)
 	NativeUi.stroke(refs.spyFigure, NativeUi.Theme.Border, 1, 0.18)
 	SuiteComponents.stylePanel(refs.spyFigure, SuiteTheme, {
 		background = SuiteTheme.Colors.Surface,
-		transparency = 0.18,
+		transparency = 0,
 		radius = 44,
 		stroke = SuiteTheme.Colors.Stroke,
 		strokeTransparency = SuiteTheme.Transparency.Stroke,
@@ -1585,22 +1526,28 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 	})
 	SuiteComponents.stylePanel(refs.remoteLogPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
-	local logTitle = makeSectionTitle(refs.remoteLogPanel, UI_ICON.watch .. " Traffic Log")
+	local logTitle = makeSectionTitle(refs.remoteLogPanel, UI_ICON.watch .. " Remote Inspector")
 	logTitle.Position = UDim2.fromOffset(12, 12)
 
-	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Watcher idle", {
+	refs.clearRemoteLogButton = NativeUi.makeButton(refs.remoteLogPanel, UI_ICON.clear .. " Clear", {
+		Position = UDim2.new(1, -108, 0, 10),
+		Size = UDim2.fromOffset(96, 28),
+		TextSize = 12,
+	})
+
+	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Select a remote to inspect its traffic.", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 11,
+		TextSize = 12,
 		Position = UDim2.fromOffset(12, 36),
-		Size = UDim2.new(1, -24, 0, 16),
+		Size = UDim2.new(1, -132, 0, 18),
 	})
 
 	refs.remoteLogHost = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 62),
-		Size = UDim2.new(1, -24, 1, -74),
+		Position = UDim2.fromOffset(12, 66),
+		Size = UDim2.new(1, -24, 1, -78),
 		Parent = refs.remoteLogPanel,
 	})
 	refs.remoteLogScroll, refs.remoteLogLabel, refs.syncRemoteLogCanvas = makeOutputViewer(refs.remoteLogHost)
@@ -1612,25 +1559,48 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 	})
 	SuiteComponents.stylePanel(refs.remoteControlPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
-	local controlTitle = makeSectionTitle(refs.remoteControlPanel, "Controls")
+	local controlTitle = makeSectionTitle(refs.remoteControlPanel, "Selected Remote")
 	controlTitle.Position = UDim2.fromOffset(12, 12)
 
-	refs.remoteWatcherToggle = makeToggleRow(refs.remoteControlPanel, 42, "Remote Watcher", "Logs client remote calls when hook support exists, plus server events where possible.")
-
-	refs.scanRemotesButton = NativeUi.makeButton(refs.remoteControlPanel, UI_ICON.refresh .. " Scan Remotes", {
-		Position = UDim2.fromOffset(12, 106),
-		Size = UDim2.new(1, -24, 0, 30),
-		TextSize = 12,
+	refs.remoteSelectedNameLabel = NativeUi.makeLabel(refs.remoteControlPanel, "No remote selected", {
+		Font = Enum.Font.GothamBold,
+		TextColor3 = NativeUi.Theme.Text,
+		TextSize = 13,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(12, 38),
+		Size = UDim2.new(1, -24, 0, 46),
 	})
 
-	refs.clearRemoteLogButton = NativeUi.makeButton(refs.remoteControlPanel, UI_ICON.clear .. " Clear Logs", {
-		Position = UDim2.fromOffset(12, 144),
+	refs.remoteSelectedMetaLabel = NativeUi.makeLabel(refs.remoteControlPanel, "Choose a remote from the left list.", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(12, 90),
+		Size = UDim2.new(1, -24, 0, 58),
+	})
+
+	refs.remoteSelectedStatsLabel = makeBodyLabel(refs.remoteControlPanel, "Calls: 0\nLast: -", {
+		Font = Enum.Font.Code,
+		Position = UDim2.fromOffset(12, 154),
+		Size = UDim2.new(1, -24, 0, 0),
+	})
+
+	local quickTitle = makeSectionTitle(refs.remoteControlPanel, "Quick Actions")
+	quickTitle.Position = UDim2.fromOffset(12, 234)
+
+	refs.remoteWatcherToggle = makeToggleRow(refs.remoteControlPanel, 264, "Remote Watcher", "Capture client calls and server events.")
+
+	refs.scanRemotesButton = NativeUi.makeButton(refs.remoteControlPanel, UI_ICON.refresh .. " Scan Remotes", {
+		Position = UDim2.fromOffset(12, 328),
 		Size = UDim2.new(1, -24, 0, 30),
 		TextSize = 12,
 	})
 
 	refs.remoteInfoLabel = makeBodyLabel(refs.remoteControlPanel, "Read-only debugging. This tab does not fire remotes or replay payloads.", {
-		Position = UDim2.fromOffset(12, 188),
+		Position = UDim2.fromOffset(12, 374),
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 end
@@ -1683,8 +1653,8 @@ local function createGui(state)
 	NativeUi.corner(shadow, 14)
 	shadow.Visible = false
 
-	local navWidth = 220
-	local contentX = 244
+	local navWidth = 184
+	local contentX = 204
 	local shellY = 16
 	local shellPadding = 12
 	local shellHeaderHeight = 72
@@ -1702,7 +1672,7 @@ local function createGui(state)
 
 	local navRail = NativeUi.makePanel(main, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
-		BackgroundTransparency = 0.03,
+		BackgroundTransparency = 0,
 		Position = UDim2.fromOffset(0, shellY),
 		Size = UDim2.fromOffset(navWidth, 618),
 		CornerRadius = 18,
@@ -1718,22 +1688,15 @@ local function createGui(state)
 		Parent = main,
 	})
 
-	NativeUi.makeLabel(navRail, "Eclipsis", {
+	NativeUi.makeLabel(navRail, "Dart", {
 		Font = Enum.Font.GothamBold,
-		TextSize = 16,
+		TextSize = 18,
 		Position = UDim2.fromOffset(16, 18),
-		Size = UDim2.new(1, -32, 0, 20),
-	})
-
-	NativeUi.makeLabel(navRail, "Client control suite", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
-		Position = UDim2.fromOffset(16, 38),
-		Size = UDim2.new(1, -32, 0, 16),
+		Size = UDim2.new(1, -32, 0, 24),
 	})
 
 	local mainTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.main .. " Main", {
-		Position = UDim2.fromOffset(12, 88),
+		Position = UDim2.fromOffset(12, 70),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1741,7 +1704,7 @@ local function createGui(state)
 	})
 
 	local espTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.esp .. " ESP", {
-		Position = UDim2.fromOffset(12, 126),
+		Position = UDim2.fromOffset(12, 108),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1749,7 +1712,7 @@ local function createGui(state)
 	})
 
 	local spyTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.spy .. " Spy", {
-		Position = UDim2.fromOffset(12, 164),
+		Position = UDim2.fromOffset(12, 146),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1757,7 +1720,7 @@ local function createGui(state)
 	})
 
 	local gunsTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.guns .. " Guns", {
-		Position = UDim2.fromOffset(12, 202),
+		Position = UDim2.fromOffset(12, 184),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1765,7 +1728,7 @@ local function createGui(state)
 	})
 
 	local buildTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.build .. " Build", {
-		Position = UDim2.fromOffset(12, 240),
+		Position = UDim2.fromOffset(12, 222),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1773,7 +1736,7 @@ local function createGui(state)
 	})
 
 	local remoteTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.remote .. " Remote", {
-		Position = UDim2.fromOffset(12, 278),
+		Position = UDim2.fromOffset(12, 260),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1781,7 +1744,7 @@ local function createGui(state)
 	})
 
 	local bytecodeTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.code .. " Code", {
-		Position = UDim2.fromOffset(12, 316),
+		Position = UDim2.fromOffset(12, 298),
 		Size = UDim2.new(1, -24, 0, 32),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1790,7 +1753,7 @@ local function createGui(state)
 
 	local navSessionCard = NativeUi.makePanel(navRail, {
 		BackgroundColor3 = NativeUi.Theme.Surface,
-		BackgroundTransparency = 0.05,
+		BackgroundTransparency = 0,
 		Position = UDim2.new(0, 12, 1, -96),
 		Size = UDim2.new(1, -24, 0, 78),
 		CornerRadius = 14,
@@ -1807,7 +1770,7 @@ local function createGui(state)
 	NativeUi.makeLabel(navSessionCard, "Hook state        Stable", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 10,
+		TextSize = 11,
 		Position = UDim2.fromOffset(12, 34),
 		Size = UDim2.new(1, -24, 0, 13),
 	})
@@ -1815,7 +1778,7 @@ local function createGui(state)
 	NativeUi.makeLabel(navSessionCard, "Suite             v4", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 10,
+		TextSize = 11,
 		Position = UDim2.fromOffset(12, 50),
 		Size = UDim2.new(1, -24, 0, 13),
 	})
@@ -1854,7 +1817,7 @@ local function createGui(state)
 	local workspaceShell = NativeUi.makePanel(main, {
 		Name = "WorkspaceShell",
 		BackgroundColor3 = NativeUi.Theme.Shell,
-		BackgroundTransparency = 0.02,
+		BackgroundTransparency = 0,
 		Position = UDim2.fromOffset(contentX, shellY),
 		Size = UDim2.new(1, -(contentX + 12), 1, -32),
 		CornerRadius = 20,
@@ -1864,7 +1827,7 @@ local function createGui(state)
 
 	local workspaceHeader = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Panel,
-		BackgroundTransparency = 0.42,
+		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(shellPadding, shellPadding),
 		Size = UDim2.new(1, -shellPadding * 2, 0, shellHeaderHeight),
@@ -1872,7 +1835,7 @@ local function createGui(state)
 	})
 	SuiteComponents.stylePanel(workspaceHeader, SuiteTheme, {
 		background = SuiteTheme.Colors.Panel,
-		transparency = 0.42,
+		transparency = 0,
 		radius = 24,
 		stroke = SuiteTheme.Colors.Stroke,
 		strokeTransparency = SuiteTheme.Transparency.Stroke,
@@ -1881,8 +1844,8 @@ local function createGui(state)
 
 	local workspaceKickerLabel = NativeUi.makeLabel(workspaceHeader, "CODE", {
 		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 10,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 11,
 		Position = UDim2.fromOffset(16, 9),
 		Size = UDim2.new(0, 180, 0, 14),
 	})
@@ -1895,8 +1858,8 @@ local function createGui(state)
 	})
 
 	local workspaceSubtitleLabel = NativeUi.makeLabel(workspaceHeader, "Three-pane bytecode, decompile, and control-flow analysis.", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
 		Position = UDim2.fromOffset(16, 49),
 		Size = UDim2.new(0.56, 0, 0, 16),
 	})
@@ -1904,8 +1867,8 @@ local function createGui(state)
 	local workspaceSearchButton = NativeUi.makeButton(workspaceHeader, "Search scripts, commands or output", {
 		Position = UDim2.new(1, -314, 0, 18),
 		Size = UDim2.fromOffset(254, 34),
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Palette = {
 			Base = NativeUi.Theme.Surface,
@@ -1991,7 +1954,7 @@ local function createGui(state)
 	})
 	SuiteComponents.decorateScroll(mainScroll, SuiteTheme, {
 		background = SuiteTheme.Colors.Panel,
-		transparency = 0.18,
+		transparency = 0,
 		radius = SuiteTheme.Radius.Card,
 		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
 	})
@@ -2290,7 +2253,7 @@ local function createGui(state)
 	})
 	SuiteComponents.decorateScroll(inspectorScroll, SuiteTheme, {
 		background = SuiteTheme.Colors.Panel,
-		transparency = 0.38,
+		transparency = 0,
 		radius = SuiteTheme.Radius.Card,
 		strokeTransparency = 1,
 	})
@@ -2450,8 +2413,8 @@ local function createGui(state)
 	})
 
 	local filterHint = NativeUi.makeLabel(filterSection, "Filters visible lines only", {
-		TextColor3 = NativeUi.Theme.TextDim,
-		TextSize = 11,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
 		Position = UDim2.fromOffset(122, 88),
 		Size = UDim2.new(1, -134, 0, 16),
 	})
@@ -2479,7 +2442,7 @@ local function createGui(state)
 	})
 	SuiteComponents.decorateScroll(gunsScroll, SuiteTheme, {
 		background = SuiteTheme.Colors.Panel,
-		transparency = 0.18,
+		transparency = 0,
 		radius = SuiteTheme.Radius.Card,
 		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
 	})
@@ -2493,7 +2456,7 @@ local function createGui(state)
 	})
 	SuiteComponents.decorateScroll(buildingScroll, SuiteTheme, {
 		background = SuiteTheme.Colors.Panel,
-		transparency = 0.18,
+		transparency = 0,
 		radius = SuiteTheme.Radius.Card,
 		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
 	})
@@ -2923,7 +2886,7 @@ local function createGui(state)
 		refs.spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
 
 		local remoteListWidth = 320
-		local remoteControlWidth = 260
+		local remoteControlWidth = 280
 		local remoteLogWidth = workspaceWidth - remoteListWidth - remoteControlWidth - panelGap * 2
 		if remoteLogWidth < 360 then
 			local remoteDeficit = 360 - remoteLogWidth
@@ -2934,7 +2897,7 @@ local function createGui(state)
 		refs.remoteListScroll.Size = UDim2.new(1, -24, 1, -116)
 		refs.remoteLogPanel.Position = UDim2.fromOffset(remoteListWidth + panelGap, 0)
 		refs.remoteLogPanel.Size = UDim2.fromOffset(remoteLogWidth, workspaceHeight)
-		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -74)
+		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -78)
 		refs.remoteLogScroll.Size = UDim2.new(1, 0, 1, 0)
 		refs.remoteControlPanel.Position = UDim2.fromOffset(remoteListWidth + remoteLogWidth + panelGap * 2, 0)
 		refs.remoteControlPanel.Size = UDim2.fromOffset(remoteControlWidth, workspaceHeight)
@@ -3163,6 +3126,7 @@ function BytecodeViewer.start(config)
 
 	scope[SESSION_KEY] = runCleanup
 	local syncControlState
+	local updateSuiteOverlays
 
 	local function setSuiteStatus(text, color)
 		refs.suiteStatus.Text = text
@@ -3174,6 +3138,163 @@ function BytecodeViewer.start(config)
 		refs.inspectorStatusLabel.TextColor3 = color or Color3.fromRGB(241, 232, 214)
 		setSuiteStatus(text, color or NativeUi.Theme.TextMuted)
 	end
+
+	local function normalizeNotificationLevel(level)
+		level = string.lower(tostring(level or "info"))
+		if level == "danger" or level == "error" then
+			return "critical"
+		elseif level == "warn" then
+			return "warning"
+		elseif level == "ok" then
+			return "success"
+		elseif level == "critical" or level == "warning" or level == "success" or level == "info" then
+			return level
+		end
+
+		return "info"
+	end
+
+	local function notificationPriority(level)
+		if level == "critical" then
+			return 50
+		elseif level == "warning" then
+			return 40
+		elseif level == "success" then
+			return 30
+		elseif level == "info" then
+			return 20
+		end
+
+		return 10
+	end
+
+	local function pruneNotifications()
+		local now = os.clock()
+		local kept = {}
+		for _, item in ipairs(state.notifications) do
+			if item.expiresAt == nil or item.expiresAt > now then
+				table.insert(kept, item)
+			end
+		end
+		state.notifications = kept
+	end
+
+	local function removeNotification(id)
+		for index = #state.notifications, 1, -1 do
+			if state.notifications[index].id == id then
+				table.remove(state.notifications, index)
+			end
+		end
+
+		if updateSuiteOverlays ~= nil then
+			updateSuiteOverlays()
+		end
+	end
+
+	local function emitNotification(level, title, detail, options)
+		options = options or {}
+		local normalizedLevel = normalizeNotificationLevel(level)
+		local duration = type(options.duration) == "number" and options.duration or tonumber(tostring(options.duration or ""))
+		local sticky = options.permanent == true or options.sticky == true or options.pinned == true or options.duration == false
+		local expiresAt = nil
+
+		if not sticky then
+			duration = duration or 4
+			expiresAt = os.clock() + duration
+		end
+
+		state.nextNotificationId = state.nextNotificationId + 1
+		local notification = {
+			id = state.nextNotificationId,
+			level = normalizedLevel,
+			title = tostring(title or string.upper(normalizedLevel)),
+			detail = tostring(detail or ""),
+			createdAt = os.clock(),
+			expiresAt = expiresAt,
+			sticky = sticky,
+			priority = tonumber(options.priority) or notificationPriority(normalizedLevel),
+		}
+
+		table.insert(state.notifications, notification)
+		if expiresAt ~= nil then
+			task.delay(duration + 0.05, function()
+				if cleaning then
+					return
+				end
+				removeNotification(notification.id)
+			end)
+		end
+
+		if updateSuiteOverlays ~= nil then
+			updateSuiteOverlays()
+		end
+
+		return notification.id
+	end
+
+	local notificationApi = {
+		Emit = emitNotification,
+		EmitInfo = function(title, detail, options)
+			return emitNotification("info", title, detail, options)
+		end,
+		EmitSuccess = function(title, detail, options)
+			return emitNotification("success", title, detail, options)
+		end,
+		EmitSucess = function(title, detail, options)
+			return emitNotification("success", title, detail, options)
+		end,
+		EmitWarning = function(title, detail, options)
+			return emitNotification("warning", title, detail, options)
+		end,
+		EmitDanger = function(title, detail, options)
+			return emitNotification("critical", title, detail, options)
+		end,
+		EmitError = function(title, detail, options)
+			return emitNotification("critical", title, detail, options)
+		end,
+		Remove = removeNotification,
+		Clear = function()
+			state.notifications = {}
+			if updateSuiteOverlays ~= nil then
+				updateSuiteOverlays()
+			end
+		end,
+	}
+	local dartApi = type(scope.Dart) == "table" and scope.Dart or {}
+	scope.Dart = dartApi
+	dartApi.Notifications = notificationApi
+	dartApi.EmitInfo = notificationApi.EmitInfo
+	dartApi.EmitSuccess = notificationApi.EmitSuccess
+	dartApi.EmitSucess = notificationApi.EmitSucess
+	dartApi.EmitWarning = notificationApi.EmitWarning
+	dartApi.EmitDanger = notificationApi.EmitDanger
+	dartApi.EmitError = notificationApi.EmitError
+
+	trackCleanup(function()
+		if scope.Dart == dartApi then
+			if dartApi.Notifications == notificationApi then
+				dartApi.Notifications = nil
+			end
+			if dartApi.EmitInfo == notificationApi.EmitInfo then
+				dartApi.EmitInfo = nil
+			end
+			if dartApi.EmitSuccess == notificationApi.EmitSuccess then
+				dartApi.EmitSuccess = nil
+			end
+			if dartApi.EmitSucess == notificationApi.EmitSucess then
+				dartApi.EmitSucess = nil
+			end
+			if dartApi.EmitWarning == notificationApi.EmitWarning then
+				dartApi.EmitWarning = nil
+			end
+			if dartApi.EmitDanger == notificationApi.EmitDanger then
+				dartApi.EmitDanger = nil
+			end
+			if dartApi.EmitError == notificationApi.EmitError then
+				dartApi.EmitError = nil
+			end
+		end
+	end)
 
 	local function setMainStatus(text, color)
 		refs.mainStatusLabel.Text = text
@@ -3316,6 +3437,7 @@ function BytecodeViewer.start(config)
 			badge = "READY",
 			level = "success",
 			width = 220,
+			height = 52,
 		}
 
 		if state.activeTab == "esp" then
@@ -3357,14 +3479,67 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.isMinimized then
-			signal.title = "Eclipsis"
+			signal.title = "Dart"
 			signal.detail = "Suite minimized"
 			signal.badge = "LIVE"
 			signal.level = "info"
 			signal.width = 244
 		end
 
+		local detailLength = #tostring(signal.detail or "")
+		if detailLength > 46 then
+			signal.height = 72
+			signal.width = math.max(signal.width, 380)
+		elseif detailLength > 30 then
+			signal.height = 62
+			signal.width = math.max(signal.width, 320)
+		end
+
 		return signal
+	end
+
+	local function buildAlertStack(signal)
+		pruneNotifications()
+		table.sort(state.notifications, function(left, right)
+			local leftSticky = left.expiresAt == nil and 1 or 0
+			local rightSticky = right.expiresAt == nil and 1 or 0
+			if leftSticky ~= rightSticky then
+				return leftSticky > rightSticky
+			end
+			if left.priority ~= right.priority then
+				return left.priority > right.priority
+			end
+			return left.createdAt > right.createdAt
+		end)
+
+		local alerts = {}
+		for _, notification in ipairs(state.notifications) do
+			table.insert(alerts, notification)
+			if #alerts >= 3 then
+				return alerts
+			end
+		end
+		if #alerts > 0 then
+			return alerts
+		end
+
+		return {
+			{
+				level = signal.level,
+				title = signal.title .. " signal",
+				detail = signal.detail,
+			},
+			{
+				level = state.aimbotEnabled and "warning" or "info",
+				title = state.aimbotEnabled and "Combat armed" or "Combat idle",
+				detail = state.aimbotEnabled and "Ctrl lock can acquire targets" or "Aimbot disabled",
+			},
+			{
+				level = anyEspSignalEnabled() and "warning" or "info",
+				title = anyEspSignalEnabled() and "ESP active" or "ESP quiet",
+				detail = state.highlightAllPlayers and "All players highlighted" or "Selective visibility only",
+			},
+		}
 	end
 
 	local function updateSpyReadout()
@@ -3400,44 +3575,27 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonDisabled(refs.spyHighlightButton, false)
 	end
 
-	local function updateSuiteOverlays()
-		local focusedPlayer = getFocusedSpyPlayer()
+	updateSuiteOverlays = function()
 		local signal = buildSuiteTelemetry()
 		local color = getLevelColor(signal.level)
+		local islandHeight = signal.height or 52
 
 		refs.dynamicIslandTitle.Text = signal.title
 		refs.dynamicIslandDetail.Text = signal.detail
 		refs.dynamicIslandBadge.Text = signal.badge
 		refs.dynamicIslandDot.BackgroundColor3 = color
+		refs.dynamicIslandDot.Position = UDim2.fromOffset(28, math.floor(islandHeight / 2))
+		refs.dynamicIslandDetail.Size = UDim2.new(1, -92, 0, math.max(18, islandHeight - 36))
+		refs.dynamicIslandBadge.Position = UDim2.new(1, -68, 0, math.floor((islandHeight - 18) / 2))
 		setOverlayStroke(refs.dynamicIsland, color, signal.level == "info" and 0.18 or 0.04)
 		SuiteMotion.tween(refs.dynamicIsland, {
-			Size = UDim2.fromOffset(signal.width, 52),
+			Size = UDim2.fromOffset(signal.width, islandHeight),
 		}, {
 			duration = 0.18,
 			style = "quint",
 		})
 
-		setHudChip(refs.microHookChip, "Hook", "stable", "success")
-		setHudChip(refs.microTargetChip, "Target", focusedPlayer and focusedPlayer.Name or "none pinned", focusedPlayer and "warning" or "neutral")
-		setHudChip(refs.microRiskChip, "Risk", signal.level == "warning" and "elevated" or "low", signal.level)
-
-		local alerts = {
-			{
-				level = signal.level,
-				title = signal.title .. " signal",
-				detail = signal.detail,
-			},
-			{
-				level = state.aimbotEnabled and "warning" or "info",
-				title = state.aimbotEnabled and "Combat armed" or "Combat idle",
-				detail = state.aimbotEnabled and "Ctrl lock can acquire targets" or "Aimbot disabled",
-			},
-			{
-				level = anyEspSignalEnabled() and "warning" or "info",
-				title = anyEspSignalEnabled() and "ESP active" or "ESP quiet",
-				detail = state.highlightAllPlayers and "All players highlighted" or "Selective visibility only",
-			},
-		}
+		local alerts = buildAlertStack(signal)
 
 		for index, card in ipairs(refs.alertCards) do
 			local alert = alerts[index]
@@ -4088,15 +4246,47 @@ function BytecodeViewer.start(config)
 	local connectRemoteEvent
 	local remoteEventConnections = {}
 
-	local function appendRemoteLog(direction, remote, method, args)
-		local line = ("[%s] %s %s(%s)"):format(
-			direction or "?",
-			getRemotePath(remote),
-			tostring(method or "?"),
-			formatRemoteArgs(args or {})
-		)
+	local function getSelectedRemote()
+		if state.selectedRemotePath == nil then
+			return nil
+		end
 
-		table.insert(state.remoteLogs, 1, line)
+		for _, remote in ipairs(state.remoteList) do
+			if getRemotePath(remote) == state.selectedRemotePath then
+				return remote
+			end
+		end
+
+		return nil
+	end
+
+	local function getRemoteLogStats(remotePath)
+		local count = 0
+		local lastEntry = nil
+		for _, entry in ipairs(state.remoteLogs) do
+			if entry.remotePath == remotePath then
+				count = count + 1
+				lastEntry = lastEntry or entry
+			end
+		end
+		return count, lastEntry
+	end
+
+	local function appendRemoteLog(direction, remote, method, args)
+		args = args or {}
+		local path = getRemotePath(remote)
+		local entry = {
+			direction = direction or "?",
+			remotePath = path,
+			className = typeof(remote) == "Instance" and remote.ClassName or "?",
+			method = tostring(method or "?"),
+			argCount = getPackedArgCount(args),
+			argsText = formatRemoteArgs(args),
+			argsLines = formatRemoteArgLines(args),
+			timestamp = os.date("%H:%M:%S"),
+		}
+
+		table.insert(state.remoteLogs, 1, entry)
 		while #state.remoteLogs > 180 do
 			table.remove(state.remoteLogs)
 		end
@@ -4135,7 +4325,7 @@ function BytecodeViewer.start(config)
 			metatable.__namecall = newcclosure(function(self, ...)
 				local method = getnamecallmethod()
 				if state.remoteWatcherEnabled and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
-					appendRemoteLog("OUT", self, method, { ... })
+					appendRemoteLog("OUT", self, method, packRemoteArgs(...))
 				end
 				return originalNamecall(self, ...)
 			end)
@@ -4173,21 +4363,66 @@ function BytecodeViewer.start(config)
 
 		remoteEventConnections[remote] = trackConnection(remote.OnClientEvent:Connect(function(...)
 			if state.remoteWatcherEnabled then
-				appendRemoteLog("IN", remote, "OnClientEvent", { ... })
+				appendRemoteLog("IN", remote, "OnClientEvent", packRemoteArgs(...))
 			end
 		end))
 	end
 
 	renderRemoteLog = function()
-		if #state.remoteLogs == 0 then
-			refs.remoteLogLabel.Text = withLineNumbers("No remote traffic logged yet.")
-		else
-			refs.remoteLogLabel.Text = withLineNumbers(table.concat(state.remoteLogs, "\n"))
-		end
-		refs.remoteLogStatusLabel.Text = state.remoteWatcherEnabled and "Watcher active" or "Watcher idle"
+		local selectedPath = state.selectedRemotePath
+		local selectedRemote = getSelectedRemote()
+		local status = state.remoteWatcherEnabled and "Watcher active" or "Watcher idle"
 		if state.remoteHookError ~= nil then
-			refs.remoteLogStatusLabel.Text = state.remoteHookError
+			status = state.remoteHookError
 		end
+
+		if selectedPath == nil then
+			refs.remoteLogLabel.Text = withLineNumbers(("Select a remote from the left to inspect calls, methods, and args.\nCaptured entries: %d"):format(#state.remoteLogs))
+			refs.remoteLogStatusLabel.Text = status
+			refs.remoteSelectedNameLabel.Text = "No remote selected"
+			refs.remoteSelectedMetaLabel.Text = "Choose a remote from the list to focus this inspector."
+			refs.remoteSelectedStatsLabel.Text = ("Watcher: %s\nCaptured: %d\nLast: -"):format(state.remoteWatcherEnabled and "active" or "idle", #state.remoteLogs)
+			refs.syncRemoteLogCanvas()
+			return
+		end
+
+		local count, lastEntry = getRemoteLogStats(selectedPath)
+		local className = selectedRemote and selectedRemote.ClassName or "Missing"
+		local lines = {
+			("Remote: %s"):format(selectedPath),
+			("Class: %s"):format(className),
+			("Watcher: %s"):format(status),
+			("Observed calls: %d"):format(count),
+			"",
+		}
+
+		if count == 0 then
+			table.insert(lines, "No traffic captured for this remote yet.")
+		else
+			local added = 0
+			for _, entry in ipairs(state.remoteLogs) do
+				if entry.remotePath == selectedPath then
+					added = added + 1
+					table.insert(lines, ("[%s] %s %s.%s  args=%d"):format(entry.timestamp, entry.direction, entry.className, entry.method, entry.argCount))
+					table.insert(lines, entry.argsLines)
+					table.insert(lines, "")
+					if added >= 40 then
+						table.insert(lines, "...older calls hidden")
+						break
+					end
+				end
+			end
+		end
+
+		refs.remoteLogLabel.Text = withLineNumbers(table.concat(lines, "\n"))
+		refs.remoteLogStatusLabel.Text = ("Focused: %s"):format(selectedRemote and selectedRemote.Name or selectedPath)
+		refs.remoteSelectedNameLabel.Text = selectedRemote and selectedRemote.Name or selectedPath
+		refs.remoteSelectedMetaLabel.Text = ("%s\n%s"):format(className, selectedPath)
+		refs.remoteSelectedStatsLabel.Text = ("Watcher: %s\nCalls: %d\nLast: %s"):format(
+			state.remoteWatcherEnabled and "active" or "idle",
+			count,
+			lastEntry and (lastEntry.timestamp .. " " .. lastEntry.direction .. " " .. lastEntry.method) or "-"
+		)
 		refs.syncRemoteLogCanvas()
 	end
 
@@ -4209,8 +4444,8 @@ function BytecodeViewer.start(config)
 				NativeUi.setButtonSelected(button, state.selectedRemotePath == path)
 				button.MouseButton1Click:Connect(function()
 					state.selectedRemotePath = path
-					appendRemoteLog("SEL", remote, remote.ClassName, {})
 					renderRemoteList()
+					renderRemoteLog()
 					syncControlState()
 				end)
 			end
@@ -5242,13 +5477,6 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
 		NativeUi.setButtonSelected(refs.buildTabButton, state.activeTab == "build")
 		NativeUi.setButtonSelected(refs.remoteTabButton, state.activeTab == "remote")
-		NativeUi.setButtonSelected(refs.dockAssistButton, state.activeTab == "main")
-		NativeUi.setButtonSelected(refs.dockEspButton, state.activeTab == "esp")
-		NativeUi.setButtonSelected(refs.dockSpyButton, state.activeTab == "spy")
-		NativeUi.setButtonSelected(refs.dockCombatButton, state.activeTab == "guns")
-		NativeUi.setButtonSelected(refs.dockBuildButton, state.activeTab == "build")
-		NativeUi.setButtonSelected(refs.dockRemoteButton, state.activeTab == "remote")
-		NativeUi.setButtonSelected(refs.dockCodeButton, state.activeTab == "bytecode")
 		refs.workspaceKickerLabel.Text = workspaceCopy.kicker
 		refs.workspaceTitleLabel.Text = workspaceCopy.title
 		refs.workspaceSubtitleLabel.Text = workspaceCopy.subtitle
@@ -5565,34 +5793,6 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.buildTabButton.MouseButton1Click:Connect(function()
 		state.activeTab = "build"
-		syncControlState()
-	end))
-	trackConnection(refs.dockAssistButton.MouseButton1Click:Connect(function()
-		state.activeTab = "main"
-		syncControlState()
-	end))
-	trackConnection(refs.dockEspButton.MouseButton1Click:Connect(function()
-		state.activeTab = "esp"
-		syncControlState()
-	end))
-	trackConnection(refs.dockSpyButton.MouseButton1Click:Connect(function()
-		state.activeTab = "spy"
-		syncControlState()
-	end))
-	trackConnection(refs.dockCombatButton.MouseButton1Click:Connect(function()
-		state.activeTab = "guns"
-		syncControlState()
-	end))
-	trackConnection(refs.dockBuildButton.MouseButton1Click:Connect(function()
-		state.activeTab = "build"
-		syncControlState()
-	end))
-	trackConnection(refs.dockRemoteButton.MouseButton1Click:Connect(function()
-		state.activeTab = "remote"
-		syncControlState()
-	end))
-	trackConnection(refs.dockCodeButton.MouseButton1Click:Connect(function()
-		state.activeTab = "bytecode"
 		syncControlState()
 	end))
 	trackConnection(refs.refreshTreeButton.MouseButton1Click:Connect(function()

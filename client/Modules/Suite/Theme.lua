@@ -13,9 +13,9 @@ Theme.Colors = {
 	NativeStroke = Color3.fromRGB(46, 46, 46),
 	StrokeSoft = Color3.fromRGB(112, 112, 112),
 	Text = Color3.fromRGB(238, 238, 238),
-	TextMuted = Color3.fromRGB(156, 156, 156),
-	TextDim = Color3.fromRGB(102, 102, 102),
-	TextFaint = Color3.fromRGB(74, 74, 74),
+	TextMuted = Color3.fromRGB(190, 190, 190),
+	TextDim = Color3.fromRGB(148, 148, 148),
+	TextFaint = Color3.fromRGB(118, 118, 118),
 	Success = Color3.fromRGB(109, 198, 142),
 	Info = Color3.fromRGB(126, 154, 255),
 	Warning = Color3.fromRGB(221, 186, 72),
@@ -34,15 +34,15 @@ Theme.Radius = {
 }
 
 Theme.Transparency = {
-	Shell = 0.18,
-	Sidebar = 0.28,
-	Card = 0.18,
-	CardSoft = 0.32,
-	Control = 0.10,
+	Shell = 0,
+	Sidebar = 0,
+	Card = 0,
+	CardSoft = 0,
+	Control = 0,
 	Code = 0,
-	Stroke = 0.90,
-	StrokeStrong = 0.82,
-	StrokeSoft = 0.94,
+	Stroke = 0.84,
+	StrokeStrong = 0.74,
+	StrokeSoft = 0.90,
 }
 
 Theme.Font = {
@@ -52,9 +52,9 @@ Theme.Font = {
 }
 
 Theme.TextSize = {
-	Kicker = 10,
-	Body = 12,
-	Small = 11,
+	Kicker = 11,
+	Body = 13,
+	Small = 12,
 	Title = 18,
 	Section = 14,
 	Mono = 13,
@@ -103,7 +103,7 @@ Theme.Variants = {
 	},
 	Island = {
 		background = Theme.Colors.ShellRaised,
-		transparency = 0.08,
+		transparency = 0,
 		radius = Theme.Radius.Island,
 		stroke = Theme.Colors.Stroke,
 		strokeTransparency = Theme.Transparency.StrokeStrong,

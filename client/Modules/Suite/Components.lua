@@ -79,8 +79,8 @@ function Components.gradient(instance, theme, enabled)
 		ColorSequenceKeypoint.new(1, theme.Colors.Background),
 	})
 	gradient.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.12),
-		NumberSequenceKeypoint.new(1, 0.35),
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(1, 0.06),
 	})
 	return gradient
 end
@@ -195,6 +195,9 @@ function Components.decorateScroll(scroll, theme, options)
 	scroll.BackgroundTransparency = options.transparency == nil and 0.08 or options.transparency
 	scroll.BorderSizePixel = 0
 	scroll.ScrollBarImageColor3 = theme.Colors.TextFaint
+	scroll.ScrollBarThickness = options.thickness or scroll.ScrollBarThickness or 4
+	scroll.TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
+	scroll.BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
 	Components.corner(scroll, options.radius or theme.Radius.Control)
 	Components.stroke(scroll, theme.Colors.Stroke, 1, options.strokeTransparency or theme.Transparency.Stroke)
 	return scroll
