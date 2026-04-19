@@ -920,6 +920,9 @@ local function makeState(config)
 		remoteWatcherEnabled = false,
 		remoteHookInstalled = false,
 		remoteHookError = nil,
+		remoteHookMethods = {},
+		lastRemoteCaptureKey = nil,
+		lastRemoteCaptureAt = 0,
 		notifications = {},
 		nextNotificationId = 0,
 		lastResult = nil,
@@ -4310,7 +4313,49 @@ function BytecodeViewer.start(config)
 		return true
 	end
 
-	local function appendRemoteLog(direction, remote, method, args)
+	local function markRemoteHookMethod(name, installed)
+		if installed then
+			state.remoteHookMethods[name] = true
+		end
+	end
+
+	local function getRemoteHookSummary()
+		local hooks = {}
+		for name in pairs(state.remoteHookMethods) do
+			table.insert(hooks, name)
+		end
+		table.sort(hooks)
+		if #hooks == 0 then
+			return "none"
+		end
+		return table.concat(hooks, ", ")
+	end
+
+	local function getWatchedRemoteMethod(remote, key)
+		if type(key) ~= "string" or not isRemoteLike(remote) then
+			return nil
+		end
+		if key == "FireServer" and (remote:IsA("RemoteEvent") or remote.ClassName == "UnreliableRemoteEvent") then
+			return key
+		end
+		if key == "InvokeServer" and remote:IsA("RemoteFunction") then
+			return key
+		end
+		return nil
+	end
+
+	local function shouldSkipRemoteDuplicate(direction, path, method, argsText)
+		local now = os.clock()
+		local key = table.concat({ tostring(direction), path, tostring(method), argsText }, "\0")
+		if state.lastRemoteCaptureKey == key and now - state.lastRemoteCaptureAt < 0.08 then
+			return true
+		end
+		state.lastRemoteCaptureKey = key
+		state.lastRemoteCaptureAt = now
+		return false
+	end
+
+	local function appendRemoteLog(direction, remote, method, args, hookName)
 		args = args or {}
 		local path = getRemotePath(remote)
 		local listChanged = ensureRemoteTracked(remote)
@@ -4318,6 +4363,10 @@ function BytecodeViewer.start(config)
 		if state.selectedRemotePath == nil then
 			state.selectedRemotePath = path
 			selectionChanged = true
+		end
+		local argsText = formatRemoteArgs(args)
+		if shouldSkipRemoteDuplicate(direction, path, method, argsText) then
+			return
 		end
 
 		local entry = {
@@ -4327,8 +4376,9 @@ function BytecodeViewer.start(config)
 			className = typeof(remote) == "Instance" and remote.ClassName or "?",
 			method = tostring(method or "?"),
 			argCount = getPackedArgCount(args),
-			argsText = formatRemoteArgs(args),
+			argsText = argsText,
 			argsLines = formatRemoteArgLines(args),
+			hookName = hookName or "?",
 			timestamp = os.date("%H:%M:%S"),
 		}
 
@@ -4347,6 +4397,7 @@ function BytecodeViewer.start(config)
 
 	local function installDirectRemoteMethodHooks(makeHookClosure)
 		if remoteHookBridge.directHooksInstalled then
+			markRemoteHookMethod("direct", true)
 			return true
 		end
 
@@ -4380,7 +4431,7 @@ function BytecodeViewer.start(config)
 				hookedOriginal = hookfunction(originalMethod, makeHookClosure(function(self, ...)
 					local bridge = getGlobalScope().__DartRemoteHookBridge
 					if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) then
-						bridge.callback(self, methodName, packRemoteArgs(...))
+						bridge.callback(self, methodName, packRemoteArgs(...), "direct")
 					end
 					return hookedOriginal(self, ...)
 				end))
@@ -4389,6 +4440,7 @@ function BytecodeViewer.start(config)
 			if okHook then
 				remoteHookBridge.directHooks[className .. "." .. methodName] = hookedOriginal
 				installedAny = true
+				markRemoteHookMethod("direct", true)
 				return true
 			end
 
@@ -4402,9 +4454,104 @@ function BytecodeViewer.start(config)
 		return installedAny
 	end
 
-	remoteHookBridge.callback = function(remote, method, args)
+	local function makeRemoteMethodWrapper(remote, methodName, originalMethod, hookName)
+		return function(self, ...)
+			local target = isRemoteLike(self) and self or remote
+			local args = isRemoteLike(self) and packRemoteArgs(...) or packRemoteArgs(self, ...)
+			local bridge = getGlobalScope().__DartRemoteHookBridge
+			if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(target) then
+				bridge.callback(target, methodName, args, hookName)
+			end
+			return originalMethod(self, ...)
+		end
+	end
+
+	local function getCachedRemoteMethodWrapper(remote, methodName, originalMethod, hookName, makeHookClosure)
+		remoteHookBridge.indexWrappers = remoteHookBridge.indexWrappers or setmetatable({}, { __mode = "k" })
+		local byRemote = remoteHookBridge.indexWrappers[remote]
+		if byRemote == nil then
+			byRemote = {}
+			remoteHookBridge.indexWrappers[remote] = byRemote
+		end
+		local cached = byRemote[methodName]
+		if cached ~= nil then
+			return cached
+		end
+		cached = makeHookClosure(makeRemoteMethodWrapper(remote, methodName, originalMethod, hookName))
+		byRemote[methodName] = cached
+		return cached
+	end
+
+	local function getRawIndexValue(originalIndex, self, key)
+		if type(originalIndex) == "function" then
+			return originalIndex(self, key)
+		elseif type(originalIndex) == "table" then
+			return originalIndex[key]
+		end
+		return nil
+	end
+
+	local function installIndexRemoteMethodHook(makeHookClosure)
+		if remoteHookBridge.indexInstalled then
+			markRemoteHookMethod("index", true)
+			return true
+		end
+
+		if type(hookmetamethod) ~= "function" then
+			return false
+		end
+
+		local originalIndex
+		local ok = pcall(function()
+			originalIndex = hookmetamethod(game, "__index", makeHookClosure(function(self, key)
+				local methodName = getWatchedRemoteMethod(self, key)
+				local originalValue = originalIndex(self, key)
+				if methodName ~= nil and type(originalValue) == "function" then
+					return getCachedRemoteMethodWrapper(self, methodName, originalValue, "index", makeHookClosure)
+				end
+				return originalValue
+			end))
+		end)
+
+		if ok then
+			remoteHookBridge.indexInstalled = true
+			remoteHookBridge.originalIndex = originalIndex
+			markRemoteHookMethod("index", true)
+			return true
+		end
+
+		return false
+	end
+
+	local function installRawIndexRemoteMethodHook(metatable, makeHookClosure)
+		if remoteHookBridge.rawIndexInstalled then
+			markRemoteHookMethod("raw-index", true)
+			return true
+		end
+
+		if type(metatable) ~= "table" then
+			return false
+		end
+
+		local originalIndex = metatable.__index
+		metatable.__index = makeHookClosure(function(self, key)
+			local methodName = getWatchedRemoteMethod(self, key)
+			local originalValue = getRawIndexValue(originalIndex, self, key)
+			if methodName ~= nil and type(originalValue) == "function" then
+				return getCachedRemoteMethodWrapper(self, methodName, originalValue, "raw-index", makeHookClosure)
+			end
+			return originalValue
+		end)
+
+		remoteHookBridge.rawIndexInstalled = true
+		remoteHookBridge.originalRawIndex = originalIndex
+		markRemoteHookMethod("raw-index", true)
+		return true
+	end
+
+	remoteHookBridge.callback = function(remote, method, args, hookName)
 		if state.remoteWatcherEnabled then
-			appendRemoteLog("OUT", remote, method, args)
+			appendRemoteLog("OUT", remote, method, args, hookName or "bridge")
 		end
 	end
 	remoteHookBridge.enabled = state.remoteWatcherEnabled
@@ -4433,22 +4580,29 @@ function BytecodeViewer.start(config)
 			return true
 		end
 
-		if type(getnamecallmethod) ~= "function" then
-			state.remoteHookError = "Namecall method API unavailable; server-to-client events can still be observed."
-			return false
-		end
-
 		local makeHookClosure = type(newcclosure) == "function" and newcclosure or function(fn)
 			return fn
 		end
 
 		local directHookInstalled = installDirectRemoteMethodHooks(makeHookClosure)
+		local indexHookInstalled = installIndexRemoteMethodHook(makeHookClosure)
+		if type(getnamecallmethod) ~= "function" then
+			if directHookInstalled or indexHookInstalled then
+				state.remoteHookInstalled = true
+				state.remoteHookError = nil
+				remoteHookBridge.enabled = true
+				return true
+			end
+			state.remoteHookError = "Namecall method API unavailable; direct hooks also unavailable."
+			return false
+		end
 
 		if type(hookmetamethod) == "function" then
 			if remoteHookBridge.namecallInstalled then
 				state.remoteHookInstalled = true
 				state.remoteHookError = nil
 				remoteHookBridge.enabled = true
+				markRemoteHookMethod("namecall", true)
 				return true
 			end
 
@@ -4458,7 +4612,7 @@ function BytecodeViewer.start(config)
 					local method = getnamecallmethod()
 					local bridge = getGlobalScope().__DartRemoteHookBridge
 					if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
-						bridge.callback(self, method, packRemoteArgs(...))
+						bridge.callback(self, method, packRemoteArgs(...), "namecall")
 					end
 					return originalNamecall(self, ...)
 				end))
@@ -4470,6 +4624,7 @@ function BytecodeViewer.start(config)
 				remoteHookBridge.enabled = true
 				state.remoteHookInstalled = true
 				state.remoteHookError = nil
+				markRemoteHookMethod("namecall", true)
 				return true
 			end
 
@@ -4477,7 +4632,7 @@ function BytecodeViewer.start(config)
 		end
 
 		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" then
-			if directHookInstalled then
+			if directHookInstalled or indexHookInstalled then
 				state.remoteHookInstalled = true
 				state.remoteHookError = nil
 				remoteHookBridge.enabled = true
@@ -4489,12 +4644,16 @@ function BytecodeViewer.start(config)
 
 		local metatable = getrawmetatable(game)
 		local originalNamecall = metatable.__namecall
+		local rawIndexInstalled = false
 		local ok, err = pcall(function()
 			setreadonly(metatable, false)
+			if not indexHookInstalled then
+				rawIndexInstalled = installRawIndexRemoteMethodHook(metatable, makeHookClosure)
+			end
 			metatable.__namecall = makeHookClosure(function(self, ...)
 				local method = getnamecallmethod()
 				if state.remoteWatcherEnabled and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
-					appendRemoteLog("OUT", self, method, packRemoteArgs(...))
+					appendRemoteLog("OUT", self, method, packRemoteArgs(...), "raw-namecall")
 				end
 				return originalNamecall(self, ...)
 			end)
@@ -4502,6 +4661,15 @@ function BytecodeViewer.start(config)
 		end)
 
 		if not ok then
+			if directHookInstalled or indexHookInstalled or rawIndexInstalled then
+				state.remoteHookInstalled = true
+				state.remoteHookError = nil
+				remoteHookBridge.enabled = true
+				pcall(function()
+					setreadonly(metatable, true)
+				end)
+				return true
+			end
 			state.remoteHookError = "Namecall hook failed: " .. tostring(err)
 			pcall(function()
 				setreadonly(metatable, true)
@@ -4511,6 +4679,7 @@ function BytecodeViewer.start(config)
 
 		state.remoteHookInstalled = true
 		state.remoteHookError = nil
+		markRemoteHookMethod("raw-namecall", true)
 		trackCleanup(function()
 			pcall(function()
 				setreadonly(metatable, false)
@@ -4543,6 +4712,7 @@ function BytecodeViewer.start(config)
 		table.insert(lines, ("  Class   : %s"):format(entry.className))
 		table.insert(lines, ("  Path    : %s"):format(entry.remotePath))
 		table.insert(lines, ("  Args    : %d"):format(entry.argCount))
+		table.insert(lines, ("  Hook    : %s"):format(entry.hookName or "?"))
 		table.insert(lines, ("  Payload : %s"):format(preview))
 		table.insert(lines, entry.argsLines)
 		table.insert(lines, "")
@@ -4555,6 +4725,7 @@ function BytecodeViewer.start(config)
 		if state.remoteHookError ~= nil then
 			status = state.remoteHookError
 		end
+		status = ("%s | hooks: %s"):format(status, getRemoteHookSummary())
 
 		if selectedPath == nil then
 			local lines = {
