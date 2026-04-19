@@ -5137,6 +5137,7 @@ function BytecodeViewer.start(config)
 						nearestThreat = {
 							player = player,
 							playerName = player.Name,
+							playerUserId = player.UserId,
 							weaponName = weaponName,
 							weaponKnown = weaponName ~= nil,
 							distance = distance,
@@ -5149,6 +5150,22 @@ function BytecodeViewer.start(config)
 		end
 
 		state.intelligenceThreat = nearestThreat
+		if nearestThreat ~= nil then
+			local distance = math.floor(nearestThreat.distance + 0.5)
+			local isCritical = distance <= 60
+			local proximityBand = isCritical and "critical" or "near"
+			local weaponText = nearestThreat.weaponKnown and (" with " .. nearestThreat.weaponName) or ""
+			local detail = ("%s is %dm away%s."):format(nearestThreat.playerName, distance, weaponText)
+			emitIntelligenceNotification(
+				("proximity:%s:%s"):format(tostring(nearestThreat.playerUserId or nearestThreat.playerName), proximityBand),
+				isCritical and 10 or 22,
+				isCritical and "critical" or "warning",
+				isCritical and "Enemy very close" or "Enemy nearby",
+				detail,
+				nearestThreat.teamColor,
+				{ priority = isCritical and 48 or 36, duration = isCritical and 4.5 or 4 }
+			)
+		end
 	end
 
 	getIntelligenceThreatSignal = function()
