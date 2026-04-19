@@ -6,6 +6,7 @@ local Lighting = game:GetService("Lighting")
 local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
 local GuiService = game:GetService("GuiService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local function getGlobalScope()
 	if type(getgenv) == "function" then
@@ -110,6 +111,7 @@ local started = false
 local GUI_NAME = "EclipsisControlGui"
 local SESSION_KEY = "__DartViewerCleanup"
 local MAX_AIM_MOUSE_STEP = 120
+local FREE_CAMERA_ACTION_NAME = "DartFreeCameraInputSink"
 local NIL_SCRIPT_PATH_PREFIX = "__nil_script:"
 local NIL_SCAN_LIMIT = 3000
 local nilScriptRegistry = setmetatable({}, { __mode = "v" })
@@ -945,6 +947,14 @@ local function makeState(config)
 		aimTargetPart = "nearest",
 		aimLockedPlayerName = "",
 		aimLockedPartName = "",
+		ghostCharacterEnabled = false,
+		ghostCharacter = nil,
+		realCharacterBeforeGhost = nil,
+		freeCameraEnabled = false,
+		freeCameraSnapshot = nil,
+		freeCameraCFrame = nil,
+		freeCameraYaw = 0,
+		freeCameraPitch = 0,
 		highlightFillTransparency = 0.65,
 		highlightedPlayers = {},
 		highlightAllPlayers = false,
@@ -1488,6 +1498,12 @@ local function createSpyWorkspace(spyWorkspace, refs)
 		Size = UDim2.new(1, -24, 0, 30),
 		TextSize = 12,
 	})
+
+	local spyOperatorTitle = makeSectionTitle(refs.spySupportPanel, "Operator")
+	spyOperatorTitle.Position = UDim2.fromOffset(12, 244)
+
+	refs.spyGhostToggle = makeToggleRow(refs.spySupportPanel, 274, "Spawn Local Character", "Client-only body you can swap into and walk around locally.")
+	refs.spyFreeCameraToggle = makeToggleRow(refs.spySupportPanel, 320, "Free Camera", "Fly the camera with WASD, Q/E vertical, Shift fast, Ctrl slow.")
 end
 
 local function createRemoteWorkspace(remoteWorkspace, refs)
@@ -3308,8 +3324,7 @@ function BytecodeViewer.start(config)
 		return Workspace.CurrentCamera
 	end
 
-	local function getPlayerRootPart(player)
-		local character = player and player.Character
+	local function getCharacterRootPart(character)
 		if character == nil then
 			return nil
 		end
@@ -3318,6 +3333,424 @@ function BytecodeViewer.start(config)
 			or character:FindFirstChild("UpperTorso")
 			or character:FindFirstChild("Torso")
 			or character.PrimaryPart
+	end
+
+	local function getCharacterCameraSubject(character)
+		if character == nil then
+			return nil
+		end
+
+		return character:FindFirstChildOfClass("Humanoid") or getCharacterRootPart(character)
+	end
+
+	local function getPlayerRootPart(player)
+		return getCharacterRootPart(player and player.Character or nil)
+	end
+
+	local function setCameraSubjectToCharacter(character)
+		if state.freeCameraEnabled then
+			return
+		end
+
+		local camera = getCurrentCamera()
+		local subject = getCharacterCameraSubject(character)
+		if camera == nil or subject == nil then
+			return
+		end
+
+		camera.CameraType = Enum.CameraType.Custom
+		camera.CameraSubject = subject
+	end
+
+	local function stripGhostExecutables(character)
+		for _, descendant in ipairs(character:GetDescendants()) do
+			if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+				descendant:Destroy()
+			elseif descendant:IsA("BasePart") then
+				descendant.Anchored = false
+			end
+		end
+	end
+
+	local function createFallbackGhostCharacter()
+		local model = Instance.new("Model")
+		model.Name = "DartLocalCharacter"
+
+		local root = Instance.new("Part")
+		root.Name = "HumanoidRootPart"
+		root.Size = Vector3.new(2, 2, 1)
+		root.Transparency = 0.45
+		root.Color = NativeUi.Theme.Success
+		root.Material = Enum.Material.SmoothPlastic
+		root.CanCollide = true
+		root.Parent = model
+
+		local torso = Instance.new("Part")
+		torso.Name = "Torso"
+		torso.Size = Vector3.new(2, 2, 1)
+		torso.Transparency = 0.18
+		torso.Color = NativeUi.Theme.Success
+		torso.Material = Enum.Material.SmoothPlastic
+		torso.CanCollide = false
+		torso.CFrame = root.CFrame
+		torso.Parent = model
+
+		local torsoWeld = Instance.new("WeldConstraint")
+		torsoWeld.Part0 = root
+		torsoWeld.Part1 = torso
+		torsoWeld.Parent = torso
+
+		local head = Instance.new("Part")
+		head.Name = "Head"
+		head.Shape = Enum.PartType.Ball
+		head.Size = Vector3.new(1.3, 1.3, 1.3)
+		head.Transparency = 0.12
+		head.Color = NativeUi.Theme.Text
+		head.Material = Enum.Material.SmoothPlastic
+		head.CanCollide = false
+		head.CFrame = root.CFrame * CFrame.new(0, 1.65, 0)
+		head.Parent = model
+
+		local headWeld = Instance.new("WeldConstraint")
+		headWeld.Part0 = root
+		headWeld.Part1 = head
+		headWeld.Parent = head
+
+		local humanoid = Instance.new("Humanoid")
+		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		humanoid.WalkSpeed = 16
+		humanoid.JumpPower = 50
+		humanoid.Parent = model
+
+		model.PrimaryPart = root
+		return model
+	end
+
+	local function createGhostCharacter()
+		local sourceCharacter = state.realCharacterBeforeGhost
+		if sourceCharacter == nil or sourceCharacter.Parent == nil or sourceCharacter == state.ghostCharacter then
+			sourceCharacter = getLocalCharacter()
+		end
+
+		local ghost = nil
+		if sourceCharacter ~= nil and sourceCharacter ~= state.ghostCharacter then
+			local previousArchivable = sourceCharacter.Archivable
+			sourceCharacter.Archivable = true
+			local ok, clone = pcall(function()
+				return sourceCharacter:Clone()
+			end)
+			sourceCharacter.Archivable = previousArchivable
+			if ok and clone ~= nil then
+				ghost = clone
+			end
+		end
+
+		if ghost == nil then
+			ghost = createFallbackGhostCharacter()
+		end
+
+		ghost.Name = "DartLocalCharacter"
+		stripGhostExecutables(ghost)
+		if ghost.PrimaryPart == nil then
+			ghost.PrimaryPart = getCharacterRootPart(ghost)
+		end
+
+		local sourceRoot = getCharacterRootPart(sourceCharacter)
+		local spawnCFrame
+		if sourceRoot ~= nil then
+			spawnCFrame = sourceRoot.CFrame
+		else
+			local camera = getCurrentCamera()
+			spawnCFrame = camera and (camera.CFrame + camera.CFrame.LookVector * 6) or CFrame.new(0, 8, 0)
+		end
+
+		ghost:PivotTo(spawnCFrame)
+		ghost.Parent = Workspace
+
+		local humanoid = ghost:FindFirstChildOfClass("Humanoid")
+		local sourceHumanoid = sourceCharacter and sourceCharacter:FindFirstChildOfClass("Humanoid") or nil
+		if humanoid ~= nil and sourceHumanoid ~= nil then
+			humanoid.WalkSpeed = sourceHumanoid.WalkSpeed
+			humanoid.JumpPower = sourceHumanoid.JumpPower
+			humanoid.UseJumpPower = sourceHumanoid.UseJumpPower
+		end
+
+		return ghost
+	end
+
+	local function ensureGhostCharacter()
+		if state.ghostCharacter ~= nil and state.ghostCharacter.Parent ~= nil then
+			return state.ghostCharacter
+		end
+
+		state.ghostCharacter = createGhostCharacter()
+		return state.ghostCharacter
+	end
+
+	local function restoreRealCharacter()
+		local player = Players.LocalPlayer
+		local realCharacter = state.realCharacterBeforeGhost
+		if player == nil or realCharacter == nil or realCharacter.Parent == nil then
+			return false
+		end
+
+		pcall(function()
+			player.Character = realCharacter
+		end)
+		setCameraSubjectToCharacter(realCharacter)
+		return true
+	end
+
+	local function setGhostCharacterEnabled(enabled)
+		enabled = enabled == true
+		if enabled == state.ghostCharacterEnabled then
+			return
+		end
+
+		if enabled then
+			local currentCharacter = getLocalCharacter()
+			if currentCharacter ~= nil and currentCharacter ~= state.ghostCharacter then
+				state.realCharacterBeforeGhost = currentCharacter
+			end
+
+			local ghost = ensureGhostCharacter()
+			if ghost == nil then
+				emitNotification("critical", "Local character failed", "Could not create a client-only character.", { duration = 3 })
+				return
+			end
+
+			state.ghostCharacterEnabled = true
+			if Players.LocalPlayer ~= nil then
+				pcall(function()
+					Players.LocalPlayer.Character = ghost
+				end)
+			end
+			setCameraSubjectToCharacter(ghost)
+			emitNotification("success", "Local character", "Swapped to a client-only operator body.", { duration = 2.5 })
+			return
+		end
+
+		state.ghostCharacterEnabled = false
+		local restored = restoreRealCharacter()
+		local ghost = state.ghostCharacter
+		state.ghostCharacter = nil
+		if ghost ~= nil then
+			if state.freeCameraSnapshot ~= nil and typeof(state.freeCameraSnapshot.subject) == "Instance" and state.freeCameraSnapshot.subject:IsDescendantOf(ghost) then
+				state.freeCameraSnapshot.subject = getCharacterCameraSubject(state.realCharacterBeforeGhost)
+			end
+			ghost:Destroy()
+		end
+
+		if restored then
+			emitNotification("info", "Local character", "Restored real character control.", { duration = 2.5 })
+		else
+			emitNotification("warning", "Local character", "Ghost removed. No real character was available to restore.", { duration = 3 })
+		end
+	end
+
+	local function bindFreeCameraInputSink()
+		ContextActionService:BindActionAtPriority(
+			FREE_CAMERA_ACTION_NAME,
+			function()
+				return Enum.ContextActionResult.Sink
+			end,
+			false,
+			3000,
+			Enum.KeyCode.W,
+			Enum.KeyCode.A,
+			Enum.KeyCode.S,
+			Enum.KeyCode.D,
+			Enum.KeyCode.Q,
+			Enum.KeyCode.E,
+			Enum.KeyCode.Space
+		)
+	end
+
+	local function unbindFreeCameraInputSink()
+		ContextActionService:UnbindAction(FREE_CAMERA_ACTION_NAME)
+	end
+
+	local function setFreeCameraEnabled(enabled)
+		enabled = enabled == true
+		if enabled == state.freeCameraEnabled then
+			return
+		end
+
+		local camera = getCurrentCamera()
+		if camera == nil then
+			emitNotification("critical", "Free camera failed", "Workspace.CurrentCamera is not available.", { duration = 3 })
+			return
+		end
+
+		if enabled then
+			state.freeCameraSnapshot = {
+				type = camera.CameraType,
+				subject = camera.CameraSubject,
+				cframe = camera.CFrame,
+				fieldOfView = camera.FieldOfView,
+				mouseBehavior = UserInputService.MouseBehavior,
+				mouseIconEnabled = UserInputService.MouseIconEnabled,
+			}
+
+			local pitch, yaw = camera.CFrame:ToOrientation()
+			state.freeCameraPitch = pitch
+			state.freeCameraYaw = yaw
+			state.freeCameraCFrame = camera.CFrame
+			state.freeCameraEnabled = true
+			camera.CameraType = Enum.CameraType.Scriptable
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+			UserInputService.MouseIconEnabled = false
+			bindFreeCameraInputSink()
+			emitNotification("success", "Free camera", "WASD fly, Q/E vertical, Shift fast, Ctrl slow.", { duration = 3 })
+			return
+		end
+
+		state.freeCameraEnabled = false
+		unbindFreeCameraInputSink()
+
+		local snapshot = state.freeCameraSnapshot
+		state.freeCameraSnapshot = nil
+		state.freeCameraCFrame = nil
+
+		if snapshot ~= nil then
+			camera.CameraType = snapshot.type or Enum.CameraType.Custom
+			camera.CFrame = snapshot.cframe or camera.CFrame
+			camera.FieldOfView = snapshot.fieldOfView or camera.FieldOfView
+
+			local subject = snapshot.subject
+			if typeof(subject) ~= "Instance" or subject.Parent == nil then
+				local fallbackCharacter = state.ghostCharacterEnabled and state.ghostCharacter or state.realCharacterBeforeGhost or getLocalCharacter()
+				subject = getCharacterCameraSubject(fallbackCharacter)
+			end
+			if subject ~= nil then
+				camera.CameraSubject = subject
+			end
+
+			UserInputService.MouseBehavior = snapshot.mouseBehavior or Enum.MouseBehavior.Default
+			UserInputService.MouseIconEnabled = snapshot.mouseIconEnabled ~= false
+		else
+			camera.CameraType = Enum.CameraType.Custom
+			setCameraSubjectToCharacter(state.ghostCharacterEnabled and state.ghostCharacter or getLocalCharacter())
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			UserInputService.MouseIconEnabled = true
+		end
+
+		emitNotification("info", "Free camera", "Camera restored.", { duration = 2.5 })
+	end
+
+	local function getFlatCameraVectors(cameraCFrame)
+		local look = Vector3.new(cameraCFrame.LookVector.X, 0, cameraCFrame.LookVector.Z)
+		local right = Vector3.new(cameraCFrame.RightVector.X, 0, cameraCFrame.RightVector.Z)
+		if look.Magnitude < 0.01 then
+			look = Vector3.new(0, 0, -1)
+		else
+			look = look.Unit
+		end
+		if right.Magnitude < 0.01 then
+			right = Vector3.new(1, 0, 0)
+		else
+			right = right.Unit
+		end
+
+		return look, right
+	end
+
+	local function updateGhostMovement()
+		if not state.ghostCharacterEnabled or state.freeCameraEnabled or UserInputService:GetFocusedTextBox() ~= nil then
+			return
+		end
+
+		local ghost = state.ghostCharacter
+		if ghost == nil or ghost.Parent == nil then
+			return
+		end
+
+		local humanoid = ghost:FindFirstChildOfClass("Humanoid")
+		if humanoid == nil then
+			return
+		end
+
+		local camera = getCurrentCamera()
+		local basis = camera and camera.CFrame or ghost:GetPivot()
+		local look, right = getFlatCameraVectors(basis)
+		local move = Vector3.zero
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+			move = move + look
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+			move = move - look
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+			move = move + right
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+			move = move - right
+		end
+
+		if move.Magnitude > 1 then
+			move = move.Unit
+		end
+
+		humanoid:Move(move, false)
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+			humanoid.Jump = true
+		end
+	end
+
+	local function updateFreeCamera(deltaTime)
+		if not state.freeCameraEnabled then
+			return
+		end
+
+		local camera = getCurrentCamera()
+		if camera == nil then
+			return
+		end
+
+		local mouseDelta = UserInputService:GetMouseDelta()
+		state.freeCameraYaw = state.freeCameraYaw - mouseDelta.X * 0.0024
+		state.freeCameraPitch = clamp(state.freeCameraPitch - mouseDelta.Y * 0.0024, -1.45, 1.45)
+
+		local rotation = CFrame.fromOrientation(state.freeCameraPitch, state.freeCameraYaw, 0)
+		local move = Vector3.zero
+		if UserInputService:GetFocusedTextBox() == nil then
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+				move = move + Vector3.new(0, 0, -1)
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+				move = move + Vector3.new(0, 0, 1)
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+				move = move + Vector3.new(1, 0, 0)
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+				move = move + Vector3.new(-1, 0, 0)
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.E) or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+				move = move + Vector3.new(0, 1, 0)
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+				move = move + Vector3.new(0, -1, 0)
+			end
+		end
+
+		if move.Magnitude > 1 then
+			move = move.Unit
+		end
+
+		local speed = 40
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+			speed = 86
+		elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+			speed = 16
+		end
+
+		local currentCFrame = state.freeCameraCFrame or camera.CFrame
+		local nextPosition = currentCFrame.Position + rotation:VectorToWorldSpace(move) * speed * deltaTime
+		state.freeCameraCFrame = CFrame.new(nextPosition) * rotation
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = state.freeCameraCFrame
 	end
 
 	local function getFocusedSpyPlayer()
@@ -5937,6 +6370,8 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.spireWellToggle, state.espObjectToggles.spireWell)
 		syncToggleButton(refs.wellToggle, state.espObjectToggles.well)
 		syncToggleButton(refs.remoteWatcherToggle, state.remoteWatcherEnabled)
+		syncToggleButton(refs.spyGhostToggle, state.ghostCharacterEnabled)
+		syncToggleButton(refs.spyFreeCameraToggle, state.freeCameraEnabled)
 		NativeUi.setButtonSelected(refs.aimNearestButton, state.aimTargetPart == "nearest")
 		NativeUi.setButtonSelected(refs.aimHeadButton, state.aimTargetPart == "head")
 		NativeUi.setButtonSelected(refs.aimTorsoButton, state.aimTargetPart == "torso")
@@ -6056,6 +6491,19 @@ function BytecodeViewer.start(config)
 		end
 	end
 
+	trackCleanup(function()
+		if state.freeCameraEnabled then
+			setFreeCameraEnabled(false)
+		else
+			unbindFreeCameraInputSink()
+		end
+		if state.ghostCharacterEnabled then
+			setGhostCharacterEnabled(false)
+		elseif state.ghostCharacter ~= nil then
+			state.ghostCharacter:Destroy()
+			state.ghostCharacter = nil
+		end
+	end)
 	trackCleanup(restoreLighting)
 	trackCleanup(function()
 		for player, connection in pairs(playerCharacterConnections) do
@@ -6104,7 +6552,13 @@ function BytecodeViewer.start(config)
 		end
 	end))
 
-	trackConnection(RunService.RenderStepped:Connect(function()
+	trackConnection(RunService.RenderStepped:Connect(function(deltaTime)
+		updateFreeCamera(deltaTime)
+		updateGhostMovement()
+		if state.freeCameraEnabled then
+			return
+		end
+
 		local wantsHold = state.aimbotEnabled and canMoveMouseCursor() and UserInputService:GetFocusedTextBox() == nil and isAimbotHotkeyDown()
 		if wantsHold ~= state.aimHoldActive then
 			setAimbotHoldActive(wantsHold)
@@ -6159,6 +6613,30 @@ function BytecodeViewer.start(config)
 	trackConnection(Workspace.DescendantRemoving:Connect(handleEspDescendantMutation))
 	bindScriptBrowserMutationWatchers()
 	bindRemoteMutationWatchers()
+
+	if Players.LocalPlayer ~= nil then
+		trackConnection(Players.LocalPlayer.CharacterAdded:Connect(function(character)
+			if character == state.ghostCharacter then
+				return
+			end
+
+			state.realCharacterBeforeGhost = character
+			if state.ghostCharacterEnabled and state.ghostCharacter ~= nil and state.ghostCharacter.Parent ~= nil then
+				task.defer(function()
+					if not state.ghostCharacterEnabled or state.ghostCharacter == nil or state.ghostCharacter.Parent == nil then
+						return
+					end
+
+					pcall(function()
+						Players.LocalPlayer.Character = state.ghostCharacter
+					end)
+					setCameraSubjectToCharacter(state.ghostCharacter)
+				end)
+			elseif not state.freeCameraEnabled then
+				setCameraSubjectToCharacter(character)
+			end
+		end))
+	end
 
 	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
 	trackConnection(Players.PlayerAdded:Connect(function(player)
@@ -6380,6 +6858,14 @@ function BytecodeViewer.start(config)
 		reconcilePlayerHighlights()
 		refreshEspPlayersList()
 		refreshPlayersList()
+		syncControlState()
+	end))
+	trackConnection(refs.spyGhostToggle.toggle.MouseButton1Click:Connect(function()
+		setGhostCharacterEnabled(not state.ghostCharacterEnabled)
+		syncControlState()
+	end))
+	trackConnection(refs.spyFreeCameraToggle.toggle.MouseButton1Click:Connect(function()
+		setFreeCameraEnabled(not state.freeCameraEnabled)
 		syncControlState()
 	end))
 	trackConnection(refs.walkSlider.applyButton.MouseButton1Click:Connect(function()
