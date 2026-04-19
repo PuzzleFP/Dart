@@ -34,6 +34,9 @@ The name recovery pass uses bytecode/debug metadata plus conservative heuristics
 - Proto debug names are used as function-name fallbacks when there is no better assignment target.
 - Local debug ranges are used for parameter and local variable names when their register range covers the current PC.
 - Upvalue debug names are used for `GETUPVAL`, `SETUPVAL`, and closure capture aliases.
+- Displayed function parameters are bound back to their underlying registers so method bodies use `self`, `arg2`, etc. instead of raw register names.
+- Loaded field expressions are materialized into a local temp before the same field is overwritten, preserving patterns such as `local wasJumping = self.isJumping; self.isJumping = false; return wasJumping`.
+- The common Luau boolean-normalization pattern `JUMPIFNOT` + `LOADB true` + `JUMP` + `LOADB false` + `MOVE` is emitted as a boolean coercion assignment.
 - `NEWCLOSURE.D` is resolved through the parent proto's child-proto table before assigning a function body to a recovered target.
 - `game:GetService("Players")` style assignments become local aliases such as `Players`.
 - `require(...:WaitForChild("ModuleName"))` assignments become local aliases such as `ModuleName`.

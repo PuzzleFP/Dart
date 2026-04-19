@@ -733,6 +733,34 @@ local function materializeRegister(context, index, pc)
 	return target
 end
 
+local function materializeValueRegister(context, index, pc)
+	local value = context.registers[index]
+	local rendered = renderExpression(value or makeTextValue(getRegister(context, index)), 0)
+	local target = getWritableRegister(context, index, pc)
+
+	if rendered == target then
+		return target
+	end
+
+	if not context.declaredLocals[target] and target:match("^r%d+$") then
+		context.declaredLocals[target] = true
+		emit(context, ("local %s = %s"):format(target, rendered))
+	else
+		emit(context, ("%s = %s"):format(target, rendered))
+	end
+
+	setRegister(context, index, target)
+	return target
+end
+
+local function preserveRegistersHoldingExpression(context, expression, sourceRegister, pc)
+	for register, value in pairs(context.registers) do
+		if register ~= sourceRegister and renderExpression(value, 0) == expression then
+			materializeValueRegister(context, register, pc)
+		end
+	end
+end
+
 local function emitUnsupported(context, instruction)
 	local name = instruction.name
 	context.unsupported[name] = true
@@ -921,6 +949,52 @@ local function canStructureTarget(instruction, endPc)
 	return targetPc ~= nil and targetPc > instructionEndPc(instruction) and targetPc <= endPc
 end
 
+local function tryEmitBooleanCoercion(context, instructions, pcToIndex, index)
+	local instruction = instructions[index]
+	if instruction == nil or instruction.name ~= "JUMPIFNOT" or instruction.jumpTargetPc == nil then
+		return nil
+	end
+
+	local loadTrue = instructions[index + 1]
+	local jumpOverFalse = instructions[index + 2]
+	local falseIndex = pcToIndex[instruction.jumpTargetPc]
+	local loadFalse = falseIndex and instructions[falseIndex] or nil
+
+	if not (
+		loadTrue
+		and jumpOverFalse
+		and loadFalse
+		and loadTrue.name == "LOADB"
+		and loadTrue.fields.B == 1
+		and (jumpOverFalse.name == "JUMP" or jumpOverFalse.name == "JUMPX")
+		and jumpOverFalse.jumpTargetPc ~= nil
+		and loadFalse.name == "LOADB"
+		and loadFalse.fields.B == 0
+		and loadFalse.fields.A == loadTrue.fields.A
+	) then
+		return nil
+	end
+
+	local afterIndex = indexAtOrAfterPc(instructions, pcToIndex, jumpOverFalse.jumpTargetPc)
+	local afterInstruction = instructions[afterIndex]
+	local targetRegister = loadTrue.fields.A
+	local nextIndex = afterIndex
+
+	if afterInstruction and afterInstruction.name == "MOVE" and afterInstruction.fields.B == loadTrue.fields.A then
+		targetRegister = afterInstruction.fields.A
+		nextIndex = afterIndex + 1
+	end
+
+	local target = getWritableRegister(context, targetRegister, instruction.pc)
+	local expression = ("%s and true or false"):format(getRegister(context, instruction.fields.A))
+
+	emit(context, ("%s = %s"):format(target, expression))
+	setRegister(context, loadTrue.fields.A, target)
+	setRegister(context, targetRegister, target)
+
+	return nextIndex
+end
+
 local function appendIndentedLines(lines, statements, indent)
 	local prefix = string.rep("    ", indent or 0)
 
@@ -1048,8 +1122,10 @@ local function handleInstruction(context, instruction)
 				captures = cloneCaptures(sourceValue.captures),
 			})
 		else
+			local targetExpression = memberAccess(getRegister(context, fields.B), keyName)
+			preserveRegistersHoldingExpression(context, targetExpression, fields.A, instruction.pc)
 			emit(context, ("%s = %s"):format(
-				memberAccess(getRegister(context, fields.B), keyName),
+				targetExpression,
 				renderExpression(sourceValue, 0)
 			))
 		end
@@ -1058,14 +1134,18 @@ local function handleInstruction(context, instruction)
 		if type(baseValue) == "table" and baseValue.kind == "table" then
 			setTableEntry(baseValue, tostring(fields.C + 1), getRegisterValue(context, fields.A), { array = true })
 		else
-			emit(context, ("%s[%d] = %s"):format(getRegister(context, fields.B), fields.C + 1, renderExpression(getRegisterValue(context, fields.A), 0)))
+			local targetExpression = ("%s[%d]"):format(getRegister(context, fields.B), fields.C + 1)
+			preserveRegistersHoldingExpression(context, targetExpression, fields.A, instruction.pc)
+			emit(context, ("%s = %s"):format(targetExpression, renderExpression(getRegisterValue(context, fields.A), 0)))
 		end
 	elseif name == "SETTABLE" then
 		local baseValue = context.registers[fields.B]
 		if type(baseValue) == "table" and baseValue.kind == "table" then
 			setTableEntry(baseValue, ("[%s]"):format(getRegister(context, fields.C)), getRegisterValue(context, fields.A))
 		else
-			emit(context, ("%s[%s] = %s"):format(getRegister(context, fields.B), getRegister(context, fields.C), renderExpression(getRegisterValue(context, fields.A), 0)))
+			local targetExpression = ("%s[%s]"):format(getRegister(context, fields.B), getRegister(context, fields.C))
+			preserveRegistersHoldingExpression(context, targetExpression, fields.A, instruction.pc)
+			emit(context, ("%s = %s"):format(targetExpression, renderExpression(getRegisterValue(context, fields.A), 0)))
 		end
 	elseif name == "NEWTABLE" then
 		setRegister(context, fields.A, makeTableNode())
@@ -1247,6 +1327,11 @@ local function tryEmitStructuredConditional(context, instructions, pcToIndex, in
 		return nil
 	end
 
+	local booleanCoercionNext = tryEmitBooleanCoercion(context, instructions, pcToIndex, index)
+	if booleanCoercionNext ~= nil then
+		return booleanCoercionNext
+	end
+
 	local nextPc = instructionEndPc(instruction)
 	local targetPc = instruction.jumpTargetPc
 	local lastBeforeTarget = findInstructionBeforePc(instructions, pcToIndex, targetPc, index + 1)
@@ -1309,6 +1394,10 @@ local function decompileStructuredProto(context)
 	return true
 end
 
+local function getParameterName(proto, register)
+	return getLocalNameAtPc(proto, register, 0) or ("arg%d"):format(register + 1)
+end
+
 local function buildParameterList(proto, options)
 	options = options or {}
 
@@ -1317,8 +1406,7 @@ local function buildParameterList(proto, options)
 	local startIndex = options.dropFirstParam and 1 or 0
 
 	for index = startIndex, count - 1 do
-		local name = getLocalNameAtPc(proto, index, 0) or ("arg%d"):format(index + 1)
-		table.insert(params, name)
+		table.insert(params, getParameterName(proto, index))
 	end
 
 	if proto.isVararg then
@@ -1326,6 +1414,31 @@ local function buildParameterList(proto, options)
 	end
 
 	return table.concat(params, ", ")
+end
+
+local function withParameterRegisterAliases(proto, options)
+	options = options or {}
+
+	local nextOptions = {}
+	for key, value in pairs(options) do
+		nextOptions[key] = value
+	end
+
+	local aliases = cloneMap(nextOptions.registerAliases)
+	local count = proto.numParams or proto.params or 0
+
+	if nextOptions.dropFirstParam then
+		aliases[0] = aliases[0] or "self"
+	end
+
+	for register = 0, count - 1 do
+		if aliases[register] == nil then
+			aliases[register] = getParameterName(proto, register)
+		end
+	end
+
+	nextOptions.registerAliases = aliases
+	return nextOptions
 end
 
 local function summarizeUnsupported(context)
@@ -1523,7 +1636,7 @@ function LuauDecompiler.analyzeProto(proto, options)
 end
 
 function LuauDecompiler.decompileProto(proto, options)
-	options = options or {}
+	options = withParameterRegisterAliases(proto, options or {})
 
 	local context = analyzeProto(proto, options)
 
