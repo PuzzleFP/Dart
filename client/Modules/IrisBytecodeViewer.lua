@@ -1763,18 +1763,21 @@ local function createOverlayLayers(screenGui, refs)
 
 	local alertRail = NativeUi.create("Frame", {
 		Name = "AlertRail",
+		AnchorPoint = Vector2.new(1, 0),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(14, 92),
+		Position = UDim2.new(1, -14, 0, 92),
 		Size = UDim2.fromOffset(306, 252),
 		ZIndex = 35,
 		Parent = screenGui,
 	})
+	refs.alertRail = alertRail
 
 	local function makeAlertCard(index)
 		local card = makeOverlayPanel(alertRail, {
 			Position = UDim2.fromOffset(0, (index - 1) * 84),
 			Size = UDim2.fromOffset(306, 74),
+			Visible = false,
 			ZIndex = 35,
 		}, 16, NativeUi.Theme.Border, 0.18)
 
@@ -5596,28 +5599,8 @@ function BytecodeViewer.start(config)
 				return alerts
 			end
 		end
-		if #alerts > 0 then
-			return alerts
-		end
 
-		return {
-			{
-				level = signal.level,
-				title = signal.title .. " signal",
-				detail = signal.detail,
-				color = signal.color,
-			},
-			{
-				level = (state.aimbotEnabled or state.autoFireEnabled) and "warning" or "info",
-				title = (state.aimbotEnabled or state.autoFireEnabled) and "Combat armed" or "Combat idle",
-				detail = state.autoFireEnabled and "Auto-fire can call configured remotes" or (state.aimbotEnabled and "Ctrl lock can acquire targets" or "Aimbot disabled"),
-			},
-			{
-				level = anyEspSignalEnabled() and "warning" or "info",
-				title = anyEspSignalEnabled() and "ESP active" or "ESP quiet",
-				detail = state.highlightAllPlayers and "All players highlighted" or "Selective visibility only",
-			},
-		}
+		return alerts
 	end
 
 	local function updateSpyReadout()
@@ -5674,6 +5657,13 @@ function BytecodeViewer.start(config)
 		})
 
 		local alerts = buildAlertStack(signal)
+		local alertY = (state.intelligenceThreat ~= nil and not state.isMinimized) and 184 or 92
+		SuiteMotion.tween(refs.alertRail, {
+			Position = UDim2.new(1, -14, 0, alertY),
+		}, {
+			duration = 0.18,
+			style = "quint",
+		})
 
 		for index, card in ipairs(refs.alertCards) do
 			local alert = alerts[index]
