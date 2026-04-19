@@ -5513,8 +5513,6 @@ function BytecodeViewer.start(config)
 	local getIntelligenceThreatSignal
 
 	local function buildSuiteTelemetry()
-		local focusedPlayer = getFocusedSpyPlayer()
-		local activeEsp = anyEspSignalEnabled()
 		local signal = {
 			title = "Dart",
 			detail = "",
@@ -5523,56 +5521,6 @@ function BytecodeViewer.start(config)
 			width = 184,
 			height = 44,
 		}
-
-		if state.autoFireEnabled then
-			signal.title = "Combat"
-			signal.detail = "Auto-fire armed"
-			signal.badge = "ARMED"
-			signal.level = "warning"
-			signal.width = 286
-		elseif state.aimbotEnabled then
-			signal.title = "Combat"
-			signal.detail = "Ctrl lock armed"
-			signal.badge = "ARMED"
-			signal.level = "warning"
-			signal.width = 278
-		elseif state.macroEnabled then
-			signal.title = "Macro"
-			signal.detail = ("%s automation staged"):format(state.macroTargetKind)
-			signal.badge = "AUTO"
-			signal.level = "warning"
-			signal.width = 320
-		elseif focusedPlayer ~= nil then
-			signal.title = "Recon"
-			signal.detail = focusedPlayer.Name .. " focus"
-			signal.badge = "LIVE"
-			signal.level = "warning"
-			signal.width = 326
-		elseif state.remoteWatcherEnabled then
-			signal.title = "Remote"
-			signal.detail = "Remote watcher active"
-			signal.badge = "WATCH"
-			signal.level = "info"
-			signal.width = 306
-		elseif state.freeCameraEnabled then
-			signal.title = "Camera"
-			signal.detail = "Free camera active"
-			signal.badge = "LIVE"
-			signal.level = "info"
-			signal.width = 292
-		elseif state.ghostCharacterEnabled then
-			signal.title = "Local Body"
-			signal.detail = "Client-only character active"
-			signal.badge = "LOCAL"
-			signal.level = "info"
-			signal.width = 340
-		elseif activeEsp then
-			signal.title = "Visibility"
-			signal.detail = "ESP filters active"
-			signal.badge = "WATCH"
-			signal.level = "info"
-			signal.width = 292
-		end
 
 		local threatSignal = getIntelligenceThreatSignal and getIntelligenceThreatSignal() or nil
 		if threatSignal ~= nil and not state.isMinimized then
