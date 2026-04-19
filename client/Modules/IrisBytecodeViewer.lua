@@ -942,6 +942,10 @@ local function makeState(config)
 		infiniteJump = false,
 		noClip = false,
 		fullBright = false,
+		noFallDamage = false,
+		noOceanDamage = false,
+		localProtectionHookInstalled = false,
+		localProtectionHookError = nil,
 		aimbotEnabled = false,
 		aimHoldActive = false,
 		aimTargetPart = "nearest",
@@ -1962,11 +1966,38 @@ local function createGui(state)
 		strokeTransparency = SuiteTheme.Transparency.StrokeStrong,
 	})
 
+	local mainColumns = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 470),
+		Parent = mainContent,
+	})
+	NativeUi.list(mainColumns, 16, Enum.FillDirection.Horizontal)
+
+	local mainSliderColumn = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = 1,
+		Size = UDim2.new(0.5, -8, 1, 0),
+		Parent = mainColumns,
+	})
+	NativeUi.list(mainSliderColumn, 10, Enum.FillDirection.Vertical)
+
+	local mainToggleColumn = NativeUi.create("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
+		Size = UDim2.new(0.5, -8, 1, 0),
+		Parent = mainColumns,
+	})
+	NativeUi.list(mainToggleColumn, 10, Enum.FillDirection.Vertical)
+
 	local movementSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
+		LayoutOrder = 1,
 		Size = UDim2.new(1, 0, 0, 222),
-		Parent = mainContent,
+		Parent = mainSliderColumn,
 	})
 
 	addSectionTitle(movementSection, "Movement")
@@ -1978,8 +2009,9 @@ local function createGui(state)
 	local automationSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 178),
-		Parent = mainContent,
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 270),
+		Parent = mainToggleColumn,
 	})
 
 	addSectionTitle(automationSection, "Automation")
@@ -1987,12 +2019,15 @@ local function createGui(state)
 	local infiniteJumpToggle = makeToggleRow(automationSection, 40, "Infinite Jump", "Keeps jump requests hot for the local character when enabled.")
 	local noClipToggle = makeToggleRow(automationSection, 86, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
 	local fullBrightToggle = makeToggleRow(automationSection, 132, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
+	local noFallDamageToggle = makeToggleRow(automationSection, 178, "No Fall Damage", "Spoofs local fall-state checks and blocks local fall damage writes when available.")
+	local noOceanDamageToggle = makeToggleRow(automationSection, 224, "No Ocean Damage", "Spoofs local swim/ocean checks and blocks local ocean damage writes when available.")
 
 	local worldSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
+		LayoutOrder = 2,
 		Size = UDim2.new(1, 0, 0, 104),
-		Parent = mainContent,
+		Parent = mainSliderColumn,
 	})
 
 	addSectionTitle(worldSection, "World")
@@ -2002,8 +2037,9 @@ local function createGui(state)
 	local sessionSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
+		LayoutOrder = 3,
 		Size = UDim2.new(1, 0, 0, 114),
-		Parent = mainContent,
+		Parent = mainSliderColumn,
 	})
 
 	addSectionTitle(sessionSection, "Session")
@@ -3046,6 +3082,8 @@ local function createGui(state)
 	refs.infiniteJumpToggle = infiniteJumpToggle
 	refs.noClipToggle = noClipToggle
 	refs.fullBrightToggle = fullBrightToggle
+	refs.noFallDamageToggle = noFallDamageToggle
+	refs.noOceanDamageToggle = noOceanDamageToggle
 	refs.inspectorInfoLabel = inspectorInfoLabel
 
 	return refs
@@ -3798,6 +3836,278 @@ function BytecodeViewer.start(config)
 		return ("%d/%d"):format(math.floor(humanoid.Health + 0.5), math.floor(humanoid.MaxHealth + 0.5))
 	end
 
+	local localProtectionBridge = scope.__DartLocalProtectionBridge
+	if type(localProtectionBridge) ~= "table" then
+		localProtectionBridge = {}
+		scope.__DartLocalProtectionBridge = localProtectionBridge
+	end
+
+	local function readDebugSource(level)
+		local debugLibrary = debug
+		if type(debugLibrary) ~= "table" then
+			return nil
+		end
+
+		if type(debugLibrary.info) == "function" then
+			local ok, source = pcall(debugLibrary.info, level, "s")
+			if ok and type(source) == "string" then
+				return source
+			end
+		end
+
+		if type(debugLibrary.getinfo) == "function" then
+			local ok, info = pcall(debugLibrary.getinfo, level, "S")
+			if ok and type(info) == "table" then
+				return info.source or info.short_src
+			end
+		end
+
+		return nil
+	end
+
+	local function callerMatchesProtectionSource(kind)
+		local terms = kind == "ocean"
+			and { "ocean", "oceandamage", "ocean damage", "waterdamage", "water damage" }
+			or { "fall", "falldamage", "fall damage", "falldamagescript", "fall_damage" }
+		local sawUsefulSource = false
+
+		for level = 3, 12 do
+			local source = readDebugSource(level)
+			if type(source) == "string" and source ~= "" and source ~= "[C]" then
+				local normalized = string.lower(source)
+				local isBridgeSource = string.find(normalized, "irisbytecodeviewer", 1, true) ~= nil
+					or string.find(normalized, "coregui", 1, true) ~= nil
+					or string.find(normalized, "loadstring", 1, true) ~= nil
+				for _, term in ipairs(terms) do
+					if string.find(normalized, term, 1, true) ~= nil then
+						return true, true
+					end
+				end
+				sawUsefulSource = sawUsefulSource or not isBridgeSource
+			end
+		end
+
+		return false, sawUsefulSource
+	end
+
+	local function shouldUseProtectionForCaller(kind)
+		local matched, sawUsefulSource = callerMatchesProtectionSource(kind)
+		if matched then
+			return true
+		end
+
+		-- If the executor does not expose script source info, fall back to a local-humanoid-only guard.
+		return not sawUsefulSource
+	end
+
+	local function isProtectedLocalHumanoid(humanoid)
+		return humanoid ~= nil and humanoid == getLocalHumanoid()
+	end
+
+	local function spoofProtectedHumanoidState(humanoid, humanoidState)
+		if not isProtectedLocalHumanoid(humanoid) then
+			return humanoidState
+		end
+
+		if state.noFallDamage and humanoidState == Enum.HumanoidStateType.Landed and shouldUseProtectionForCaller("fall") then
+			return Enum.HumanoidStateType.Running
+		end
+
+		if state.noOceanDamage and humanoidState == Enum.HumanoidStateType.Swimming and shouldUseProtectionForCaller("ocean") then
+			return Enum.HumanoidStateType.Running
+		end
+
+		return humanoidState
+	end
+
+	local function shouldBlockProtectedHealthWrite(humanoid, value)
+		if not isProtectedLocalHumanoid(humanoid) or type(value) ~= "number" then
+			return false
+		end
+
+		local ok, currentHealth = pcall(function()
+			return humanoid.Health
+		end)
+		if not ok or type(currentHealth) ~= "number" or value >= currentHealth then
+			return false
+		end
+
+		if state.noFallDamage and shouldUseProtectionForCaller("fall") then
+			return true
+		end
+
+		if state.noOceanDamage and shouldUseProtectionForCaller("ocean") then
+			return true
+		end
+
+		return false
+	end
+
+	local function wrapProtectedStateSignal(humanoid, signal)
+		if not isProtectedLocalHumanoid(humanoid) or signal == nil then
+			return signal
+		end
+
+		local proxy = {}
+
+		local function wrapCallback(callback)
+			return function(oldState, newState, ...)
+				return callback(
+					spoofProtectedHumanoidState(humanoid, oldState),
+					spoofProtectedHumanoidState(humanoid, newState),
+					...
+				)
+			end
+		end
+
+		function proxy:Connect(callback)
+			return signal:Connect(wrapCallback(callback))
+		end
+
+		function proxy:connect(callback)
+			return self:Connect(callback)
+		end
+
+		function proxy:Once(callback)
+			if type(signal.Once) == "function" then
+				return signal:Once(wrapCallback(callback))
+			end
+
+			local connection
+			connection = signal:Connect(function(...)
+				if connection ~= nil then
+					connection:Disconnect()
+				end
+				return wrapCallback(callback)(...)
+			end)
+			return connection
+		end
+
+		function proxy:Wait()
+			local oldState, newState = signal:Wait()
+			return spoofProtectedHumanoidState(humanoid, oldState), spoofProtectedHumanoidState(humanoid, newState)
+		end
+
+		return proxy
+	end
+
+	local function syncLocalProtectionBridge()
+		localProtectionBridge.enabled = state.noFallDamage or state.noOceanDamage
+		localProtectionBridge.spoofState = spoofProtectedHumanoidState
+		localProtectionBridge.shouldBlockHealthWrite = shouldBlockProtectedHealthWrite
+		localProtectionBridge.wrapStateSignal = wrapProtectedStateSignal
+	end
+
+	local function installLocalProtectionHooks()
+		syncLocalProtectionBridge()
+		if localProtectionBridge.installed then
+			state.localProtectionHookInstalled = true
+			state.localProtectionHookError = nil
+			return true, "Local protection hooks armed"
+		end
+
+		if type(hookmetamethod) ~= "function" then
+			state.localProtectionHookError = "hookmetamethod unavailable for local protection hooks"
+			return false, state.localProtectionHookError
+		end
+
+		local makeHookClosure = type(newcclosure) == "function" and newcclosure or function(fn)
+			return fn
+		end
+		local installedAny = false
+
+		if type(getnamecallmethod) == "function" then
+			local originalNamecall
+			local ok = pcall(function()
+				originalNamecall = hookmetamethod(game, "__namecall", makeHookClosure(function(self, ...)
+					local method = getnamecallmethod()
+					local result = originalNamecall(self, ...)
+					if method == "GetState" then
+						local bridge = getGlobalScope().__DartLocalProtectionBridge
+						if bridge ~= nil and bridge.enabled == true and type(bridge.spoofState) == "function" then
+							return bridge.spoofState(self, result)
+						end
+					end
+					return result
+				end))
+			end)
+			if ok then
+				localProtectionBridge.namecallOriginal = originalNamecall
+				localProtectionBridge.namecallInstalled = true
+				installedAny = true
+			end
+		end
+
+		local originalIndex
+		local okIndex = pcall(function()
+			originalIndex = hookmetamethod(game, "__index", makeHookClosure(function(self, key)
+				local originalValue = originalIndex(self, key)
+				if key == "GetState" and type(originalValue) == "function" then
+					return function(target, ...)
+						local humanoid = target or self
+						local result = originalValue(humanoid, ...)
+						local bridge = getGlobalScope().__DartLocalProtectionBridge
+						if bridge ~= nil and bridge.enabled == true and type(bridge.spoofState) == "function" then
+							return bridge.spoofState(humanoid, result)
+						end
+						return result
+					end
+				elseif key == "StateChanged" then
+					local bridge = getGlobalScope().__DartLocalProtectionBridge
+					if bridge ~= nil and bridge.enabled == true and type(bridge.wrapStateSignal) == "function" then
+						return bridge.wrapStateSignal(self, originalValue)
+					end
+				end
+				return originalValue
+			end))
+		end)
+		if okIndex then
+			localProtectionBridge.indexOriginal = originalIndex
+			localProtectionBridge.indexInstalled = true
+			installedAny = true
+		end
+
+		local originalNewIndex
+		local okNewIndex = pcall(function()
+			originalNewIndex = hookmetamethod(game, "__newindex", makeHookClosure(function(self, key, value)
+				if key == "Health" then
+					local bridge = getGlobalScope().__DartLocalProtectionBridge
+					if bridge ~= nil and bridge.enabled == true and type(bridge.shouldBlockHealthWrite) == "function" and bridge.shouldBlockHealthWrite(self, value) then
+						return
+					end
+				end
+				return originalNewIndex(self, key, value)
+			end))
+		end)
+		if okNewIndex then
+			localProtectionBridge.newIndexOriginal = originalNewIndex
+			localProtectionBridge.newIndexInstalled = true
+			installedAny = true
+		end
+
+		localProtectionBridge.installed = installedAny
+		state.localProtectionHookInstalled = installedAny
+		if not installedAny then
+			state.localProtectionHookError = "Local protection hook install failed"
+			return false, state.localProtectionHookError
+		end
+
+		state.localProtectionHookError = nil
+		return true, "Local protection hooks armed"
+	end
+
+	syncLocalProtectionBridge()
+	state.localProtectionHookInstalled = localProtectionBridge.installed == true
+
+	trackCleanup(function()
+		if scope.__DartLocalProtectionBridge == localProtectionBridge then
+			localProtectionBridge.enabled = false
+			localProtectionBridge.spoofState = nil
+			localProtectionBridge.shouldBlockHealthWrite = nil
+			localProtectionBridge.wrapStateSignal = nil
+		end
+	end)
+
 	local function anyEspSignalEnabled()
 		if state.highlightAllPlayers then
 			return true
@@ -4410,6 +4720,8 @@ function BytecodeViewer.start(config)
 			infiniteJump = "toggleInfiniteJump",
 			noClip = "toggleNoClip",
 			fullBright = "toggleFullBright",
+			noFallDamage = "toggleNoFallDamage",
+			noOceanDamage = "toggleNoOceanDamage",
 		})[toggleName]
 
 		local customHandler = handlerName and handlers and handlers[handlerName]
@@ -4444,7 +4756,17 @@ function BytecodeViewer.start(config)
 			end
 		end
 
+		if enabled and (toggleName == "noFallDamage" or toggleName == "noOceanDamage") then
+			local ok, result = installLocalProtectionHooks()
+			if not ok then
+				return false, result
+			end
+		end
+
 		state[toggleName] = enabled
+		if toggleName == "noFallDamage" or toggleName == "noOceanDamage" then
+			syncLocalProtectionBridge()
+		end
 		return true, ((enabled and "Enabled " or "Disabled ") .. toggleName)
 	end
 
@@ -6363,6 +6685,8 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.infiniteJumpToggle, state.infiniteJump)
 		syncToggleButton(refs.noClipToggle, state.noClip)
 		syncToggleButton(refs.fullBrightToggle, state.fullBright)
+		syncToggleButton(refs.noFallDamageToggle, state.noFallDamage)
+		syncToggleButton(refs.noOceanDamageToggle, state.noOceanDamage)
 		syncToggleButton(refs.aimbotToggle, state.aimbotEnabled)
 		syncToggleButton(refs.spawnPointToggle, state.espObjectToggles.spawnPoint)
 		syncToggleButton(refs.wellPumpToggle, state.espObjectToggles.wellPump)
@@ -6925,6 +7249,12 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.fullBrightToggle.toggle.MouseButton1Click:Connect(function()
 		toggleFeature("fullBright")
+	end))
+	trackConnection(refs.noFallDamageToggle.toggle.MouseButton1Click:Connect(function()
+		toggleFeature("noFallDamage")
+	end))
+	trackConnection(refs.noOceanDamageToggle.toggle.MouseButton1Click:Connect(function()
+		toggleFeature("noOceanDamage")
 	end))
 	trackConnection(refs.spawnPointToggle.toggle.MouseButton1Click:Connect(function()
 		toggleEspObject("spawnPoint")
