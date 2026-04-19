@@ -249,6 +249,458 @@ local function clamp(value, minValue, maxValue)
 	return math.max(minValue, math.min(maxValue, value))
 end
 
+local function getHighlightCarrier(instance)
+	if typeof(instance) ~= "Instance" then
+		return nil
+	end
+
+	if instance:IsA("Model") or instance:IsA("BasePart") then
+		return instance
+	end
+
+	return instance:FindFirstAncestorWhichIsA("Model") or instance:FindFirstAncestorWhichIsA("BasePart")
+end
+
+local function getInstancePosition(instance)
+	if typeof(instance) ~= "Instance" then
+		return nil
+	end
+
+	if instance:IsA("BasePart") then
+		return instance.Position
+	end
+
+	if instance:IsA("Model") then
+		if instance.PrimaryPart then
+			return instance.PrimaryPart.Position
+		end
+
+		local ok, pivot = pcall(function()
+			return instance:GetPivot()
+		end)
+
+		if ok and pivot then
+			return pivot.Position
+		end
+
+		local part = instance:FindFirstChildWhichIsA("BasePart", true)
+		return part and part.Position or nil
+	end
+
+	local carrier = getHighlightCarrier(instance)
+	if carrier ~= nil and carrier ~= instance then
+		return getInstancePosition(carrier)
+	end
+
+	return nil
+end
+
+local function getInstanceKey(instance)
+	if typeof(instance) ~= "Instance" then
+		return tostring(instance)
+	end
+
+	local ok, debugId = pcall(function()
+		return instance:GetDebugId(0)
+	end)
+
+	if ok and type(debugId) == "string" and debugId ~= "" then
+		return debugId
+	end
+
+	return instance:GetFullName()
+end
+
+local function disconnectConnectionMap(connectionMap)
+	for key, connection in pairs(connectionMap) do
+		pcall(function()
+			connection:Disconnect()
+		end)
+		connectionMap[key] = nil
+	end
+end
+
+local function normalizeNotificationLevel(level)
+	level = string.lower(tostring(level or "info"))
+	if level == "danger" or level == "error" then
+		return "critical"
+	elseif level == "warn" then
+		return "warning"
+	elseif level == "ok" then
+		return "success"
+	elseif level == "critical" or level == "warning" or level == "success" or level == "info" then
+		return level
+	end
+
+	return "info"
+end
+
+local function notificationPriority(level)
+	if level == "critical" then
+		return 50
+	elseif level == "warning" then
+		return 40
+	elseif level == "success" then
+		return 30
+	elseif level == "info" then
+		return 20
+	end
+
+	return 10
+end
+
+local function getLocalCharacter()
+	local player = Players.LocalPlayer
+	return player and player.Character or nil
+end
+
+local function getLocalHumanoid()
+	local character = getLocalCharacter()
+	return character and character:FindFirstChildOfClass("Humanoid") or nil
+end
+
+local function getCurrentCamera()
+	return Workspace.CurrentCamera
+end
+
+local function getCharacterRootPart(character)
+	if character == nil then
+		return nil
+	end
+
+	return character:FindFirstChild("HumanoidRootPart")
+		or character:FindFirstChild("UpperTorso")
+		or character:FindFirstChild("Torso")
+		or character.PrimaryPart
+end
+
+local function getCharacterCameraSubject(character)
+	if character == nil then
+		return nil
+	end
+
+	return character:FindFirstChildOfClass("Humanoid") or getCharacterRootPart(character)
+end
+
+local function getPlayerRootPart(player)
+	return getCharacterRootPart(player and player.Character or nil)
+end
+
+local function scanNamedTargets(root, targetName)
+	local targets = {}
+	if typeof(root) ~= "Instance" then
+		return targets
+	end
+
+	local seen = {}
+	for _, descendant in ipairs(root:GetDescendants()) do
+		if descendant.Name == targetName then
+			local carrier = getHighlightCarrier(descendant)
+			if carrier ~= nil and not seen[carrier] then
+				seen[carrier] = true
+				table.insert(targets, carrier)
+			end
+		end
+	end
+
+	return targets
+end
+
+local function getPlayerHighlightColors(player)
+	local baseColor = NativeUi.Theme.Accent
+	if player.Team ~= nil and player.Team.TeamColor ~= nil then
+		baseColor = player.Team.TeamColor.Color
+	elseif player.TeamColor ~= nil then
+		baseColor = player.TeamColor.Color
+	end
+
+	return baseColor:Lerp(Color3.new(1, 1, 1), 0.08), baseColor:Lerp(Color3.new(1, 1, 1), 0.34)
+end
+
+local function resolveTeamAttributeColor(value)
+	if typeof(value) == "BrickColor" then
+		return value.Color
+	end
+
+	if typeof(value) == "Color3" then
+		return value
+	end
+
+	if type(value) == "string" and value ~= "" then
+		local ok, brickColor = pcall(function()
+			return BrickColor.new(value)
+		end)
+		if ok and brickColor ~= nil then
+			return brickColor.Color
+		end
+	end
+
+	return nil
+end
+
+local function readInstanceTeamColor(instance)
+	if typeof(instance) ~= "Instance" then
+		return nil
+	end
+
+	return resolveTeamAttributeColor(instance:GetAttribute("Team"))
+end
+
+local function getStructureHighlightColors(target, defaultFill, defaultOutline)
+	local color = readInstanceTeamColor(target)
+	local current = target
+	while color == nil and typeof(current) == "Instance" and current.Parent ~= nil and current ~= Workspace do
+		current = current.Parent
+		color = readInstanceTeamColor(current)
+	end
+
+	if color == nil and typeof(target) == "Instance" and target:IsA("Model") then
+		for _, descendant in ipairs(target:GetDescendants()) do
+			color = readInstanceTeamColor(descendant)
+			if color ~= nil then
+				break
+			end
+		end
+	end
+
+	if color == nil then
+		return defaultFill, defaultOutline
+	end
+
+	return color:Lerp(Color3.new(1, 1, 1), 0.12), color:Lerp(Color3.new(1, 1, 1), 0.36)
+end
+
+local function getStructuresRoot()
+	return Workspace:FindFirstChild("Structures")
+end
+
+local function resolveStructureRoot(instance)
+	local structuresRoot = getStructuresRoot()
+	if typeof(instance) ~= "Instance" or structuresRoot == nil then
+		return nil
+	end
+
+	if instance.Parent == structuresRoot then
+		return instance
+	end
+
+	local current = instance
+	while current ~= nil and current.Parent ~= nil and current.Parent ~= structuresRoot do
+		current = current.Parent
+	end
+
+	if current ~= nil and current.Parent == structuresRoot then
+		return current
+	end
+
+	return nil
+end
+
+local function colorDistance(left, right)
+	return math.abs(left.R - right.R) + math.abs(left.G - right.G) + math.abs(left.B - right.B)
+end
+
+local function getLocalTeamColor()
+	local localPlayer = Players.LocalPlayer
+	if localPlayer == nil then
+		return nil
+	end
+
+	if localPlayer.Team ~= nil and localPlayer.Team.TeamColor ~= nil then
+		return localPlayer.Team.TeamColor.Color
+	elseif localPlayer.TeamColor ~= nil then
+		return localPlayer.TeamColor.Color
+	end
+
+	return nil
+end
+
+local function getStructureTeamText(structure)
+	local teamValue = structure:GetAttribute("Team")
+	local teamIndex = structure:GetAttribute("TeamIndex")
+	local teamText = nil
+
+	if typeof(teamValue) == "BrickColor" then
+		teamText = teamValue.Name
+	elseif type(teamValue) == "string" and teamValue ~= "" then
+		teamText = teamValue
+	elseif typeof(teamValue) == "Color3" then
+		teamText = "team color"
+	end
+
+	if teamText == nil or teamText == "" then
+		teamText = type(teamIndex) == "number" and ("Team %d"):format(teamIndex) or "unknown team"
+	elseif type(teamIndex) == "number" then
+		teamText = ("%s / Team %d"):format(teamText, teamIndex)
+	end
+
+	return teamText
+end
+
+local function getStructureTeamColor(structure)
+	local current = structure
+	while typeof(current) == "Instance" and current ~= nil and current ~= Workspace do
+		local color = readInstanceTeamColor(current)
+		if color ~= nil then
+			return color
+		end
+		current = current.Parent
+	end
+
+	return nil
+end
+
+local function isEnemyStructure(structure)
+	local teamColor = getStructureTeamColor(structure)
+	local localColor = getLocalTeamColor()
+	if teamColor == nil or localColor == nil then
+		return false
+	end
+
+	return colorDistance(teamColor, localColor) > 0.03
+end
+
+local function classifyIntelligenceStructure(structure)
+	if typeof(structure) ~= "Instance" then
+		return nil
+	end
+
+	local normalized = string.lower(structure.Name):gsub("[%p%s_]+", "")
+	if string.find(normalized, "ssim", 1, true) ~= nil then
+		return "S.S.I.M", "warning"
+	elseif string.find(normalized, "arsenal", 1, true) ~= nil then
+		return "Arsenal", "warning"
+	elseif string.find(normalized, "artillery", 1, true) ~= nil then
+		return "Artillery", "info"
+	elseif string.find(normalized, "bore", 1, true) ~= nil then
+		return "Bore", "info"
+	end
+
+	return nil
+end
+
+local function getStructureBuilderText(structure)
+	local builder = structure:GetAttribute("Builder")
+	if type(builder) == "string" and trimText(builder) ~= "" then
+		return builder
+	end
+
+	return "Unknown builder"
+end
+
+local function formatProductionValue(value)
+	if typeof(value) == "Instance" then
+		return value.Name
+	elseif typeof(value) == "BrickColor" then
+		return value.Name
+	elseif typeof(value) == "Color3" then
+		return "color value"
+	end
+
+	local text = trimText(tostring(value or ""))
+	if text == "" or text == "nil" then
+		return nil
+	end
+
+	return text
+end
+
+local PRODUCTION_ATTRIBUTES = {
+	"Producing",
+	"Production",
+	"CurrentProduction",
+	"CurrentRecipe",
+	"Recipe",
+	"Item",
+	"Product",
+	"Output",
+}
+
+local MACRO_STRUCTURE_KINDS = { "Arsenal", "S.S.I.M", "Artillery", "Bore" }
+
+local function readStructureProduction(structure)
+	for _, attributeName in ipairs(PRODUCTION_ATTRIBUTES) do
+		local value = formatProductionValue(structure:GetAttribute(attributeName))
+		if value ~= nil then
+			return value
+		end
+	end
+
+	return nil
+end
+
+local function readProductionCarrierValue(instance)
+	if typeof(instance) ~= "Instance" then
+		return nil
+	end
+
+	local normalized = string.lower(instance.Name):gsub("[%p%s_]+", "")
+	if string.find(normalized, "production", 1, true) == nil
+		and string.find(normalized, "producing", 1, true) == nil
+		and string.find(normalized, "recipe", 1, true) == nil
+		and string.find(normalized, "product", 1, true) == nil
+		and string.find(normalized, "output", 1, true) == nil then
+		return nil
+	end
+
+	if instance:IsA("ValueBase") then
+		local ok, value = pcall(function()
+			return instance.Value
+		end)
+		if ok then
+			return formatProductionValue(value)
+		end
+	end
+
+	return formatProductionValue(instance:GetAttribute("Value") or instance:GetAttribute("Item") or instance:GetAttribute("Product"))
+end
+
+local function getMacroKey(text)
+	return string.lower(tostring(text or "")):gsub("[%p%s_]+", "")
+end
+
+local function normalizeMacroArgs(value, context)
+	if type(value) == "function" then
+		local generated = value(context)
+		if type(generated) == "table" then
+			return generated
+		end
+		return { generated }
+	elseif type(value) == "table" then
+		return value
+	end
+
+	return { context.weaponName, context.structure }
+end
+
+local function runMacroRemote(spec, context)
+	local remote = spec.Remote or spec.remote
+	if typeof(remote) ~= "Instance" then
+		local path = spec.Path or spec.path
+		if type(path) ~= "string" or trimText(path) == "" then
+			return false, "Macro remote path missing"
+		end
+		remote = resolveInstanceByPath(path)
+	end
+
+	local method = spec.Method or spec.method
+	if method == nil or method == "" then
+		method = remote:IsA("RemoteFunction") and "InvokeServer" or "FireServer"
+	end
+	if method ~= "FireServer" and method ~= "InvokeServer" then
+		return false, "Macro remote method must be FireServer or InvokeServer"
+	end
+
+	local args = normalizeMacroArgs(spec.Args or spec.args, context)
+	local unpackArgs = table.unpack or unpack
+	if method == "InvokeServer" then
+		return true, remote:InvokeServer(unpackArgs(args))
+	end
+
+	remote:FireServer(unpackArgs(args))
+	return true, "Remote fired"
+end
+
 local function appendSection(lines, title)
 	if #lines > 0 then
 		table.insert(lines, "")
@@ -964,6 +1416,12 @@ local function makeState(config)
 		aimTargetPart = "nearest",
 		aimLockedPlayerName = "",
 		aimLockedPartName = "",
+		autoFireEnabled = false,
+		autoFireRange = 120,
+		autoFireCooldown = 0.22,
+		autoFireLastAt = 0,
+		autoFireLastNotifyAt = 0,
+		autoFireStatus = "Auto-fire idle",
 		ghostCharacterEnabled = false,
 		ghostCharacter = nil,
 		ghostCharacters = {},
@@ -2716,6 +3174,26 @@ local function createGui(state)
 		Visible = false,
 	})
 
+	do
+		local autoFireSection = NativeUi.create("Frame", {
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 168),
+			Parent = gunsContent,
+		})
+
+		addSectionTitle(autoFireSection, "Auto Fire")
+		refs.autoFireToggle = makeToggleRow(autoFireSection, 40, "Enable Auto Fire", "Finds an enemy in range and calls your configured fire handler.")
+		refs.autoFireRangeSlider = makeSliderRow(autoFireSection, 88, "Range")
+		refs.autoFireStatusLabel = NativeUi.makeLabel(autoFireSection, "Auto-fire idle", {
+			Font = Enum.Font.Code,
+			TextColor3 = NativeUi.Theme.TextMuted,
+			TextSize = 12,
+			Position = UDim2.fromOffset(12, 150),
+			Size = UDim2.new(1, -24, 0, 16),
+		})
+	end
+
 	local gunUtilitySection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -2822,39 +3300,37 @@ local function createGui(state)
 		Size = UDim2.new(1, -24, 0, 0),
 	})
 
-	local buildMacroSection = NativeUi.create("Frame", {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 220),
-		Parent = buildingContent,
-	})
+	do
+		local buildMacroSection = NativeUi.create("Frame", {
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 0, 220),
+			Parent = buildingContent,
+		})
 
-	addSectionTitle(buildMacroSection, "Structure Macros")
+		addSectionTitle(buildMacroSection, "Structure Macros")
 
-	local structureMacroToggle = makeToggleRow(buildMacroSection, 40, "Enable Macro", "Highlights the selected structure type and runs the configured action when you enter range.")
-
-	local structureMacroTargetButton = NativeUi.makeButton(buildMacroSection, "Target: Arsenal", {
-		Position = UDim2.fromOffset(12, 88),
-		Size = UDim2.fromOffset(140, 30),
-		TextSize = 12,
-	})
-
-	local structureMacroWeaponBox = NativeUi.makeTextBox(buildMacroSection, "", {
-		PlaceholderText = "Weapon name",
-		Position = UDim2.new(0, 164, 0, 88),
-		Size = UDim2.new(1, -176, 0, 30),
-		TextSize = 12,
-	})
-
-	local structureMacroRangeSlider = makeSliderRow(buildMacroSection, 128, "Trigger Range")
-
-	local structureMacroStatusLabel = NativeUi.makeLabel(buildMacroSection, "Macro idle", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(12, 194),
-		Size = UDim2.new(1, -24, 0, 16),
-	})
+		refs.structureMacroToggle = makeToggleRow(buildMacroSection, 40, "Enable Macro", "Highlights the selected structure type and runs the configured action when you enter range.")
+		refs.structureMacroTargetButton = NativeUi.makeButton(buildMacroSection, "Target: Arsenal", {
+			Position = UDim2.fromOffset(12, 88),
+			Size = UDim2.fromOffset(140, 30),
+			TextSize = 12,
+		})
+		refs.structureMacroWeaponBox = NativeUi.makeTextBox(buildMacroSection, "", {
+			PlaceholderText = "Weapon name",
+			Position = UDim2.new(0, 164, 0, 88),
+			Size = UDim2.new(1, -176, 0, 30),
+			TextSize = 12,
+		})
+		refs.structureMacroRangeSlider = makeSliderRow(buildMacroSection, 128, "Trigger Range")
+		refs.structureMacroStatusLabel = NativeUi.makeLabel(buildMacroSection, "Macro idle", {
+			Font = Enum.Font.Code,
+			TextColor3 = NativeUi.Theme.TextMuted,
+			TextSize = 12,
+			Position = UDim2.fromOffset(12, 194),
+			Size = UDim2.new(1, -24, 0, 16),
+		})
+	end
 
 	local rightResizeHandle = NativeUi.create("TextButton", {
 		Active = true,
@@ -3291,11 +3767,6 @@ local function createGui(state)
 	refs.fullBrightToggle = fullBrightToggle
 	refs.noFallDamageToggle = noFallDamageToggle
 	refs.noOceanDamageToggle = noOceanDamageToggle
-	refs.structureMacroToggle = structureMacroToggle
-	refs.structureMacroTargetButton = structureMacroTargetButton
-	refs.structureMacroWeaponBox = structureMacroWeaponBox
-	refs.structureMacroRangeSlider = structureMacroRangeSlider
-	refs.structureMacroStatusLabel = structureMacroStatusLabel
 	refs.inspectorInfoLabel = inspectorInfoLabel
 
 	return refs
@@ -3389,35 +3860,6 @@ function BytecodeViewer.start(config)
 		refs.inspectorStatusLabel.Text = text
 		refs.inspectorStatusLabel.TextColor3 = color or Color3.fromRGB(241, 232, 214)
 		setSuiteStatus(text, color or NativeUi.Theme.TextMuted)
-	end
-
-	local function normalizeNotificationLevel(level)
-		level = string.lower(tostring(level or "info"))
-		if level == "danger" or level == "error" then
-			return "critical"
-		elseif level == "warn" then
-			return "warning"
-		elseif level == "ok" then
-			return "success"
-		elseif level == "critical" or level == "warning" or level == "success" or level == "info" then
-			return level
-		end
-
-		return "info"
-	end
-
-	local function notificationPriority(level)
-		if level == "critical" then
-			return 50
-		elseif level == "warning" then
-			return 40
-		elseif level == "success" then
-			return 30
-		elseif level == "info" then
-			return 20
-		end
-
-		return 10
 	end
 
 	local function pruneNotifications()
@@ -3525,6 +3967,8 @@ function BytecodeViewer.start(config)
 	dartApi.MacroHandlers = type(dartApi.MacroHandlers) == "table" and dartApi.MacroHandlers or {}
 	dartApi.MacroRemotes = type(dartApi.MacroRemotes) == "table" and dartApi.MacroRemotes or {}
 	dartApi.Macros = type(dartApi.Macros) == "table" and dartApi.Macros or {}
+	dartApi.AutoFireHandlers = type(dartApi.AutoFireHandlers) == "table" and dartApi.AutoFireHandlers or {}
+	dartApi.AutoFireRemotes = type(dartApi.AutoFireRemotes) == "table" and dartApi.AutoFireRemotes or {}
 
 	trackCleanup(function()
 		if scope.Dart == dartApi then
@@ -3563,43 +4007,6 @@ function BytecodeViewer.start(config)
 		end
 
 		return Players:FindFirstChild(state.selectedPlayerName)
-	end
-
-	local function getLocalCharacter()
-		local player = Players.LocalPlayer
-		return player and player.Character or nil
-	end
-
-	local function getLocalHumanoid()
-		local character = getLocalCharacter()
-		return character and character:FindFirstChildOfClass("Humanoid") or nil
-	end
-
-	local function getCurrentCamera()
-		return Workspace.CurrentCamera
-	end
-
-	local function getCharacterRootPart(character)
-		if character == nil then
-			return nil
-		end
-
-		return character:FindFirstChild("HumanoidRootPart")
-			or character:FindFirstChild("UpperTorso")
-			or character:FindFirstChild("Torso")
-			or character.PrimaryPart
-	end
-
-	local function getCharacterCameraSubject(character)
-		if character == nil then
-			return nil
-		end
-
-		return character:FindFirstChildOfClass("Humanoid") or getCharacterRootPart(character)
-	end
-
-	local function getPlayerRootPart(player)
-		return getCharacterRootPart(player and player.Character or nil)
 	end
 
 	local function setCameraSubjectToCharacter(character)
@@ -5119,9 +5526,9 @@ function BytecodeViewer.start(config)
 			signal.width = focusedPlayer and 326 or 242
 		elseif state.activeTab == "guns" then
 			signal.title = "Combat"
-			signal.detail = state.aimbotEnabled and "Ctrl lock armed" or "Scoped settings idle"
-			signal.badge = state.aimbotEnabled and "ARMED" or "SAFE"
-			signal.level = state.aimbotEnabled and "warning" or "info"
+			signal.detail = state.autoFireEnabled and "Auto-fire armed" or (state.aimbotEnabled and "Ctrl lock armed" or "Scoped settings idle")
+			signal.badge = (state.autoFireEnabled or state.aimbotEnabled) and "ARMED" or "SAFE"
+			signal.level = (state.autoFireEnabled or state.aimbotEnabled) and "warning" or "info"
 			signal.width = 300
 		elseif state.activeTab == "build" then
 			signal.title = "Build"
@@ -5201,9 +5608,9 @@ function BytecodeViewer.start(config)
 				color = signal.color,
 			},
 			{
-				level = state.aimbotEnabled and "warning" or "info",
-				title = state.aimbotEnabled and "Combat armed" or "Combat idle",
-				detail = state.aimbotEnabled and "Ctrl lock can acquire targets" or "Aimbot disabled",
+				level = (state.aimbotEnabled or state.autoFireEnabled) and "warning" or "info",
+				title = (state.aimbotEnabled or state.autoFireEnabled) and "Combat armed" or "Combat idle",
+				detail = state.autoFireEnabled and "Auto-fire can call configured remotes" or (state.aimbotEnabled and "Ctrl lock can acquire targets" or "Aimbot disabled"),
 			},
 			{
 				level = anyEspSignalEnabled() and "warning" or "info",
@@ -5571,6 +5978,206 @@ function BytecodeViewer.start(config)
 		end
 
 		return false
+	end
+
+	local function setAutoFireStatus(text, color)
+		state.autoFireStatus = tostring(text or "Auto-fire idle")
+		if refs.autoFireStatusLabel ~= nil then
+			refs.autoFireStatusLabel.Text = state.autoFireStatus
+			refs.autoFireStatusLabel.TextColor3 = color or NativeUi.Theme.TextMuted
+		end
+	end
+
+	local function getAutoFireTargetPart(character)
+		local candidates = getAimCandidatesForCharacter(character, state.aimTargetPart)
+		return candidates[1]
+	end
+
+	local function getNearestAutoFireTarget()
+		local localRoot = getPlayerRootPart(Players.LocalPlayer)
+		if localRoot == nil then
+			return nil, nil, nil
+		end
+
+		local bestPlayer = nil
+		local bestPart = nil
+		local bestDistance = math.huge
+		for _, player in ipairs(Players:GetPlayers()) do
+			if not shouldSkipAimbotPlayer(player) then
+				local root = getPlayerRootPart(player)
+				local targetPart = getAutoFireTargetPart(player.Character)
+				if root ~= nil and targetPart ~= nil then
+					local distance = (root.Position - localRoot.Position).Magnitude
+					if distance <= state.autoFireRange and distance < bestDistance then
+						bestPlayer = player
+						bestPart = targetPart
+						bestDistance = distance
+					end
+				end
+			end
+		end
+
+		return bestPlayer, bestPart, bestDistance
+	end
+
+	local function getAutoFireKey(text)
+		return string.lower(tostring(text or "")):gsub("[%p%s_]+", "")
+	end
+
+	local function getAutoFireHandler(weaponName)
+		local key = getAutoFireKey(weaponName)
+		local handlerTables = {
+			config.AutoFireHandlers,
+			dartApi.AutoFireHandlers,
+		}
+
+		for _, handlerTable in ipairs(handlerTables) do
+			if type(handlerTable) == "table" then
+				local handler = handlerTable[weaponName] or handlerTable[key] or handlerTable.default
+				if type(handler) == "function" then
+					return handler
+				end
+			end
+		end
+
+		if type(config.AutoFireHandler) == "function" then
+			return config.AutoFireHandler
+		elseif type(dartApi.AutoFireHandler) == "function" then
+			return dartApi.AutoFireHandler
+		elseif type(dartApi.FireGun) == "function" then
+			return dartApi.FireGun
+		end
+
+		return nil
+	end
+
+	local function getAutoFireRemoteSpec(weaponName)
+		local key = getAutoFireKey(weaponName)
+		local specTables = {
+			config.AutoFireRemotes,
+			dartApi.AutoFireRemotes,
+		}
+
+		for _, specTable in ipairs(specTables) do
+			if type(specTable) == "table" then
+				local spec = specTable[weaponName] or specTable[key] or specTable.default
+				if type(spec) == "table" then
+					return spec
+				end
+			end
+		end
+
+		if type(config.AutoFireRemote) == "table" then
+			return config.AutoFireRemote
+		elseif type(dartApi.AutoFireRemote) == "table" then
+			return dartApi.AutoFireRemote
+		end
+
+		return nil
+	end
+
+	local function normalizeAutoFireArgs(value, context)
+		if type(value) == "function" then
+			local generated = value(context)
+			if type(generated) == "table" then
+				return generated
+			end
+			return { generated }
+		elseif type(value) == "table" then
+			return value
+		end
+
+		return { context.targetPart, context.targetPosition, context.player }
+	end
+
+	local function runAutoFireRemote(spec, context)
+		local remote = spec.Remote or spec.remote
+		if typeof(remote) ~= "Instance" then
+			local path = spec.Path or spec.path
+			if type(path) ~= "string" or trimText(path) == "" then
+				return false, "Auto-fire remote path missing"
+			end
+			remote = resolveInstanceByPath(path)
+		end
+
+		local method = spec.Method or spec.method
+		if method == nil or method == "" then
+			method = remote:IsA("RemoteFunction") and "InvokeServer" or "FireServer"
+		end
+		if method ~= "FireServer" and method ~= "InvokeServer" then
+			return false, "Auto-fire remote method must be FireServer or InvokeServer"
+		end
+
+		local args = normalizeAutoFireArgs(spec.Args or spec.args, context)
+		local unpackArgs = table.unpack or unpack
+		if method == "InvokeServer" then
+			return true, remote:InvokeServer(unpackArgs(args))
+		end
+
+		remote:FireServer(unpackArgs(args))
+		return true, "Remote fired"
+	end
+
+	local function updateAutoFire()
+		if not state.autoFireEnabled then
+			return
+		end
+
+		local player, targetPart, distance = getNearestAutoFireTarget()
+		if player == nil or targetPart == nil then
+			setAutoFireStatus("No enemy in range")
+			return
+		end
+
+		local now = os.clock()
+		if now - state.autoFireLastAt < state.autoFireCooldown then
+			return
+		end
+		state.autoFireLastAt = now
+
+		local weaponName = getKnownPlayerWeapon(Players.LocalPlayer) or "weapon"
+		local context = {
+			player = player,
+			character = player.Character,
+			targetPart = targetPart,
+			targetPosition = targetPart.Position,
+			distance = distance,
+			weaponName = weaponName,
+			localPlayer = Players.LocalPlayer,
+			team = getPlayerTeamText(player),
+			state = state,
+		}
+
+		local handler = getAutoFireHandler(weaponName)
+		local ok, result
+		if handler ~= nil then
+			local handlerResults = { pcall(handler, context) }
+			ok = handlerResults[1] and handlerResults[2] ~= false
+			result = handlerResults[3] or handlerResults[2]
+		else
+			local spec = getAutoFireRemoteSpec(weaponName)
+			if spec ~= nil then
+				local remoteResults = { pcall(runAutoFireRemote, spec, context) }
+				ok = remoteResults[1] and remoteResults[2] == true
+				result = remoteResults[3] or remoteResults[2]
+			else
+				ok = false
+				result = "No auto-fire handler configured"
+			end
+		end
+
+		if ok then
+			setAutoFireStatus(
+				("Fired at %s [%s] %dm"):format(player.Name, targetPart.Name, math.floor(distance + 0.5)),
+				NativeUi.Theme.Success
+			)
+		else
+			setAutoFireStatus(tostring(result), NativeUi.Theme.Warning)
+			if now - state.autoFireLastNotifyAt > 8 then
+				state.autoFireLastNotifyAt = now
+				emitNotification("warning", "Auto-fire handler missing", tostring(result), { duration = 4 })
+			end
+		end
 	end
 
 	local function getActiveTargetText()
@@ -6836,77 +7443,85 @@ function BytecodeViewer.start(config)
 		}
 	end
 
-	local walkSpeedSlider = bindSlider(refs.walkSlider, 0, 200, state.walkSpeedValue, 1, function(value)
+	refs.walkSpeedController = bindSlider(refs.walkSlider, 0, 200, state.walkSpeedValue, 1, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.walkSpeedValue = value
 	end)
 
-	local jumpPowerSlider = bindSlider(refs.jumpSlider, 0, 250, state.jumpPowerValue, 1, function(value)
+	refs.jumpPowerController = bindSlider(refs.jumpSlider, 0, 250, state.jumpPowerValue, 1, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.jumpPowerValue = value
 	end)
 
-	local hipHeightSlider = bindSlider(refs.hipSlider, -5, 25, state.hipHeightValue, 0.5, function(value)
+	refs.hipHeightController = bindSlider(refs.hipSlider, -5, 25, state.hipHeightValue, 0.5, function(value)
 		return string.format("%.1f", value)
 	end, function(value)
 		state.hipHeightValue = value
 	end)
 
-	local gravitySlider = bindSlider(refs.gravitySlider, 0, 400, state.gravityValue, 1, function(value)
+	refs.gravityController = bindSlider(refs.gravitySlider, 0, 400, state.gravityValue, 1, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.gravityValue = value
 	end)
 
-	local ghostFlySpeedSlider = bindSlider(refs.ghostFlySpeedSlider, 8, 180, state.ghostFlySpeed, 1, function(value)
+	refs.ghostFlySpeedController = bindSlider(refs.ghostFlySpeedSlider, 8, 180, state.ghostFlySpeed, 1, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.ghostFlySpeed = value
 	end)
 
-	local freeCameraSpeedSlider = bindSlider(refs.freeCameraSpeedSlider, 8, 220, state.freeCameraSpeed, 1, function(value)
+	refs.freeCameraSpeedController = bindSlider(refs.freeCameraSpeedSlider, 8, 220, state.freeCameraSpeed, 1, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.freeCameraSpeed = value
 	end)
 
-	local freeCameraFastSpeedSlider = bindSlider(refs.freeCameraFastSpeedSlider, 16, 360, state.freeCameraFastSpeed, 1, function(value)
+	refs.freeCameraFastSpeedController = bindSlider(refs.freeCameraFastSpeedSlider, 16, 360, state.freeCameraFastSpeed, 1, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.freeCameraFastSpeed = value
 	end)
 
-	local iridiumSlider = bindSlider(refs.iridiumSlider, 0, 1, state.iridiumMinFullness, 0.05, function(value)
+	refs.autoFireRangeController = bindSlider(refs.autoFireRangeSlider, 20, 500, state.autoFireRange, 5, function(value)
+		return tostring(math.floor(value + 0.5))
+	end, function(value)
+		state.autoFireRange = value
+	end)
+
+	refs.iridiumController = bindSlider(refs.iridiumSlider, 0, 1, state.iridiumMinFullness, 0.05, function(value)
 		return string.format("%.2f", value)
 	end, function(value)
 		state.iridiumMinFullness = value
 	end)
 
-	local wellDistanceSlider = bindSlider(refs.wellDistanceSlider, 50, 2000, state.wellDistance, 25, function(value)
+	refs.wellDistanceController = bindSlider(refs.wellDistanceSlider, 50, 2000, state.wellDistance, 25, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.wellDistance = value
 	end)
 
-	local structureMacroRangeSlider = bindSlider(refs.structureMacroRangeSlider, 6, 120, state.macroRange, 1, function(value)
+	refs.structureMacroRangeController = bindSlider(refs.structureMacroRangeSlider, 6, 120, state.macroRange, 1, function(value)
 		return tostring(math.floor(value + 0.5))
 	end, function(value)
 		state.macroRange = value
 	end)
 
-	local refreshPlayersList
-	local refreshEspPlayersList
-	local highlightInstances = {}
-	local playerCharacterConnections = {}
-	local playerTeamConnections = {}
-	local reconcileObjectHighlights
-	local distanceRefreshAccumulator = 0
-	local lastDistanceRefreshPosition = nil
-	local objectRefreshQueued = false
-	local macroHeartbeatAccumulator = 0
-	local MACRO_STRUCTURE_KINDS = { "Arsenal", "S.S.I.M", "Artillery", "Bore" }
+	local runtime = {
+		highlightInstances = {},
+		playerCharacterConnections = {},
+		playerTeamConnections = {},
+		refreshPlayersList = nil,
+		refreshEspPlayersList = nil,
+		reconcileObjectHighlights = nil,
+		distanceRefreshAccumulator = 0,
+		lastDistanceRefreshPosition = nil,
+		objectRefreshQueued = false,
+		autoFireHeartbeatAccumulator = 0,
+		macroHeartbeatAccumulator = 0,
+	}
 	local espObjectCache = {
 		named = {
 			spawnPoint = {
@@ -6949,52 +7564,6 @@ function BytecodeViewer.start(config)
 		},
 	}
 
-	local function getHighlightCarrier(instance)
-		if typeof(instance) ~= "Instance" then
-			return nil
-		end
-
-		if instance:IsA("Model") or instance:IsA("BasePart") then
-			return instance
-		end
-
-		return instance:FindFirstAncestorWhichIsA("Model") or instance:FindFirstAncestorWhichIsA("BasePart")
-	end
-
-	local function getInstancePosition(instance)
-		if typeof(instance) ~= "Instance" then
-			return nil
-		end
-
-		if instance:IsA("BasePart") then
-			return instance.Position
-		end
-
-		if instance:IsA("Model") then
-			if instance.PrimaryPart then
-				return instance.PrimaryPart.Position
-			end
-
-			local ok, pivot = pcall(function()
-				return instance:GetPivot()
-			end)
-
-			if ok and pivot then
-				return pivot.Position
-			end
-
-			local part = instance:FindFirstChildWhichIsA("BasePart", true)
-			return part and part.Position or nil
-		end
-
-		local carrier = getHighlightCarrier(instance)
-		if carrier ~= nil and carrier ~= instance then
-			return getInstancePosition(carrier)
-		end
-
-		return nil
-	end
-
 	local function getLocalRootPosition()
 		local character = getLocalCharacter()
 		if character == nil then
@@ -7009,32 +7578,7 @@ function BytecodeViewer.start(config)
 		return getInstancePosition(character)
 	end
 
-	local function getInstanceKey(instance)
-		if typeof(instance) ~= "Instance" then
-			return tostring(instance)
-		end
-
-		local ok, debugId = pcall(function()
-			return instance:GetDebugId(0)
-		end)
-
-		if ok and type(debugId) == "string" and debugId ~= "" then
-			return debugId
-		end
-
-		return instance:GetFullName()
-	end
-
-	local function disconnectConnectionMap(connectionMap)
-		for key, connection in pairs(connectionMap) do
-			pcall(function()
-				connection:Disconnect()
-			end)
-			connectionMap[key] = nil
-		end
-	end
-
-	local function anyObjectEspEnabled()
+	function runtime.anyObjectEspEnabled()
 		for _, enabled in pairs(state.espObjectToggles) do
 			if enabled then
 				return true
@@ -7044,26 +7588,26 @@ function BytecodeViewer.start(config)
 		return false
 	end
 
-	local function removeHighlight(key)
-		local highlight = highlightInstances[key]
+	function runtime.removeHighlight(key)
+		local highlight = runtime.highlightInstances[key]
 		if highlight ~= nil then
-			highlightInstances[key] = nil
+			runtime.highlightInstances[key] = nil
 			pcall(function()
 				highlight:Destroy()
 			end)
 		end
 	end
 
-	local function ensureHighlight(key, target, fillColor, outlineColor)
+	function runtime.ensureHighlight(key, target, fillColor, outlineColor)
 		local carrier = getHighlightCarrier(target)
 		if carrier == nil or carrier.Parent == nil then
-			removeHighlight(key)
+			runtime.removeHighlight(key)
 			return
 		end
 
-		local highlight = highlightInstances[key]
+		local highlight = runtime.highlightInstances[key]
 		if highlight == nil or highlight.Parent ~= carrier then
-			removeHighlight(key)
+			runtime.removeHighlight(key)
 			highlight = Instance.new("Highlight")
 			highlight.Name = "DartEspHighlight"
 			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -7071,7 +7615,7 @@ function BytecodeViewer.start(config)
 			highlight.OutlineTransparency = 0
 			highlight.Parent = carrier
 			highlight.Adornee = carrier
-			highlightInstances[key] = highlight
+			runtime.highlightInstances[key] = highlight
 		end
 
 		highlight.FillColor = fillColor
@@ -7079,60 +7623,40 @@ function BytecodeViewer.start(config)
 		highlight.Enabled = true
 	end
 
-	local function scheduleObjectReconcile()
-		if reconcileObjectHighlights == nil or objectRefreshQueued or cleaning or not anyObjectEspEnabled() then
+	function runtime.scheduleObjectReconcile()
+		if runtime.reconcileObjectHighlights == nil or runtime.objectRefreshQueued or cleaning or not runtime.anyObjectEspEnabled() then
 			return
 		end
 
-		objectRefreshQueued = true
+		runtime.objectRefreshQueued = true
 		task.defer(function()
-			objectRefreshQueued = false
+			runtime.objectRefreshQueued = false
 			if cleaning or refs.main == nil or refs.main.Parent == nil then
 				return
 			end
 
-			reconcileObjectHighlights()
+			runtime.reconcileObjectHighlights()
 		end)
 	end
 
-	local function reconcileDesiredHighlights(prefix, desired)
+	function runtime.reconcileDesiredHighlights(prefix, desired)
 		for key, spec in pairs(desired) do
-			ensureHighlight(key, spec.target, spec.fillColor, spec.outlineColor)
+			runtime.ensureHighlight(key, spec.target, spec.fillColor, spec.outlineColor)
 		end
 
 		local toRemove = {}
-		for key in pairs(highlightInstances) do
+		for key in pairs(runtime.highlightInstances) do
 			if string.sub(key, 1, #prefix) == prefix and desired[key] == nil then
 				table.insert(toRemove, key)
 			end
 		end
 
 		for _, key in ipairs(toRemove) do
-			removeHighlight(key)
+			runtime.removeHighlight(key)
 		end
 	end
 
-	local function scanNamedTargets(root, targetName)
-		local targets = {}
-		if typeof(root) ~= "Instance" then
-			return targets
-		end
-
-		local seen = {}
-		for _, descendant in ipairs(root:GetDescendants()) do
-			if descendant.Name == targetName then
-				local carrier = getHighlightCarrier(descendant)
-				if carrier ~= nil and not seen[carrier] then
-					seen[carrier] = true
-					table.insert(targets, carrier)
-				end
-			end
-		end
-
-		return targets
-	end
-
-	local function markNamedTargetDirty(cacheKey, refreshNow)
+	function runtime.markNamedTargetDirty(cacheKey, refreshNow)
 		local entry = espObjectCache.named[cacheKey]
 		if entry == nil then
 			return
@@ -7140,18 +7664,18 @@ function BytecodeViewer.start(config)
 
 		entry.dirty = true
 		if refreshNow then
-			scheduleObjectReconcile()
+			runtime.scheduleObjectReconcile()
 		end
 	end
 
-	local function markIridiumDirty(refreshNow)
+	function runtime.markIridiumDirty(refreshNow)
 		espObjectCache.iridium.dirty = true
 		if refreshNow then
-			scheduleObjectReconcile()
+			runtime.scheduleObjectReconcile()
 		end
 	end
 
-	local function getNamedTargets(cacheKey)
+	function runtime.getNamedTargets(cacheKey)
 		local entry = espObjectCache.named[cacheKey]
 		if entry == nil then
 			return {}
@@ -7165,7 +7689,7 @@ function BytecodeViewer.start(config)
 		return entry.carriers
 	end
 
-	local function bindIridiumAttribute(descendant)
+	function runtime.bindIridiumAttribute(descendant)
 		if espObjectCache.iridium.attributeConnections[descendant] ~= nil then
 			return
 		end
@@ -7176,12 +7700,12 @@ function BytecodeViewer.start(config)
 
 		if ok and signal ~= nil then
 			espObjectCache.iridium.attributeConnections[descendant] = signal:Connect(function()
-				markIridiumDirty(state.espObjectToggles.iridium)
+				runtime.markIridiumDirty(state.espObjectToggles.iridium)
 			end)
 		end
 	end
 
-	local function collectIridiumTargets()
+	function runtime.collectIridiumTargets()
 		if espObjectCache.iridium.dirty then
 			disconnectConnectionMap(espObjectCache.iridium.attributeConnections)
 
@@ -7191,7 +7715,7 @@ function BytecodeViewer.start(config)
 				for _, descendant in ipairs(resources:GetDescendants()) do
 					local fullness = descendant:GetAttribute("CrystalFullness")
 					if type(fullness) == "number" then
-						bindIridiumAttribute(descendant)
+						runtime.bindIridiumAttribute(descendant)
 
 						local carrier = getHighlightCarrier(descendant)
 						if carrier ~= nil then
@@ -7226,14 +7750,14 @@ function BytecodeViewer.start(config)
 		return targets
 	end
 
-	local function collectDistanceTargets(cacheKey, maxDistance)
+	function runtime.collectDistanceTargets(cacheKey, maxDistance)
 		local targets = {}
 		local localPosition = getLocalRootPosition()
 		if localPosition == nil then
 			return targets
 		end
 
-		for _, carrier in ipairs(getNamedTargets(cacheKey)) do
+		for _, carrier in ipairs(runtime.getNamedTargets(cacheKey)) do
 			local position = getInstancePosition(carrier)
 			if carrier.Parent ~= nil and position ~= nil and (position - localPosition).Magnitude <= maxDistance then
 				table.insert(targets, carrier)
@@ -7241,253 +7765,6 @@ function BytecodeViewer.start(config)
 		end
 
 		return targets
-	end
-
-	local function getPlayerHighlightColors(player)
-		local baseColor = NativeUi.Theme.Accent
-		if player.Team ~= nil and player.Team.TeamColor ~= nil then
-			baseColor = player.Team.TeamColor.Color
-		elseif player.TeamColor ~= nil then
-			baseColor = player.TeamColor.Color
-		end
-
-		return baseColor:Lerp(Color3.new(1, 1, 1), 0.08), baseColor:Lerp(Color3.new(1, 1, 1), 0.34)
-	end
-
-	local function resolveTeamAttributeColor(value)
-		if typeof(value) == "BrickColor" then
-			return value.Color
-		end
-
-		if typeof(value) == "Color3" then
-			return value
-		end
-
-		if type(value) == "string" and value ~= "" then
-			local ok, brickColor = pcall(function()
-				return BrickColor.new(value)
-			end)
-			if ok and brickColor ~= nil then
-				return brickColor.Color
-			end
-		end
-
-		return nil
-	end
-
-	local function readInstanceTeamColor(instance)
-		if typeof(instance) ~= "Instance" then
-			return nil
-		end
-
-		return resolveTeamAttributeColor(instance:GetAttribute("Team"))
-	end
-
-	local function getStructureHighlightColors(target, defaultFill, defaultOutline)
-		local color = readInstanceTeamColor(target)
-		local current = target
-		while color == nil and typeof(current) == "Instance" and current.Parent ~= nil and current ~= Workspace do
-			current = current.Parent
-			color = readInstanceTeamColor(current)
-		end
-
-		if color == nil and typeof(target) == "Instance" and target:IsA("Model") then
-			for _, descendant in ipairs(target:GetDescendants()) do
-				color = readInstanceTeamColor(descendant)
-				if color ~= nil then
-					break
-				end
-			end
-		end
-
-		if color == nil then
-			return defaultFill, defaultOutline
-		end
-
-		return color:Lerp(Color3.new(1, 1, 1), 0.12), color:Lerp(Color3.new(1, 1, 1), 0.36)
-	end
-
-	local function getStructuresRoot()
-		return Workspace:FindFirstChild("Structures")
-	end
-
-	local function resolveStructureRoot(instance)
-		local structuresRoot = getStructuresRoot()
-		if typeof(instance) ~= "Instance" or structuresRoot == nil then
-			return nil
-		end
-
-		if instance.Parent == structuresRoot then
-			return instance
-		end
-
-		local current = instance
-		while current ~= nil and current.Parent ~= nil and current.Parent ~= structuresRoot do
-			current = current.Parent
-		end
-
-		if current ~= nil and current.Parent == structuresRoot then
-			return current
-		end
-
-		return nil
-	end
-
-	local function colorDistance(left, right)
-		return math.abs(left.R - right.R) + math.abs(left.G - right.G) + math.abs(left.B - right.B)
-	end
-
-	local function getLocalTeamColor()
-		local localPlayer = Players.LocalPlayer
-		if localPlayer == nil then
-			return nil
-		end
-
-		if localPlayer.Team ~= nil and localPlayer.Team.TeamColor ~= nil then
-			return localPlayer.Team.TeamColor.Color
-		elseif localPlayer.TeamColor ~= nil then
-			return localPlayer.TeamColor.Color
-		end
-
-		return nil
-	end
-
-	local function getStructureTeamText(structure)
-		local teamValue = structure:GetAttribute("Team")
-		local teamIndex = structure:GetAttribute("TeamIndex")
-		local teamText = nil
-
-		if typeof(teamValue) == "BrickColor" then
-			teamText = teamValue.Name
-		elseif type(teamValue) == "string" and teamValue ~= "" then
-			teamText = teamValue
-		elseif typeof(teamValue) == "Color3" then
-			teamText = "team color"
-		end
-
-		if teamText == nil or teamText == "" then
-			teamText = type(teamIndex) == "number" and ("Team %d"):format(teamIndex) or "unknown team"
-		elseif type(teamIndex) == "number" then
-			teamText = ("%s / Team %d"):format(teamText, teamIndex)
-		end
-
-		return teamText
-	end
-
-	local function getStructureTeamColor(structure)
-		local current = structure
-		while typeof(current) == "Instance" and current ~= nil and current ~= Workspace do
-			local color = readInstanceTeamColor(current)
-			if color ~= nil then
-				return color
-			end
-			current = current.Parent
-		end
-
-		return nil
-	end
-
-	local function isEnemyStructure(structure)
-		local teamColor = getStructureTeamColor(structure)
-		local localColor = getLocalTeamColor()
-		if teamColor == nil or localColor == nil then
-			return false
-		end
-
-		return colorDistance(teamColor, localColor) > 0.03
-	end
-
-	local function classifyIntelligenceStructure(structure)
-		if typeof(structure) ~= "Instance" then
-			return nil
-		end
-
-		local normalized = string.lower(structure.Name):gsub("[%p%s_]+", "")
-		if string.find(normalized, "ssim", 1, true) ~= nil then
-			return "S.S.I.M", "warning"
-		elseif string.find(normalized, "arsenal", 1, true) ~= nil then
-			return "Arsenal", "warning"
-		elseif string.find(normalized, "artillery", 1, true) ~= nil then
-			return "Artillery", "info"
-		elseif string.find(normalized, "bore", 1, true) ~= nil then
-			return "Bore", "info"
-		end
-
-		return nil
-	end
-
-	local function getStructureBuilderText(structure)
-		local builder = structure:GetAttribute("Builder")
-		if type(builder) == "string" and trimText(builder) ~= "" then
-			return builder
-		end
-
-		return "Unknown builder"
-	end
-
-	local function formatProductionValue(value)
-		if typeof(value) == "Instance" then
-			return value.Name
-		elseif typeof(value) == "BrickColor" then
-			return value.Name
-		elseif typeof(value) == "Color3" then
-			return "color value"
-		end
-
-		local text = trimText(tostring(value or ""))
-		if text == "" or text == "nil" then
-			return nil
-		end
-
-		return text
-	end
-
-	local PRODUCTION_ATTRIBUTES = {
-		"Producing",
-		"Production",
-		"CurrentProduction",
-		"CurrentRecipe",
-		"Recipe",
-		"Item",
-		"Product",
-		"Output",
-	}
-
-	local function readStructureProduction(structure)
-		for _, attributeName in ipairs(PRODUCTION_ATTRIBUTES) do
-			local value = formatProductionValue(structure:GetAttribute(attributeName))
-			if value ~= nil then
-				return value
-			end
-		end
-
-		return nil
-	end
-
-	local function readProductionCarrierValue(instance)
-		if typeof(instance) ~= "Instance" then
-			return nil
-		end
-
-		local normalized = string.lower(instance.Name):gsub("[%p%s_]+", "")
-		if string.find(normalized, "production", 1, true) == nil
-			and string.find(normalized, "producing", 1, true) == nil
-			and string.find(normalized, "recipe", 1, true) == nil
-			and string.find(normalized, "product", 1, true) == nil
-			and string.find(normalized, "output", 1, true) == nil then
-			return nil
-		end
-
-		if instance:IsA("ValueBase") then
-			local ok, value = pcall(function()
-				return instance.Value
-			end)
-			if ok then
-				return formatProductionValue(value)
-			end
-		end
-
-		return formatProductionValue(instance:GetAttribute("Value") or instance:GetAttribute("Item") or instance:GetAttribute("Product"))
 	end
 
 	local function emitStructureProductionNotification(structure, structureKind, productName)
@@ -7606,26 +7883,22 @@ function BytecodeViewer.start(config)
 		watchedStructuresRoot = structuresRoot
 		table.insert(structuresRootConnections, structuresRoot.ChildAdded:Connect(function(structure)
 			handleIntelligenceStructure(structure)
-			if state.macroEnabled and reconcileObjectHighlights ~= nil then
-				reconcileObjectHighlights()
+			if state.macroEnabled and runtime.reconcileObjectHighlights ~= nil then
+				runtime.reconcileObjectHighlights()
 			end
 		end))
 		table.insert(structuresRootConnections, structuresRoot.ChildRemoved:Connect(function(structure)
 			intelligenceKnownStructures[structure] = nil
 			disconnectConnectionList(intelligenceStructureConnections[structure])
 			intelligenceStructureConnections[structure] = nil
-			if state.macroEnabled and reconcileObjectHighlights ~= nil then
-				reconcileObjectHighlights()
+			if state.macroEnabled and runtime.reconcileObjectHighlights ~= nil then
+				runtime.reconcileObjectHighlights()
 			end
 		end))
 		scanIntelligenceStructures()
 	end
 
-	local function getMacroKey(text)
-		return string.lower(tostring(text or "")):gsub("[%p%s_]+", "")
-	end
-
-	local function getNearestMacroStructure()
+	function runtime.getNearestMacroStructure()
 		local structuresRoot = getStructuresRoot()
 		local localPosition = getLocalRootPosition()
 		if structuresRoot == nil then
@@ -7655,7 +7928,7 @@ function BytecodeViewer.start(config)
 		return bestStructure, bestDistance, nil
 	end
 
-	local function setMacroStatus(text, color)
+	function runtime.setMacroStatus(text, color)
 		state.macroStatus = tostring(text or "Macro idle")
 		if refs.structureMacroStatusLabel ~= nil then
 			refs.structureMacroStatusLabel.Text = state.macroStatus
@@ -7663,7 +7936,7 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	local function getMacroHandler(kind)
+	function runtime.getMacroHandler(kind)
 		local key = getMacroKey(kind)
 		local handlerTables = {
 			config.MacroHandlers,
@@ -7687,7 +7960,7 @@ function BytecodeViewer.start(config)
 		return nil
 	end
 
-	local function getMacroRemoteSpec(kind)
+	function runtime.getMacroRemoteSpec(kind)
 		local key = getMacroKey(kind)
 		local specTables = {
 			config.MacroRemotes,
@@ -7706,49 +7979,7 @@ function BytecodeViewer.start(config)
 		return nil
 	end
 
-	local function normalizeMacroArgs(value, context)
-		if type(value) == "function" then
-			local generated = value(context)
-			if type(generated) == "table" then
-				return generated
-			end
-			return { generated }
-		elseif type(value) == "table" then
-			return value
-		end
-
-		return { context.weaponName, context.structure }
-	end
-
-	local function runMacroRemote(spec, context)
-		local remote = spec.Remote or spec.remote
-		if typeof(remote) ~= "Instance" then
-			local path = spec.Path or spec.path
-			if type(path) ~= "string" or trimText(path) == "" then
-				return false, "Macro remote path missing"
-			end
-			remote = resolveInstanceByPath(path)
-		end
-
-		local method = spec.Method or spec.method
-		if method == nil or method == "" then
-			method = remote:IsA("RemoteFunction") and "InvokeServer" or "FireServer"
-		end
-		if method ~= "FireServer" and method ~= "InvokeServer" then
-			return false, "Macro remote method must be FireServer or InvokeServer"
-		end
-
-		local args = normalizeMacroArgs(spec.Args or spec.args, context)
-		local unpackArgs = table.unpack or unpack
-		if method == "InvokeServer" then
-			return true, remote:InvokeServer(unpackArgs(args))
-		end
-
-		remote:FireServer(unpackArgs(args))
-		return true, "Remote fired"
-	end
-
-	local function runStructureMacro(structure, distance)
+	function runtime.runStructureMacro(structure, distance)
 		local now = os.clock()
 		if now - state.macroLastFireAt < state.macroCooldown then
 			return
@@ -7765,18 +7996,18 @@ function BytecodeViewer.start(config)
 		}
 
 		if context.structureKind == "Arsenal" and context.weaponName == "" then
-			setMacroStatus("Enter a weapon name for Arsenal macro", NativeUi.Theme.Warning)
+			runtime.setMacroStatus("Enter a weapon name for Arsenal macro", NativeUi.Theme.Warning)
 			return
 		end
 
-		local handler = getMacroHandler(context.structureKind)
+		local handler = runtime.getMacroHandler(context.structureKind)
 		local ok, result
 		if handler ~= nil then
 			local handlerResults = { pcall(handler, context) }
 			ok = handlerResults[1] and handlerResults[2] ~= false
 			result = handlerResults[3] or handlerResults[2]
 		else
-			local spec = getMacroRemoteSpec(context.structureKind)
+			local spec = runtime.getMacroRemoteSpec(context.structureKind)
 			if spec ~= nil then
 				local remoteResults = { pcall(runMacroRemote, spec, context) }
 				ok = remoteResults[1] and remoteResults[2] == true
@@ -7788,12 +8019,12 @@ function BytecodeViewer.start(config)
 		end
 
 		if ok then
-			setMacroStatus(
+			runtime.setMacroStatus(
 				("%s macro fired at %dm"):format(context.structureKind, math.floor(distance + 0.5)),
 				NativeUi.Theme.Success
 			)
 		else
-			setMacroStatus(tostring(result), NativeUi.Theme.Warning)
+			runtime.setMacroStatus(tostring(result), NativeUi.Theme.Warning)
 			if now - state.macroLastNotifyAt > 8 then
 				state.macroLastNotifyAt = now
 				emitNotification("warning", "Macro handler missing", tostring(result), { duration = 4 })
@@ -7801,41 +8032,41 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	local function updateStructureMacro()
+	function runtime.updateStructureMacro()
 		if not state.macroEnabled then
 			return
 		end
 
-		local target, distance, missingReason = getNearestMacroStructure()
+		local target, distance, missingReason = runtime.getNearestMacroStructure()
 		local targetKey = target and getInstanceKey(target) or ""
 		if targetKey ~= state.macroLastTargetKey then
 			state.macroLastTargetKey = targetKey
-			if reconcileObjectHighlights ~= nil then
-				reconcileObjectHighlights()
+			if runtime.reconcileObjectHighlights ~= nil then
+				runtime.reconcileObjectHighlights()
 			end
 		end
 
 		if target == nil then
 			if missingReason == "root" then
-				setMacroStatus("Waiting for local character root")
+				runtime.setMacroStatus("Waiting for local character root")
 				return
 			end
 
-			setMacroStatus(("No %s structure found"):format(state.macroTargetKind))
+			runtime.setMacroStatus(("No %s structure found"):format(state.macroTargetKind))
 			return
 		end
 
 		if distance == nil then
-			setMacroStatus("Waiting for local character root")
+			runtime.setMacroStatus("Waiting for local character root")
 			return
 		end
 
 		if distance > state.macroRange then
-			setMacroStatus(("%s %dm away"):format(state.macroTargetKind, math.floor(distance + 0.5)))
+			runtime.setMacroStatus(("%s %dm away"):format(state.macroTargetKind, math.floor(distance + 0.5)))
 			return
 		end
 
-		runStructureMacro(target, distance)
+		runtime.runStructureMacro(target, distance)
 	end
 
 	local function reconcilePlayerHighlights()
@@ -7855,14 +8086,14 @@ function BytecodeViewer.start(config)
 			end
 		end
 
-		reconcileDesiredHighlights("player:", desired)
+		runtime.reconcileDesiredHighlights("player:", desired)
 	end
 
-	reconcileObjectHighlights = function()
+	runtime.reconcileObjectHighlights = function()
 		local desired = {}
 
 		if state.espObjectToggles.spawnPoint then
-			for _, target in ipairs(getNamedTargets("spawnPoint")) do
+			for _, target in ipairs(runtime.getNamedTargets("spawnPoint")) do
 				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(255, 194, 102), Color3.fromRGB(255, 226, 160))
 				desired["object:spawn:" .. getInstanceKey(target)] = {
 					target = target,
@@ -7873,7 +8104,7 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.espObjectToggles.wellPump then
-			for _, target in ipairs(getNamedTargets("wellPump")) do
+			for _, target in ipairs(runtime.getNamedTargets("wellPump")) do
 				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(255, 140, 96), Color3.fromRGB(255, 190, 160))
 				desired["object:pump:" .. getInstanceKey(target)] = {
 					target = target,
@@ -7884,7 +8115,7 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.espObjectToggles.iridium then
-			for _, target in ipairs(collectIridiumTargets()) do
+			for _, target in ipairs(runtime.collectIridiumTargets()) do
 				desired["object:iridium:" .. getInstanceKey(target)] = {
 					target = target,
 					fillColor = Color3.fromRGB(165, 126, 255),
@@ -7894,7 +8125,7 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.espObjectToggles.spireWell then
-			for _, target in ipairs(collectDistanceTargets("spireWell", state.wellDistance)) do
+			for _, target in ipairs(runtime.collectDistanceTargets("spireWell", state.wellDistance)) do
 				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(110, 204, 255), Color3.fromRGB(186, 229, 255))
 				desired["object:spire:" .. getInstanceKey(target)] = {
 					target = target,
@@ -7905,7 +8136,7 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.espObjectToggles.well then
-			for _, target in ipairs(collectDistanceTargets("well", state.wellDistance)) do
+			for _, target in ipairs(runtime.collectDistanceTargets("well", state.wellDistance)) do
 				local fillColor, outlineColor = getStructureHighlightColors(target, Color3.fromRGB(126, 220, 255), Color3.fromRGB(190, 234, 255))
 				desired["object:well:" .. getInstanceKey(target)] = {
 					target = target,
@@ -7916,7 +8147,7 @@ function BytecodeViewer.start(config)
 		end
 
 		if state.macroEnabled then
-			local target = getNearestMacroStructure()
+			local target = runtime.getNearestMacroStructure()
 			if target ~= nil then
 				local fillColor, outlineColor = getStructureHighlightColors(target, NativeUi.Theme.Success, NativeUi.Theme.Success:Lerp(Color3.new(1, 1, 1), 0.3))
 				desired["object:macro:" .. getInstanceKey(target)] = {
@@ -7927,46 +8158,46 @@ function BytecodeViewer.start(config)
 			end
 		end
 
-		reconcileDesiredHighlights("object:", desired)
+		runtime.reconcileDesiredHighlights("object:", desired)
 	end
 
-	local function clearAllHighlights()
+	function runtime.clearAllHighlights()
 		local toRemove = {}
-		for key in pairs(highlightInstances) do
+		for key in pairs(runtime.highlightInstances) do
 			table.insert(toRemove, key)
 		end
 
 		for _, key in ipairs(toRemove) do
-			removeHighlight(key)
+			runtime.removeHighlight(key)
 		end
 	end
 
-	local function ensurePlayerCharacterConnection(player)
-		if playerCharacterConnections[player] ~= nil then
+	function runtime.ensurePlayerCharacterConnection(player)
+		if runtime.playerCharacterConnections[player] ~= nil then
 			return
 		end
 
-		playerCharacterConnections[player] = player.CharacterAdded:Connect(function()
+		runtime.playerCharacterConnections[player] = player.CharacterAdded:Connect(function()
 			reconcilePlayerHighlights()
-			if refreshPlayersList then
-				refreshPlayersList()
+			if runtime.refreshPlayersList then
+				runtime.refreshPlayersList()
 			end
-			if refreshEspPlayersList then
-				refreshEspPlayersList()
+			if runtime.refreshEspPlayersList then
+				runtime.refreshEspPlayersList()
 			end
 		end)
 	end
 
-	local function ensurePlayerTeamConnection(player)
-		if playerTeamConnections[player] ~= nil then
+	function runtime.ensurePlayerTeamConnection(player)
+		if runtime.playerTeamConnections[player] ~= nil then
 			return
 		end
 
-		playerTeamConnections[player] = {
+		runtime.playerTeamConnections[player] = {
 			player:GetPropertyChangedSignal("Team"):Connect(function()
 				reconcilePlayerHighlights()
-				if refreshPlayersList then
-					refreshPlayersList()
+				if runtime.refreshPlayersList then
+					runtime.refreshPlayersList()
 				end
 				if syncControlState then
 					syncControlState()
@@ -7974,8 +8205,8 @@ function BytecodeViewer.start(config)
 			end),
 			player:GetPropertyChangedSignal("TeamColor"):Connect(function()
 				reconcilePlayerHighlights()
-				if refreshPlayersList then
-					refreshPlayersList()
+				if runtime.refreshPlayersList then
+					runtime.refreshPlayersList()
 				end
 				if syncControlState then
 					syncControlState()
@@ -7984,7 +8215,7 @@ function BytecodeViewer.start(config)
 		}
 	end
 
-	refreshPlayersList = function()
+	runtime.refreshPlayersList = function()
 		NativeUi.clear(refs.spyMemberContent)
 
 		local players = Players:GetPlayers()
@@ -7995,8 +8226,8 @@ function BytecodeViewer.start(config)
 		local shown = 0
 		for _, player in ipairs(players) do
 			if player ~= Players.LocalPlayer then
-				ensurePlayerCharacterConnection(player)
-				ensurePlayerTeamConnection(player)
+				runtime.ensurePlayerCharacterConnection(player)
+				runtime.ensurePlayerTeamConnection(player)
 
 				shown = shown + 1
 				local teamText = getPlayerTeamText(player)
@@ -8010,7 +8241,7 @@ function BytecodeViewer.start(config)
 				NativeUi.setButtonSelected(button, state.selectedPlayerName == player.Name)
 				button.MouseButton1Click:Connect(function()
 					state.selectedPlayerName = state.selectedPlayerName == player.Name and "" or player.Name
-					refreshPlayersList()
+					runtime.refreshPlayersList()
 					syncControlState()
 				end)
 			end
@@ -8036,7 +8267,7 @@ function BytecodeViewer.start(config)
 		return total
 	end
 
-	refreshEspPlayersList = function()
+	runtime.refreshEspPlayersList = function()
 		NativeUi.clear(refs.espPlayerContent)
 
 		local players = Players:GetPlayers()
@@ -8047,8 +8278,8 @@ function BytecodeViewer.start(config)
 		local shown = 0
 		for _, player in ipairs(players) do
 			if player ~= Players.LocalPlayer then
-				ensurePlayerCharacterConnection(player)
-				ensurePlayerTeamConnection(player)
+				runtime.ensurePlayerCharacterConnection(player)
+				runtime.ensurePlayerTeamConnection(player)
 
 				local searchable = player.Name .. " " .. (player.DisplayName or "")
 				if containsFilter(searchable, state.espPlayerFilterText) then
@@ -8073,7 +8304,7 @@ function BytecodeViewer.start(config)
 						end
 
 						reconcilePlayerHighlights()
-						refreshEspPlayersList()
+						runtime.refreshEspPlayersList()
 					end)
 				end
 			end
@@ -8272,6 +8503,7 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.noFallDamageToggle, state.noFallDamage)
 		syncToggleButton(refs.noOceanDamageToggle, state.noOceanDamage)
 		syncToggleButton(refs.aimbotToggle, state.aimbotEnabled)
+		syncToggleButton(refs.autoFireToggle, state.autoFireEnabled)
 		syncToggleButton(refs.spawnPointToggle, state.espObjectToggles.spawnPoint)
 		syncToggleButton(refs.wellPumpToggle, state.espObjectToggles.wellPump)
 		syncToggleButton(refs.iridiumToggle, state.espObjectToggles.iridium)
@@ -8305,6 +8537,7 @@ function BytecodeViewer.start(config)
 			refs.structureMacroWeaponBox.Text = state.macroWeaponName
 		end
 		refs.structureMacroStatusLabel.Text = state.macroStatus
+		refs.autoFireStatusLabel.Text = state.autoFireStatus
 		refs.activeTargetLabel.Text = ("Active target: %s"):format(getActiveTargetText() ~= "" and getActiveTargetText() or "-")
 		refs.espSelectedPlayersLabel.Text = state.highlightAllPlayers
 			and "Highlighted: all players"
@@ -8333,22 +8566,22 @@ function BytecodeViewer.start(config)
 		updateSuiteOverlays()
 	end
 
-	local function applyNumericAction(actionName, value, label)
+	function runtime.applyNumericAction(actionName, value, label)
 		local ok, result = runMainAction(actionName, value)
 		if ok then
 			setMainStatus(tostring(result or (label .. " updated")), NativeUi.Theme.Success)
 			refreshMainFields()
-			walkSpeedSlider.setValue(state.walkSpeedValue)
-			jumpPowerSlider.setValue(state.jumpPowerValue)
-			hipHeightSlider.setValue(state.hipHeightValue)
-			gravitySlider.setValue(state.gravityValue)
+			refs.walkSpeedController.setValue(state.walkSpeedValue)
+			refs.jumpPowerController.setValue(state.jumpPowerValue)
+			refs.hipHeightController.setValue(state.hipHeightValue)
+			refs.gravityController.setValue(state.gravityValue)
 			return
 		end
 
 		setMainStatus(tostring(result), NativeUi.Theme.Error)
 	end
 
-	local function toggleFeature(toggleName)
+	function runtime.toggleFeature(toggleName)
 		local nextValue = not state[toggleName]
 		local ok, result = setToggleState(toggleName, nextValue)
 		if ok then
@@ -8360,7 +8593,7 @@ function BytecodeViewer.start(config)
 		syncControlState()
 	end
 
-	local function toggleAimbot()
+	function runtime.toggleAimbot()
 		state.aimbotEnabled = not state.aimbotEnabled
 		if not state.aimbotEnabled then
 			setAimbotHoldActive(false)
@@ -8369,7 +8602,7 @@ function BytecodeViewer.start(config)
 		end
 	end
 
-	local function setAimTargetMode(mode)
+	function runtime.setAimTargetMode(mode)
 		state.aimTargetPart = mode
 		clearAimbotLock()
 		if state.aimHoldActive then
@@ -8378,33 +8611,64 @@ function BytecodeViewer.start(config)
 		syncControlState()
 	end
 
-	local function toggleEspObject(toggleName)
+	function runtime.toggleEspObject(toggleName)
 		state.espObjectToggles[toggleName] = not state.espObjectToggles[toggleName]
 		if toggleName == "spireWell" or toggleName == "well" then
-			distanceRefreshAccumulator = 0
-			lastDistanceRefreshPosition = nil
+			runtime.distanceRefreshAccumulator = 0
+			runtime.lastDistanceRefreshPosition = nil
 		end
-		reconcileObjectHighlights()
+		runtime.reconcileObjectHighlights()
 		syncControlState()
 	end
 
-	local function handleEspDescendantMutation(descendant)
+	function runtime.handleEspDescendantMutation(descendant)
 		local name = descendant.Name
 		if name == "Spawn Point" then
-			markNamedTargetDirty("spawnPoint", state.espObjectToggles.spawnPoint)
+			runtime.markNamedTargetDirty("spawnPoint", state.espObjectToggles.spawnPoint)
 		elseif name == "Well Pump" then
-			markNamedTargetDirty("wellPump", state.espObjectToggles.wellPump)
+			runtime.markNamedTargetDirty("wellPump", state.espObjectToggles.wellPump)
 		elseif name == "SpireOpenLarge1" or name == "Map" then
-			markNamedTargetDirty("spireWell", state.espObjectToggles.spireWell)
+			runtime.markNamedTargetDirty("spireWell", state.espObjectToggles.spireWell)
 		elseif name == "Top1" or name == "Map" then
-			markNamedTargetDirty("well", state.espObjectToggles.well)
+			runtime.markNamedTargetDirty("well", state.espObjectToggles.well)
 		end
 
 		if name == "Resources"
 			or descendant:FindFirstAncestor("Resources") ~= nil
 			or type(descendant:GetAttribute("CrystalFullness")) == "number" then
-			markIridiumDirty(state.espObjectToggles.iridium)
+			runtime.markIridiumDirty(state.espObjectToggles.iridium)
 		end
+	end
+
+	function runtime.finishStartup()
+		refreshMainFields()
+		refs.walkSpeedController.setValue(state.walkSpeedValue)
+		refs.jumpPowerController.setValue(state.jumpPowerValue)
+		refs.hipHeightController.setValue(state.hipHeightValue)
+		refs.gravityController.setValue(state.gravityValue)
+		refs.ghostFlySpeedController.setValue(state.ghostFlySpeed)
+		refs.freeCameraSpeedController.setValue(state.freeCameraSpeed)
+		refs.freeCameraFastSpeedController.setValue(state.freeCameraFastSpeed)
+		refs.autoFireRangeController.setValue(state.autoFireRange)
+		refs.iridiumController.setValue(state.iridiumMinFullness)
+		refs.wellDistanceController.setValue(state.wellDistance)
+		refs.structureMacroRangeController.setValue(state.macroRange)
+		for _, player in ipairs(Players:GetPlayers()) do
+			bindIntelligencePlayer(player)
+		end
+		bindStructuresRootWatcher()
+		updateIntelligenceThreat()
+		runtime.refreshPlayersList()
+		runtime.refreshEspPlayersList()
+		refreshScriptBrowser(false)
+		renderRemoteList()
+		renderRemoteLog()
+		reconcilePlayerHighlights()
+		runtime.reconcileObjectHighlights()
+		syncControlState()
+		renderTreeView()
+		renderOutputView()
+		setMainStatus("Ready", NativeUi.Theme.TextMuted)
 	end
 
 	trackCleanup(function()
@@ -8430,22 +8694,22 @@ function BytecodeViewer.start(config)
 			disconnectConnectionList(connectionList)
 			intelligenceStructureConnections[structure] = nil
 		end
-		for player, connection in pairs(playerCharacterConnections) do
+		for player, connection in pairs(runtime.playerCharacterConnections) do
 			pcall(function()
 				connection:Disconnect()
 			end)
-			playerCharacterConnections[player] = nil
+			runtime.playerCharacterConnections[player] = nil
 		end
-		for player, connectionGroup in pairs(playerTeamConnections) do
+		for player, connectionGroup in pairs(runtime.playerTeamConnections) do
 			for _, connection in pairs(connectionGroup) do
 				pcall(function()
 					connection:Disconnect()
 				end)
 			end
-			playerTeamConnections[player] = nil
+			runtime.playerTeamConnections[player] = nil
 		end
 		disconnectConnectionMap(espObjectCache.iridium.attributeConnections)
-		clearAllHighlights()
+		runtime.clearAllHighlights()
 	end)
 
 	trackConnection(UserInputService.JumpRequest:Connect(function()
@@ -8502,10 +8766,16 @@ function BytecodeViewer.start(config)
 
 	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
 		intelligenceHeartbeatAccumulator = intelligenceHeartbeatAccumulator + deltaTime
-		macroHeartbeatAccumulator = macroHeartbeatAccumulator + deltaTime
-		if macroHeartbeatAccumulator >= 0.25 then
-			macroHeartbeatAccumulator = 0
-			updateStructureMacro()
+		runtime.autoFireHeartbeatAccumulator = runtime.autoFireHeartbeatAccumulator + deltaTime
+		runtime.macroHeartbeatAccumulator = runtime.macroHeartbeatAccumulator + deltaTime
+		if runtime.autoFireHeartbeatAccumulator >= 0.12 then
+			runtime.autoFireHeartbeatAccumulator = 0
+			updateAutoFire()
+		end
+
+		if runtime.macroHeartbeatAccumulator >= 0.25 then
+			runtime.macroHeartbeatAccumulator = 0
+			runtime.updateStructureMacro()
 		end
 
 		if intelligenceHeartbeatAccumulator < 0.35 then
@@ -8527,44 +8797,44 @@ function BytecodeViewer.start(config)
 
 	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
 		if not (state.espObjectToggles.spireWell or state.espObjectToggles.well) then
-			distanceRefreshAccumulator = 0
-			lastDistanceRefreshPosition = nil
+			runtime.distanceRefreshAccumulator = 0
+			runtime.lastDistanceRefreshPosition = nil
 			return
 		end
 
-		distanceRefreshAccumulator = distanceRefreshAccumulator + deltaTime
-		if distanceRefreshAccumulator < 0.4 then
+		runtime.distanceRefreshAccumulator = runtime.distanceRefreshAccumulator + deltaTime
+		if runtime.distanceRefreshAccumulator < 0.4 then
 			return
 		end
 
 		local localPosition = getLocalRootPosition()
 		if localPosition == nil then
-			distanceRefreshAccumulator = 0
-			if lastDistanceRefreshPosition ~= nil then
-				lastDistanceRefreshPosition = nil
-				reconcileObjectHighlights()
+			runtime.distanceRefreshAccumulator = 0
+			if runtime.lastDistanceRefreshPosition ~= nil then
+				runtime.lastDistanceRefreshPosition = nil
+				runtime.reconcileObjectHighlights()
 			end
 			return
 		end
 
-		local movedEnough = lastDistanceRefreshPosition == nil
-			or (localPosition - lastDistanceRefreshPosition).Magnitude >= 18
-			or distanceRefreshAccumulator >= 1.2
+		local movedEnough = runtime.lastDistanceRefreshPosition == nil
+			or (localPosition - runtime.lastDistanceRefreshPosition).Magnitude >= 18
+			or runtime.distanceRefreshAccumulator >= 1.2
 		if not movedEnough then
 			return
 		end
 
-		distanceRefreshAccumulator = 0
-		lastDistanceRefreshPosition = localPosition
-		reconcileObjectHighlights()
+		runtime.distanceRefreshAccumulator = 0
+		runtime.lastDistanceRefreshPosition = localPosition
+		runtime.reconcileObjectHighlights()
 	end))
 	trackConnection(Workspace.DescendantAdded:Connect(function(descendant)
-		handleEspDescendantMutation(descendant)
+		runtime.handleEspDescendantMutation(descendant)
 		if descendant.Name == "Structures" and descendant.Parent == Workspace then
 			task.defer(bindStructuresRootWatcher)
 		end
 	end))
-	trackConnection(Workspace.DescendantRemoving:Connect(handleEspDescendantMutation))
+	trackConnection(Workspace.DescendantRemoving:Connect(runtime.handleEspDescendantMutation))
 	bindScriptBrowserMutationWatchers()
 	bindRemoteMutationWatchers()
 
@@ -8592,12 +8862,12 @@ function BytecodeViewer.start(config)
 		end))
 	end
 
-	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
+	trackConnection(Players.PlayerAdded:Connect(runtime.refreshPlayersList))
 	trackConnection(Players.PlayerAdded:Connect(function(player)
 		bindIntelligencePlayer(player)
-		ensurePlayerCharacterConnection(player)
-		ensurePlayerTeamConnection(player)
-		refreshEspPlayersList()
+		runtime.ensurePlayerCharacterConnection(player)
+		runtime.ensurePlayerTeamConnection(player)
+		runtime.refreshEspPlayersList()
 		reconcilePlayerHighlights()
 	end))
 	trackConnection(Players.PlayerRemoving:Connect(function(player)
@@ -8607,26 +8877,26 @@ function BytecodeViewer.start(config)
 
 		state.highlightedPlayers[player.Name] = nil
 		unbindIntelligencePlayer(player)
-		local connection = playerCharacterConnections[player]
+		local connection = runtime.playerCharacterConnections[player]
 		if connection ~= nil then
 			pcall(function()
 				connection:Disconnect()
 			end)
-			playerCharacterConnections[player] = nil
+			runtime.playerCharacterConnections[player] = nil
 		end
-		local connectionGroup = playerTeamConnections[player]
+		local connectionGroup = runtime.playerTeamConnections[player]
 		if connectionGroup ~= nil then
 			for _, teamConnection in pairs(connectionGroup) do
 				pcall(function()
 					teamConnection:Disconnect()
 				end)
 			end
-			playerTeamConnections[player] = nil
+			runtime.playerTeamConnections[player] = nil
 		end
 
-		removeHighlight("player:" .. player.Name)
-		refreshPlayersList()
-		refreshEspPlayersList()
+		runtime.removeHighlight("player:" .. player.Name)
+		runtime.refreshPlayersList()
+		runtime.refreshEspPlayersList()
 		reconcilePlayerHighlights()
 	end))
 
@@ -8753,7 +9023,7 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.espPlayerSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		state.espPlayerFilterText = refs.espPlayerSearchBox.Text
-		refreshEspPlayersList()
+		runtime.refreshEspPlayersList()
 	end))
 	trackConnection(refs.filterBox:GetPropertyChangedSignal("Text"):Connect(function()
 		state.filterText = refs.filterBox.Text
@@ -8762,14 +9032,14 @@ function BytecodeViewer.start(config)
 	trackConnection(refs.highlightAllPlayersButton.MouseButton1Click:Connect(function()
 		state.highlightAllPlayers = not state.highlightAllPlayers
 		reconcilePlayerHighlights()
-		refreshEspPlayersList()
+		runtime.refreshEspPlayersList()
 		syncControlState()
 	end))
 	trackConnection(refs.clearPlayerHighlightsButton.MouseButton1Click:Connect(function()
 		state.highlightedPlayers = {}
 		state.highlightAllPlayers = false
 		reconcilePlayerHighlights()
-		refreshEspPlayersList()
+		runtime.refreshEspPlayersList()
 		syncControlState()
 	end))
 	trackConnection(refs.remoteWatcherToggle.toggle.MouseButton1Click:Connect(function()
@@ -8792,11 +9062,11 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.spyClearButton.MouseButton1Click:Connect(function()
 		state.selectedPlayerName = ""
-		refreshPlayersList()
+		runtime.refreshPlayersList()
 		syncControlState()
 	end))
 	trackConnection(refs.spyPinButton.MouseButton1Click:Connect(function()
-		refreshPlayersList()
+		runtime.refreshPlayersList()
 		syncControlState()
 	end))
 	trackConnection(refs.spyHighlightButton.MouseButton1Click:Connect(function()
@@ -8812,8 +9082,8 @@ function BytecodeViewer.start(config)
 		end
 
 		reconcilePlayerHighlights()
-		refreshEspPlayersList()
-		refreshPlayersList()
+		runtime.refreshEspPlayersList()
+		runtime.refreshPlayersList()
 		syncControlState()
 	end))
 	trackConnection(refs.spyGhostToggle.toggle.MouseButton1Click:Connect(function()
@@ -8868,23 +9138,23 @@ function BytecodeViewer.start(config)
 		syncControlState()
 	end))
 	trackConnection(refs.walkSlider.applyButton.MouseButton1Click:Connect(function()
-		applyNumericAction("setWalkSpeed", math.floor(walkSpeedSlider.getValue() + 0.5), "WalkSpeed")
+		runtime.applyNumericAction("setWalkSpeed", math.floor(refs.walkSpeedController.getValue() + 0.5), "WalkSpeed")
 	end))
 	trackConnection(refs.jumpSlider.applyButton.MouseButton1Click:Connect(function()
-		applyNumericAction("setJumpPower", math.floor(jumpPowerSlider.getValue() + 0.5), "JumpPower")
+		runtime.applyNumericAction("setJumpPower", math.floor(refs.jumpPowerController.getValue() + 0.5), "JumpPower")
 	end))
 	trackConnection(refs.hipSlider.applyButton.MouseButton1Click:Connect(function()
-		applyNumericAction("setHipHeight", hipHeightSlider.getValue(), "HipHeight")
+		runtime.applyNumericAction("setHipHeight", refs.hipHeightController.getValue(), "HipHeight")
 	end))
 	trackConnection(refs.gravitySlider.applyButton.MouseButton1Click:Connect(function()
-		applyNumericAction("setGravity", math.floor(gravitySlider.getValue() + 0.5), "Gravity")
+		runtime.applyNumericAction("setGravity", math.floor(refs.gravityController.getValue() + 0.5), "Gravity")
 	end))
 	trackConnection(refs.refreshStatsButton.MouseButton1Click:Connect(function()
 		refreshMainFields()
-		walkSpeedSlider.setValue(state.walkSpeedValue)
-		jumpPowerSlider.setValue(state.jumpPowerValue)
-		hipHeightSlider.setValue(state.hipHeightValue)
-		gravitySlider.setValue(state.gravityValue)
+		refs.walkSpeedController.setValue(state.walkSpeedValue)
+		refs.jumpPowerController.setValue(state.jumpPowerValue)
+		refs.hipHeightController.setValue(state.hipHeightValue)
+		refs.gravityController.setValue(state.gravityValue)
 		setMainStatus("Pulled current values", NativeUi.Theme.TextMuted)
 	end))
 	trackConnection(refs.resetCharacterButton.MouseButton1Click:Connect(function()
@@ -8899,12 +9169,12 @@ function BytecodeViewer.start(config)
 		state.macroEnabled = not state.macroEnabled
 		if state.macroEnabled then
 			bindStructuresRootWatcher()
-			updateStructureMacro()
+			runtime.updateStructureMacro()
 		else
 			state.macroLastTargetKey = ""
-			setMacroStatus("Macro idle")
+			runtime.setMacroStatus("Macro idle")
 		end
-		reconcileObjectHighlights()
+		runtime.reconcileObjectHighlights()
 		syncControlState()
 	end))
 	trackConnection(refs.structureMacroTargetButton.MouseButton1Click:Connect(function()
@@ -8917,8 +9187,8 @@ function BytecodeViewer.start(config)
 		end
 		state.macroTargetKind = MACRO_STRUCTURE_KINDS[(currentIndex % #MACRO_STRUCTURE_KINDS) + 1]
 		state.macroLastTargetKey = ""
-		setMacroStatus(("Targeting %s"):format(state.macroTargetKind))
-		reconcileObjectHighlights()
+		runtime.setMacroStatus(("Targeting %s"):format(state.macroTargetKind))
+		runtime.reconcileObjectHighlights()
 		syncControlState()
 	end))
 	trackConnection(refs.structureMacroWeaponBox.FocusLost:Connect(function()
@@ -8926,100 +9196,89 @@ function BytecodeViewer.start(config)
 		syncControlState()
 	end))
 	trackConnection(refs.structureMacroRangeSlider.applyButton.MouseButton1Click:Connect(function()
-		state.macroRange = math.floor(structureMacroRangeSlider.getValue() + 0.5)
-		setMacroStatus(("Range set to %dm"):format(state.macroRange), NativeUi.Theme.Success)
-		updateStructureMacro()
+		state.macroRange = math.floor(refs.structureMacroRangeController.getValue() + 0.5)
+		runtime.setMacroStatus(("Range set to %dm"):format(state.macroRange), NativeUi.Theme.Success)
+		runtime.updateStructureMacro()
 		syncControlState()
 	end))
 	trackConnection(refs.aimbotToggle.toggle.MouseButton1Click:Connect(function()
-		toggleAimbot()
+		runtime.toggleAimbot()
+	end))
+	trackConnection(refs.autoFireToggle.toggle.MouseButton1Click:Connect(function()
+		state.autoFireEnabled = not state.autoFireEnabled
+		if state.autoFireEnabled then
+			updateAutoFire()
+		else
+			setAutoFireStatus("Auto-fire idle")
+		end
+		syncControlState()
+	end))
+	trackConnection(refs.autoFireRangeSlider.applyButton.MouseButton1Click:Connect(function()
+		state.autoFireRange = math.floor(refs.autoFireRangeController.getValue() + 0.5)
+		setAutoFireStatus(("Range set to %dm"):format(state.autoFireRange), NativeUi.Theme.Success)
+		updateAutoFire()
+		syncControlState()
 	end))
 	trackConnection(refs.aimNearestButton.MouseButton1Click:Connect(function()
-		setAimTargetMode("nearest")
+		runtime.setAimTargetMode("nearest")
 	end))
 	trackConnection(refs.aimHeadButton.MouseButton1Click:Connect(function()
-		setAimTargetMode("head")
+		runtime.setAimTargetMode("head")
 	end))
 	trackConnection(refs.aimTorsoButton.MouseButton1Click:Connect(function()
-		setAimTargetMode("torso")
+		runtime.setAimTargetMode("torso")
 	end))
 	trackConnection(refs.aimArmsButton.MouseButton1Click:Connect(function()
-		setAimTargetMode("arms")
+		runtime.setAimTargetMode("arms")
 	end))
 	trackConnection(refs.aimLegsButton.MouseButton1Click:Connect(function()
-		setAimTargetMode("legs")
+		runtime.setAimTargetMode("legs")
 	end))
 	trackConnection(refs.aimLimbsButton.MouseButton1Click:Connect(function()
-		setAimTargetMode("limbs")
+		runtime.setAimTargetMode("limbs")
 	end))
 	trackConnection(refs.infiniteJumpToggle.toggle.MouseButton1Click:Connect(function()
-		toggleFeature("infiniteJump")
+		runtime.toggleFeature("infiniteJump")
 	end))
 	trackConnection(refs.noClipToggle.toggle.MouseButton1Click:Connect(function()
-		toggleFeature("noClip")
+		runtime.toggleFeature("noClip")
 	end))
 	trackConnection(refs.fullBrightToggle.toggle.MouseButton1Click:Connect(function()
-		toggleFeature("fullBright")
+		runtime.toggleFeature("fullBright")
 	end))
 	trackConnection(refs.noFallDamageToggle.toggle.MouseButton1Click:Connect(function()
-		toggleFeature("noFallDamage")
+		runtime.toggleFeature("noFallDamage")
 	end))
 	trackConnection(refs.noOceanDamageToggle.toggle.MouseButton1Click:Connect(function()
-		toggleFeature("noOceanDamage")
+		runtime.toggleFeature("noOceanDamage")
 	end))
 	trackConnection(refs.spawnPointToggle.toggle.MouseButton1Click:Connect(function()
-		toggleEspObject("spawnPoint")
+		runtime.toggleEspObject("spawnPoint")
 	end))
 	trackConnection(refs.wellPumpToggle.toggle.MouseButton1Click:Connect(function()
-		toggleEspObject("wellPump")
+		runtime.toggleEspObject("wellPump")
 	end))
 	trackConnection(refs.iridiumToggle.toggle.MouseButton1Click:Connect(function()
-		toggleEspObject("iridium")
+		runtime.toggleEspObject("iridium")
 	end))
 	trackConnection(refs.spireWellToggle.toggle.MouseButton1Click:Connect(function()
-		toggleEspObject("spireWell")
+		runtime.toggleEspObject("spireWell")
 	end))
 	trackConnection(refs.wellToggle.toggle.MouseButton1Click:Connect(function()
-		toggleEspObject("well")
+		runtime.toggleEspObject("well")
 	end))
 	trackConnection(refs.iridiumSlider.applyButton.MouseButton1Click:Connect(function()
-		state.iridiumMinFullness = iridiumSlider.getValue()
-		reconcileObjectHighlights()
+		state.iridiumMinFullness = refs.iridiumController.getValue()
+		runtime.reconcileObjectHighlights()
 		syncControlState()
 	end))
 	trackConnection(refs.wellDistanceSlider.applyButton.MouseButton1Click:Connect(function()
-		state.wellDistance = math.floor(wellDistanceSlider.getValue() + 0.5)
-		reconcileObjectHighlights()
+		state.wellDistance = math.floor(refs.wellDistanceController.getValue() + 0.5)
+		runtime.reconcileObjectHighlights()
 		syncControlState()
 	end))
 
-	refreshMainFields()
-	walkSpeedSlider.setValue(state.walkSpeedValue)
-	jumpPowerSlider.setValue(state.jumpPowerValue)
-	hipHeightSlider.setValue(state.hipHeightValue)
-	gravitySlider.setValue(state.gravityValue)
-	ghostFlySpeedSlider.setValue(state.ghostFlySpeed)
-	freeCameraSpeedSlider.setValue(state.freeCameraSpeed)
-	freeCameraFastSpeedSlider.setValue(state.freeCameraFastSpeed)
-	iridiumSlider.setValue(state.iridiumMinFullness)
-	wellDistanceSlider.setValue(state.wellDistance)
-	structureMacroRangeSlider.setValue(state.macroRange)
-	for _, player in ipairs(Players:GetPlayers()) do
-		bindIntelligencePlayer(player)
-	end
-	bindStructuresRootWatcher()
-	updateIntelligenceThreat()
-	refreshPlayersList()
-	refreshEspPlayersList()
-	refreshScriptBrowser(false)
-	renderRemoteList()
-	renderRemoteLog()
-	reconcilePlayerHighlights()
-	reconcileObjectHighlights()
-	syncControlState()
-	renderTreeView()
-	renderOutputView()
-	setMainStatus("Ready", NativeUi.Theme.TextMuted)
+	runtime.finishStartup()
 end
 
 return BytecodeViewer
