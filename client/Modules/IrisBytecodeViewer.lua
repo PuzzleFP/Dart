@@ -386,6 +386,30 @@ local function getPlayerRootPart(player)
 	return getCharacterRootPart(player and player.Character or nil)
 end
 
+local function getPlayerPosition(player)
+	local character = player and player.Character or nil
+	if character == nil then
+		return nil
+	end
+
+	local root = getCharacterRootPart(character)
+	if root ~= nil then
+		return root.Position
+	end
+
+	return getInstancePosition(character)
+end
+
+local function getLocalThreatPosition()
+	local position = getPlayerPosition(Players.LocalPlayer)
+	if position ~= nil then
+		return position
+	end
+
+	local camera = getCurrentCamera()
+	return camera and camera.CFrame.Position or nil
+end
+
 local function scanNamedTargets(root, targetName)
 	local targets = {}
 	if typeof(root) ~= "Instance" then
@@ -4896,12 +4920,24 @@ function BytecodeViewer.start(config)
 			return false
 		end
 
+		local localTeamIndex = localPlayer and localPlayer:GetAttribute("TeamIndex") or nil
+		local playerTeamIndex = player:GetAttribute("TeamIndex")
+		if localTeamIndex ~= nil and playerTeamIndex ~= nil then
+			return localTeamIndex ~= playerTeamIndex
+		end
+
 		if localPlayer ~= nil and localPlayer.Team ~= nil and player.Team ~= nil then
 			return player.Team ~= localPlayer.Team
 		end
 
-		if localPlayer ~= nil and localPlayer.TeamColor ~= nil and player.TeamColor ~= nil then
+		if localPlayer ~= nil and localPlayer.Neutral ~= true and player.Neutral ~= true and localPlayer.TeamColor ~= nil and player.TeamColor ~= nil then
 			return player.TeamColor ~= localPlayer.TeamColor
+		end
+
+		local localTeamAttr = localPlayer and localPlayer:GetAttribute("Team") or nil
+		local playerTeamAttr = player:GetAttribute("Team")
+		if localTeamAttr ~= nil and playerTeamAttr ~= nil then
+			return tostring(localTeamAttr) ~= tostring(playerTeamAttr)
 		end
 
 		return true
@@ -5121,8 +5157,8 @@ function BytecodeViewer.start(config)
 	end
 
 	local function updateIntelligenceThreat()
-		local localRoot = getPlayerRootPart(Players.LocalPlayer)
-		if localRoot == nil then
+		local localPosition = getLocalThreatPosition()
+		if localPosition == nil then
 			state.intelligenceThreat = nil
 			return
 		end
@@ -5131,9 +5167,9 @@ function BytecodeViewer.start(config)
 		for _, player in ipairs(Players:GetPlayers()) do
 			if isEnemyPlayer(player) then
 				local weaponName = getKnownPlayerWeapon(player)
-				local root = getPlayerRootPart(player)
-				if root ~= nil then
-					local distance = (root.Position - localRoot.Position).Magnitude
+				local targetPosition = getPlayerPosition(player)
+				if targetPosition ~= nil then
+					local distance = (targetPosition - localPosition).Magnitude
 					if distance <= state.intelligenceThreatRange and (nearestThreat == nil or distance < nearestThreat.distance) then
 						nearestThreat = {
 							player = player,
@@ -5177,8 +5213,8 @@ function BytecodeViewer.start(config)
 
 		local distance = math.floor(threat.distance + 0.5)
 		local detail = threat.weaponKnown
-			and ("%s with %s • %s"):format(threat.playerName, threat.weaponName, threat.teamText)
-			or ("%s • %s"):format(threat.playerName, threat.teamText)
+			and ("%s with %s - %s"):format(threat.playerName, threat.weaponName, threat.teamText)
+			or ("%s - %s"):format(threat.playerName, threat.teamText)
 		return {
 			title = "Enemy Close",
 			detail = detail,
