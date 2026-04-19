@@ -928,6 +928,9 @@ local function makeState(config)
 		lastRemoteCaptureAt = 0,
 		notifications = {},
 		nextNotificationId = 0,
+		intelligenceThreat = nil,
+		intelligenceThreatRange = 160,
+		intelligenceThreatKey = nil,
 		lastResult = nil,
 		lastError = nil,
 		lastLoadedSourceMode = nil,
@@ -3375,6 +3378,7 @@ function BytecodeViewer.start(config)
 			level = normalizedLevel,
 			title = tostring(title or string.upper(normalizedLevel)),
 			detail = tostring(detail or ""),
+			color = options.color,
 			createdAt = os.clock(),
 			expiresAt = expiresAt,
 			sticky = sticky,
@@ -4336,6 +4340,319 @@ function BytecodeViewer.start(config)
 		return ("%d/%d"):format(math.floor(humanoid.Health + 0.5), math.floor(humanoid.MaxHealth + 0.5))
 	end
 
+	local intelligencePlayerConnections = {}
+	local intelligencePlayerWeapons = {}
+	local intelligenceKnownStructures = setmetatable({}, { __mode = "k" })
+	local intelligenceStructureConnections = setmetatable({}, { __mode = "k" })
+	local intelligenceNotificationTimes = {}
+	local intelligenceFirstStructureSeen = {}
+	local intelligenceHeartbeatAccumulator = 0
+
+	local function getPlayerTeamColor(player)
+		if player == nil then
+			return NativeUi.Theme.Warning
+		end
+
+		if player.Team ~= nil and player.Team.TeamColor ~= nil then
+			return player.Team.TeamColor.Color
+		elseif player.TeamColor ~= nil then
+			return player.TeamColor.Color
+		end
+
+		return nil
+	end
+
+	local function getPlayerTeamColorText(player)
+		if player == nil then
+			return "unknown"
+		end
+
+		if player.TeamColor ~= nil then
+			return player.TeamColor.Name
+		end
+
+		return "unknown"
+	end
+
+	local function isEnemyPlayer(player)
+		local localPlayer = Players.LocalPlayer
+		if player == nil or player == localPlayer then
+			return false
+		end
+
+		if localPlayer ~= nil and localPlayer.Team ~= nil and player.Team ~= nil then
+			return player.Team ~= localPlayer.Team
+		end
+
+		if localPlayer ~= nil and localPlayer.TeamColor ~= nil and player.TeamColor ~= nil then
+			return player.TeamColor ~= localPlayer.TeamColor
+		end
+
+		return true
+	end
+
+	local function disconnectConnectionList(connectionList)
+		for _, connection in ipairs(connectionList or {}) do
+			pcall(function()
+				connection:Disconnect()
+			end)
+		end
+	end
+
+	local function emitIntelligenceNotification(key, cooldown, level, title, detail, color, options)
+		local now = os.clock()
+		local last = intelligenceNotificationTimes[key]
+		if last ~= nil and now - last < cooldown then
+			return nil
+		end
+
+		intelligenceNotificationTimes[key] = now
+		options = options or {}
+		options.color = color or options.color
+		options.duration = options.duration or 5
+		options.priority = options.priority or notificationPriority(level)
+		return emitNotification(level, title, detail, options)
+	end
+
+	local function isWeaponTool(instance)
+		return typeof(instance) == "Instance" and instance:IsA("Tool") and instance:GetAttribute("DartIgnoreIntelligence") ~= true
+	end
+
+	local function getWeaponName(tool)
+		if not isWeaponTool(tool) then
+			return nil
+		end
+
+		local displayName = tool:GetAttribute("WeaponName")
+			or tool:GetAttribute("DisplayName")
+			or tool:GetAttribute("ItemName")
+			or tool:GetAttribute("Name")
+			or tool.Name
+
+		displayName = trimText(tostring(displayName or ""))
+		if displayName == "" then
+			return "weapon"
+		end
+
+		return displayName
+	end
+
+	local function getPlayerWeaponInventory(player)
+		local inventory = intelligencePlayerWeapons[player]
+		if inventory == nil then
+			inventory = {}
+			intelligencePlayerWeapons[player] = inventory
+		end
+
+		return inventory
+	end
+
+	local function getPlayerWeaponContainers(player)
+		local containers = {}
+		if player == nil then
+			return containers
+		end
+
+		if player.Character ~= nil then
+			table.insert(containers, player.Character)
+		end
+
+		local backpack = player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack")
+		if backpack ~= nil then
+			table.insert(containers, backpack)
+		end
+
+		return containers
+	end
+
+	local function playerHasWeaponNamed(player, weaponName)
+		for _, container in ipairs(getPlayerWeaponContainers(player)) do
+			for _, child in ipairs(container:GetChildren()) do
+				if getWeaponName(child) == weaponName then
+					return true
+				end
+			end
+		end
+
+		return false
+	end
+
+	local function rememberPlayerWeapon(player, tool, silent)
+		if not isWeaponTool(tool) then
+			return
+		end
+
+		local weaponName = getWeaponName(tool)
+		local inventory = getPlayerWeaponInventory(player)
+		local alreadyKnown = inventory[weaponName] == true
+		inventory[weaponName] = true
+		inventory.lastWeapon = weaponName
+
+		if silent or alreadyKnown or not isEnemyPlayer(player) then
+			return
+		end
+
+		local teamText = getPlayerTeamText(player)
+		local teamColorText = getPlayerTeamColorText(player)
+		emitIntelligenceNotification(
+			("weapon:%s:%s"):format(player.UserId, weaponName),
+			5,
+			"warning",
+			("Weapon Collected by %s (%s)"):format(teamText, teamColorText),
+			("%s has collected a %s."):format(player.Name, weaponName),
+			getPlayerTeamColor(player),
+			{ priority = 44, duration = 5 }
+		)
+	end
+
+	local function forgetPlayerWeaponIfGone(player, weaponName)
+		task.defer(function()
+			local inventory = intelligencePlayerWeapons[player]
+			if inventory == nil or playerHasWeaponNamed(player, weaponName) then
+				return
+			end
+
+			inventory[weaponName] = nil
+			if inventory.lastWeapon == weaponName then
+				inventory.lastWeapon = nil
+			end
+		end)
+	end
+
+	local function getKnownPlayerWeapon(player)
+		local character = player and player.Character or nil
+		if character ~= nil then
+			for _, child in ipairs(character:GetChildren()) do
+				local weaponName = getWeaponName(child)
+				if weaponName ~= nil then
+					return weaponName
+				end
+			end
+		end
+
+		local inventory = intelligencePlayerWeapons[player]
+		if inventory == nil then
+			return nil
+		end
+
+		if inventory.lastWeapon ~= nil and inventory[inventory.lastWeapon] == true then
+			return inventory.lastWeapon
+		end
+
+		for weaponName, owned in pairs(inventory) do
+			if owned == true and weaponName ~= "lastWeapon" then
+				return weaponName
+			end
+		end
+
+		return nil
+	end
+
+	local function bindIntelligenceContainer(player, container, silent)
+		if typeof(container) ~= "Instance" then
+			return
+		end
+
+		local connectionList = intelligencePlayerConnections[player]
+		if connectionList == nil then
+			connectionList = {}
+			intelligencePlayerConnections[player] = connectionList
+		end
+
+		for _, child in ipairs(container:GetChildren()) do
+			rememberPlayerWeapon(player, child, silent)
+		end
+
+		table.insert(connectionList, container.ChildAdded:Connect(function(child)
+			rememberPlayerWeapon(player, child, false)
+			if updateSuiteOverlays ~= nil then
+				updateSuiteOverlays()
+			end
+		end))
+		table.insert(connectionList, container.ChildRemoved:Connect(function(child)
+			local weaponName = getWeaponName(child)
+			if weaponName ~= nil then
+				forgetPlayerWeaponIfGone(player, weaponName)
+			end
+		end))
+	end
+
+	local function unbindIntelligencePlayer(player)
+		disconnectConnectionList(intelligencePlayerConnections[player])
+		intelligencePlayerConnections[player] = nil
+		intelligencePlayerWeapons[player] = nil
+	end
+
+	local function bindIntelligencePlayer(player)
+		if player == nil or intelligencePlayerConnections[player] ~= nil then
+			return
+		end
+
+		local connectionList = {}
+		intelligencePlayerConnections[player] = connectionList
+
+		bindIntelligenceContainer(player, player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack"), true)
+		bindIntelligenceContainer(player, player.Character, true)
+
+		table.insert(connectionList, player.ChildAdded:Connect(function(child)
+			if child:IsA("Backpack") then
+				bindIntelligenceContainer(player, child, false)
+			end
+		end))
+		table.insert(connectionList, player.CharacterAdded:Connect(function(character)
+			bindIntelligenceContainer(player, character, true)
+		end))
+	end
+
+	local function updateIntelligenceThreat()
+		local localRoot = getPlayerRootPart(Players.LocalPlayer)
+		if localRoot == nil then
+			state.intelligenceThreat = nil
+			return
+		end
+
+		local nearestThreat = nil
+		for _, player in ipairs(Players:GetPlayers()) do
+			if isEnemyPlayer(player) then
+				local weaponName = getKnownPlayerWeapon(player)
+				local root = getPlayerRootPart(player)
+				if weaponName ~= nil and root ~= nil then
+					local distance = (root.Position - localRoot.Position).Magnitude
+					if distance <= state.intelligenceThreatRange and (nearestThreat == nil or distance < nearestThreat.distance) then
+						nearestThreat = {
+							player = player,
+							playerName = player.Name,
+							weaponName = weaponName,
+							distance = distance,
+							teamText = getPlayerTeamText(player),
+							teamColor = getPlayerTeamColor(player),
+						}
+					end
+				end
+			end
+		end
+
+		state.intelligenceThreat = nearestThreat
+	end
+
+	getIntelligenceThreatSignal = function()
+		local threat = state.intelligenceThreat
+		if threat == nil then
+			return nil
+		end
+
+		local distance = math.floor(threat.distance + 0.5)
+		return {
+			title = "Threat Close",
+			detail = ("%s with %s is %dm close"):format(threat.playerName, threat.weaponName, distance),
+			badge = threat.teamText,
+			level = distance <= 60 and "critical" or "warning",
+			color = threat.teamColor,
+			width = 420,
+			height = 62,
+		}
+	end
+
 	local localProtectionBridge = scope.__DartLocalProtectionBridge
 	if type(localProtectionBridge) ~= "table" then
 		localProtectionBridge = {}
@@ -4656,6 +4973,8 @@ function BytecodeViewer.start(config)
 		setOverlayStroke(chip.frame, color, level == "neutral" and 0.32 or 0.08)
 	end
 
+	local getIntelligenceThreatSignal
+
 	local function buildSuiteTelemetry()
 		local focusedPlayer = getFocusedSpyPlayer()
 		local activeEsp = anyEspSignalEnabled()
@@ -4704,6 +5023,11 @@ function BytecodeViewer.start(config)
 			signal.badge = state.lastResult and "LOADED" or "READY"
 			signal.level = state.lastResult and "success" or "info"
 			signal.width = 318
+		end
+
+		local threatSignal = getIntelligenceThreatSignal and getIntelligenceThreatSignal() or nil
+		if threatSignal ~= nil and not state.isMinimized then
+			signal = threatSignal
 		end
 
 		if state.isMinimized then
@@ -4756,6 +5080,7 @@ function BytecodeViewer.start(config)
 				level = signal.level,
 				title = signal.title .. " signal",
 				detail = signal.detail,
+				color = signal.color,
 			},
 			{
 				level = state.aimbotEnabled and "warning" or "info",
@@ -4805,7 +5130,7 @@ function BytecodeViewer.start(config)
 
 	updateSuiteOverlays = function()
 		local signal = buildSuiteTelemetry()
-		local color = getLevelColor(signal.level)
+		local color = signal.color or getLevelColor(signal.level)
 		local islandHeight = signal.height or 52
 
 		refs.dynamicIslandTitle.Text = signal.title
@@ -4829,7 +5154,7 @@ function BytecodeViewer.start(config)
 			local alert = alerts[index]
 			card.frame.Visible = alert ~= nil
 			if alert ~= nil then
-				local alertColor = getLevelColor(alert.level)
+				local alertColor = alert.color or getLevelColor(alert.level)
 				card.level.Text = string.upper(alert.level)
 				card.level.TextColor3 = alertColor
 				card.title.Text = alert.title
@@ -6823,6 +7148,276 @@ function BytecodeViewer.start(config)
 		return color:Lerp(Color3.new(1, 1, 1), 0.12), color:Lerp(Color3.new(1, 1, 1), 0.36)
 	end
 
+	local function getStructuresRoot()
+		return Workspace:FindFirstChild("Structures")
+	end
+
+	local function resolveStructureRoot(instance)
+		local structuresRoot = getStructuresRoot()
+		if typeof(instance) ~= "Instance" or structuresRoot == nil then
+			return nil
+		end
+
+		if instance.Parent == structuresRoot then
+			return instance
+		end
+
+		local current = instance
+		while current ~= nil and current.Parent ~= nil and current.Parent ~= structuresRoot do
+			current = current.Parent
+		end
+
+		if current ~= nil and current.Parent == structuresRoot then
+			return current
+		end
+
+		return nil
+	end
+
+	local function colorDistance(left, right)
+		return math.abs(left.R - right.R) + math.abs(left.G - right.G) + math.abs(left.B - right.B)
+	end
+
+	local function getLocalTeamColor()
+		local localPlayer = Players.LocalPlayer
+		if localPlayer == nil then
+			return nil
+		end
+
+		if localPlayer.Team ~= nil and localPlayer.Team.TeamColor ~= nil then
+			return localPlayer.Team.TeamColor.Color
+		elseif localPlayer.TeamColor ~= nil then
+			return localPlayer.TeamColor.Color
+		end
+
+		return nil
+	end
+
+	local function getStructureTeamText(structure)
+		local teamValue = structure:GetAttribute("Team")
+		local teamIndex = structure:GetAttribute("TeamIndex")
+		local teamText = nil
+
+		if typeof(teamValue) == "BrickColor" then
+			teamText = teamValue.Name
+		elseif type(teamValue) == "string" and teamValue ~= "" then
+			teamText = teamValue
+		elseif typeof(teamValue) == "Color3" then
+			teamText = "team color"
+		end
+
+		if teamText == nil or teamText == "" then
+			teamText = type(teamIndex) == "number" and ("Team %d"):format(teamIndex) or "unknown team"
+		elseif type(teamIndex) == "number" then
+			teamText = ("%s / Team %d"):format(teamText, teamIndex)
+		end
+
+		return teamText
+	end
+
+	local function getStructureTeamColor(structure)
+		local current = structure
+		while typeof(current) == "Instance" and current ~= nil and current ~= Workspace do
+			local color = readInstanceTeamColor(current)
+			if color ~= nil then
+				return color
+			end
+			current = current.Parent
+		end
+
+		return nil
+	end
+
+	local function isEnemyStructure(structure)
+		local teamColor = getStructureTeamColor(structure)
+		local localColor = getLocalTeamColor()
+		if teamColor == nil or localColor == nil then
+			return false
+		end
+
+		return colorDistance(teamColor, localColor) > 0.03
+	end
+
+	local function classifyIntelligenceStructure(structure)
+		if typeof(structure) ~= "Instance" then
+			return nil
+		end
+
+		local normalized = string.lower(structure.Name):gsub("[%p%s_]+", "")
+		if string.find(normalized, "ssim", 1, true) ~= nil then
+			return "S.S.I.M"
+		elseif string.find(normalized, "arsenal", 1, true) ~= nil then
+			return "Arsenal"
+		end
+
+		return nil
+	end
+
+	local function getStructureBuilderText(structure)
+		local builder = structure:GetAttribute("Builder")
+		if type(builder) == "string" and trimText(builder) ~= "" then
+			return builder
+		end
+
+		return "Unknown builder"
+	end
+
+	local function formatProductionValue(value)
+		if typeof(value) == "Instance" then
+			return value.Name
+		elseif typeof(value) == "BrickColor" then
+			return value.Name
+		elseif typeof(value) == "Color3" then
+			return "color value"
+		end
+
+		local text = trimText(tostring(value or ""))
+		if text == "" or text == "nil" then
+			return nil
+		end
+
+		return text
+	end
+
+	local PRODUCTION_ATTRIBUTES = {
+		"Producing",
+		"Production",
+		"CurrentProduction",
+		"CurrentRecipe",
+		"Recipe",
+		"Item",
+		"Product",
+		"Output",
+	}
+
+	local function readStructureProduction(structure)
+		for _, attributeName in ipairs(PRODUCTION_ATTRIBUTES) do
+			local value = formatProductionValue(structure:GetAttribute(attributeName))
+			if value ~= nil then
+				return value
+			end
+		end
+
+		return nil
+	end
+
+	local function readProductionCarrierValue(instance)
+		if typeof(instance) ~= "Instance" then
+			return nil
+		end
+
+		local normalized = string.lower(instance.Name):gsub("[%p%s_]+", "")
+		if string.find(normalized, "production", 1, true) == nil
+			and string.find(normalized, "producing", 1, true) == nil
+			and string.find(normalized, "recipe", 1, true) == nil
+			and string.find(normalized, "product", 1, true) == nil
+			and string.find(normalized, "output", 1, true) == nil then
+			return nil
+		end
+
+		if instance:IsA("ValueBase") then
+			local ok, value = pcall(function()
+				return instance.Value
+			end)
+			if ok then
+				return formatProductionValue(value)
+			end
+		end
+
+		return formatProductionValue(instance:GetAttribute("Value") or instance:GetAttribute("Item") or instance:GetAttribute("Product"))
+	end
+
+	local function emitStructureProductionNotification(structure, structureKind, productName)
+		if productName == nil or not isEnemyStructure(structure) then
+			return
+		end
+
+		local teamText = getStructureTeamText(structure)
+		local teamColor = getStructureTeamColor(structure) or NativeUi.Theme.Warning
+		emitIntelligenceNotification(
+			("production:%s:%s:%s"):format(getInstanceKey(structure), structureKind, productName),
+			5,
+			"info",
+			("%s production update"):format(structureKind),
+			("%s is producing %s for %s."):format(structureKind, productName, teamText),
+			teamColor,
+			{ priority = 32, duration = 5 }
+		)
+	end
+
+	local function bindStructureProductionIntelligence(structure, structureKind)
+		if intelligenceStructureConnections[structure] ~= nil then
+			return
+		end
+
+		local connectionList = {}
+		intelligenceStructureConnections[structure] = connectionList
+
+		local function refreshProduction()
+			emitStructureProductionNotification(structure, structureKind, readStructureProduction(structure))
+		end
+
+		for _, attributeName in ipairs(PRODUCTION_ATTRIBUTES) do
+			table.insert(connectionList, structure:GetAttributeChangedSignal(attributeName):Connect(refreshProduction))
+		end
+
+		table.insert(connectionList, structure.DescendantAdded:Connect(function(descendant)
+			emitStructureProductionNotification(structure, structureKind, readProductionCarrierValue(descendant))
+			if descendant:IsA("ValueBase") then
+				table.insert(connectionList, descendant:GetPropertyChangedSignal("Value"):Connect(function()
+					emitStructureProductionNotification(structure, structureKind, readProductionCarrierValue(descendant))
+				end))
+			end
+		end))
+
+		refreshProduction()
+	end
+
+	local function handleIntelligenceStructure(structure)
+		structure = resolveStructureRoot(structure)
+		if structure == nil or intelligenceKnownStructures[structure] == true then
+			return
+		end
+
+		local structureKind = classifyIntelligenceStructure(structure)
+		if structureKind == nil then
+			return
+		end
+
+		intelligenceKnownStructures[structure] = true
+		bindStructureProductionIntelligence(structure, structureKind)
+		if not isEnemyStructure(structure) then
+			return
+		end
+
+		local teamText = getStructureTeamText(structure)
+		local teamIndex = structure:GetAttribute("TeamIndex")
+		local firstKey = ("%s:%s"):format(structureKind, tostring(teamIndex or teamText))
+		local isFirst = intelligenceFirstStructureSeen[firstKey] ~= true
+		intelligenceFirstStructureSeen[firstKey] = true
+
+		emitIntelligenceNotification(
+			("structure:%s"):format(getInstanceKey(structure)),
+			60,
+			"warning",
+			isFirst and ("First enemy %s built"):format(structureKind) or ("Enemy %s built"):format(structureKind),
+			("%s built %s for %s."):format(getStructureBuilderText(structure), structureKind, teamText),
+			getStructureTeamColor(structure) or NativeUi.Theme.Warning,
+			{ priority = isFirst and 46 or 38, duration = 6 }
+		)
+	end
+
+	local function scanIntelligenceStructures()
+		local structuresRoot = getStructuresRoot()
+		if structuresRoot == nil then
+			return
+		end
+
+		for _, structure in ipairs(structuresRoot:GetChildren()) do
+			handleIntelligenceStructure(structure)
+		end
+	end
+
 	local function reconcilePlayerHighlights()
 		local desired = {}
 
@@ -7389,6 +7984,13 @@ function BytecodeViewer.start(config)
 	end)
 	trackCleanup(restoreLighting)
 	trackCleanup(function()
+		for player in pairs(intelligencePlayerConnections) do
+			unbindIntelligencePlayer(player)
+		end
+		for structure, connectionList in pairs(intelligenceStructureConnections) do
+			disconnectConnectionList(connectionList)
+			intelligenceStructureConnections[structure] = nil
+		end
 		for player, connection in pairs(playerCharacterConnections) do
 			pcall(function()
 				connection:Disconnect()
@@ -7460,6 +8062,25 @@ function BytecodeViewer.start(config)
 	end))
 
 	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
+		intelligenceHeartbeatAccumulator = intelligenceHeartbeatAccumulator + deltaTime
+		if intelligenceHeartbeatAccumulator < 0.35 then
+			return
+		end
+
+		intelligenceHeartbeatAccumulator = 0
+		updateIntelligenceThreat()
+		local threat = state.intelligenceThreat
+		local nextKey = threat
+			and ("%s:%s:%d"):format(threat.playerName, threat.weaponName, math.floor(threat.distance / 10))
+			or ""
+		local changed = nextKey ~= state.intelligenceThreatKey
+		state.intelligenceThreatKey = nextKey
+		if changed or threat ~= nil then
+			updateSuiteOverlays()
+		end
+	end))
+
+	trackConnection(RunService.Heartbeat:Connect(function(deltaTime)
 		if not (state.espObjectToggles.spireWell or state.espObjectToggles.well) then
 			distanceRefreshAccumulator = 0
 			lastDistanceRefreshPosition = nil
@@ -7492,7 +8113,14 @@ function BytecodeViewer.start(config)
 		lastDistanceRefreshPosition = localPosition
 		reconcileObjectHighlights()
 	end))
-	trackConnection(Workspace.DescendantAdded:Connect(handleEspDescendantMutation))
+	trackConnection(Workspace.DescendantAdded:Connect(function(descendant)
+		handleEspDescendantMutation(descendant)
+		if descendant.Name == "Structures" then
+			task.defer(scanIntelligenceStructures)
+		else
+			handleIntelligenceStructure(descendant)
+		end
+	end))
 	trackConnection(Workspace.DescendantRemoving:Connect(handleEspDescendantMutation))
 	bindScriptBrowserMutationWatchers()
 	bindRemoteMutationWatchers()
@@ -7523,6 +8151,7 @@ function BytecodeViewer.start(config)
 
 	trackConnection(Players.PlayerAdded:Connect(refreshPlayersList))
 	trackConnection(Players.PlayerAdded:Connect(function(player)
+		bindIntelligencePlayer(player)
 		ensurePlayerCharacterConnection(player)
 		ensurePlayerTeamConnection(player)
 		refreshEspPlayersList()
@@ -7534,6 +8163,7 @@ function BytecodeViewer.start(config)
 		end
 
 		state.highlightedPlayers[player.Name] = nil
+		unbindIntelligencePlayer(player)
 		local connection = playerCharacterConnections[player]
 		if connection ~= nil then
 			pcall(function()
@@ -7894,6 +8524,11 @@ function BytecodeViewer.start(config)
 	freeCameraFastSpeedSlider.setValue(state.freeCameraFastSpeed)
 	iridiumSlider.setValue(state.iridiumMinFullness)
 	wellDistanceSlider.setValue(state.wellDistance)
+	for _, player in ipairs(Players:GetPlayers()) do
+		bindIntelligencePlayer(player)
+	end
+	scanIntelligenceStructures()
+	updateIntelligenceThreat()
 	refreshPlayersList()
 	refreshEspPlayersList()
 	refreshScriptBrowser(false)
