@@ -5131,13 +5131,14 @@ function BytecodeViewer.start(config)
 			if isEnemyPlayer(player) then
 				local weaponName = getKnownPlayerWeapon(player)
 				local root = getPlayerRootPart(player)
-				if weaponName ~= nil and root ~= nil then
+				if root ~= nil then
 					local distance = (root.Position - localRoot.Position).Magnitude
 					if distance <= state.intelligenceThreatRange and (nearestThreat == nil or distance < nearestThreat.distance) then
 						nearestThreat = {
 							player = player,
 							playerName = player.Name,
 							weaponName = weaponName,
+							weaponKnown = weaponName ~= nil,
 							distance = distance,
 							teamText = getPlayerTeamText(player),
 							teamColor = getPlayerTeamColor(player),
@@ -5157,9 +5158,12 @@ function BytecodeViewer.start(config)
 		end
 
 		local distance = math.floor(threat.distance + 0.5)
+		local detail = threat.weaponKnown
+			and ("%s with %s is %dm close"):format(threat.playerName, threat.weaponName, distance)
+			or ("%s is %dm close"):format(threat.playerName, distance)
 		return {
 			title = "Threat Close",
-			detail = ("%s with %s is %dm close"):format(threat.playerName, threat.weaponName, distance),
+			detail = detail,
 			badge = threat.teamText,
 			level = distance <= 60 and "critical" or "warning",
 			color = threat.teamColor,
@@ -8860,7 +8864,7 @@ function BytecodeViewer.start(config)
 		updateIntelligenceThreat()
 		local threat = state.intelligenceThreat
 		local nextKey = threat
-			and ("%s:%s:%d"):format(threat.playerName, threat.weaponName, math.floor(threat.distance / 10))
+			and ("%s:%s:%d"):format(threat.playerName, tostring(threat.weaponName or "unknown"), math.floor(threat.distance / 10))
 			or ""
 		local changed = nextKey ~= state.intelligenceThreatKey
 		state.intelligenceThreatKey = nextKey
