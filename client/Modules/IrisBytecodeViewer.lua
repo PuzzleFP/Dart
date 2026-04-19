@@ -4491,36 +4491,76 @@ function BytecodeViewer.start(config)
 		return nil
 	end
 
-	local function installIndexRemoteMethodHook(makeHookClosure)
-		if remoteHookBridge.indexInstalled then
-			markRemoteHookMethod("index", true)
+	local function installIndexHookTarget(target, label, makeHookClosure)
+		remoteHookBridge.indexHooks = remoteHookBridge.indexHooks or {}
+		if remoteHookBridge.indexHooks[label] ~= nil then
+			markRemoteHookMethod("index:" .. label, true)
 			return true
 		end
 
-		if type(hookmetamethod) ~= "function" then
+		if type(hookmetamethod) ~= "function" or target == nil then
 			return false
 		end
 
 		local originalIndex
 		local ok = pcall(function()
-			originalIndex = hookmetamethod(game, "__index", makeHookClosure(function(self, key)
+			originalIndex = hookmetamethod(target, "__index", makeHookClosure(function(self, key)
 				local methodName = getWatchedRemoteMethod(self, key)
 				local originalValue = originalIndex(self, key)
 				if methodName ~= nil and type(originalValue) == "function" then
-					return getCachedRemoteMethodWrapper(self, methodName, originalValue, "index", makeHookClosure)
+					return getCachedRemoteMethodWrapper(self, methodName, originalValue, "index:" .. label, makeHookClosure)
 				end
 				return originalValue
 			end))
 		end)
 
 		if ok then
-			remoteHookBridge.indexInstalled = true
-			remoteHookBridge.originalIndex = originalIndex
-			markRemoteHookMethod("index", true)
+			remoteHookBridge.indexHooks[label] = originalIndex
+			markRemoteHookMethod("index:" .. label, true)
 			return true
 		end
 
 		return false
+	end
+
+	local function createHookSample(className)
+		remoteHookBridge.samples = remoteHookBridge.samples or {}
+		local existing = remoteHookBridge.samples[className]
+		if typeof(existing) == "Instance" then
+			return existing
+		end
+
+		local ok, sample = pcall(function()
+			return Instance.new(className)
+		end)
+		if ok then
+			sample.Name = "DartRemoteHookSample_" .. className
+			remoteHookBridge.samples[className] = sample
+			return sample
+		end
+		return nil
+	end
+
+	local function installIndexRemoteMethodHook(makeHookClosure)
+		if remoteHookBridge.indexInstalled then
+			markRemoteHookMethod("index", true)
+			return true
+		end
+
+		local installedAny = installIndexHookTarget(game, "game", makeHookClosure)
+		local remoteEventSample = createHookSample("RemoteEvent")
+		local unreliableSample = createHookSample("UnreliableRemoteEvent")
+		local remoteFunctionSample = createHookSample("RemoteFunction")
+
+		installedAny = installIndexHookTarget(remoteEventSample, "RemoteEvent", makeHookClosure) or installedAny
+		installedAny = installIndexHookTarget(unreliableSample, "UnreliableRemoteEvent", makeHookClosure) or installedAny
+		installedAny = installIndexHookTarget(remoteFunctionSample, "RemoteFunction", makeHookClosure) or installedAny
+
+		remoteHookBridge.indexInstalled = installedAny
+		if installedAny then
+			markRemoteHookMethod("index", true)
+		end
+		return installedAny
 	end
 
 	local function installRawIndexRemoteMethodHook(metatable, makeHookClosure)
@@ -4547,6 +4587,38 @@ function BytecodeViewer.start(config)
 		remoteHookBridge.originalRawIndex = originalIndex
 		markRemoteHookMethod("raw-index", true)
 		return true
+	end
+
+	local function installNamecallHookTarget(target, label, makeHookClosure)
+		remoteHookBridge.namecallHooks = remoteHookBridge.namecallHooks or {}
+		if remoteHookBridge.namecallHooks[label] ~= nil then
+			markRemoteHookMethod("namecall:" .. label, true)
+			return true
+		end
+
+		if type(hookmetamethod) ~= "function" or target == nil then
+			return false
+		end
+
+		local originalNamecall
+		local ok = pcall(function()
+			originalNamecall = hookmetamethod(target, "__namecall", makeHookClosure(function(self, ...)
+				local method = getnamecallmethod()
+				local bridge = getGlobalScope().__DartRemoteHookBridge
+				if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
+					bridge.callback(self, method, packRemoteArgs(...), "namecall:" .. label)
+				end
+				return originalNamecall(self, ...)
+			end))
+		end)
+
+		if ok then
+			remoteHookBridge.namecallHooks[label] = originalNamecall
+			markRemoteHookMethod("namecall:" .. label, true)
+			return true
+		end
+
+		return false
 	end
 
 	remoteHookBridge.callback = function(remote, method, args, hookName)
@@ -4606,21 +4678,17 @@ function BytecodeViewer.start(config)
 				return true
 			end
 
-			local originalNamecall
-			local ok, err = pcall(function()
-				originalNamecall = hookmetamethod(game, "__namecall", makeHookClosure(function(self, ...)
-					local method = getnamecallmethod()
-					local bridge = getGlobalScope().__DartRemoteHookBridge
-					if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
-						bridge.callback(self, method, packRemoteArgs(...), "namecall")
-					end
-					return originalNamecall(self, ...)
-				end))
-			end)
+			local namecallInstalled = installNamecallHookTarget(game, "game", makeHookClosure)
+			local remoteEventSample = createHookSample("RemoteEvent")
+			local unreliableSample = createHookSample("UnreliableRemoteEvent")
+			local remoteFunctionSample = createHookSample("RemoteFunction")
 
-			if ok then
+			namecallInstalled = installNamecallHookTarget(remoteEventSample, "RemoteEvent", makeHookClosure) or namecallInstalled
+			namecallInstalled = installNamecallHookTarget(unreliableSample, "UnreliableRemoteEvent", makeHookClosure) or namecallInstalled
+			namecallInstalled = installNamecallHookTarget(remoteFunctionSample, "RemoteFunction", makeHookClosure) or namecallInstalled
+
+			if namecallInstalled then
 				remoteHookBridge.namecallInstalled = true
-				remoteHookBridge.originalNamecall = originalNamecall
 				remoteHookBridge.enabled = true
 				state.remoteHookInstalled = true
 				state.remoteHookError = nil
@@ -4628,7 +4696,7 @@ function BytecodeViewer.start(config)
 				return true
 			end
 
-			state.remoteHookError = "hookmetamethod failed: " .. tostring(err)
+			state.remoteHookError = "hookmetamethod namecall hooks failed."
 		end
 
 		if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" then
