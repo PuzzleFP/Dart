@@ -1141,6 +1141,21 @@ local function getRemotePath(instance)
 	return instance:GetFullName()
 end
 
+local function getRemoteKey(instance)
+	if typeof(instance) ~= "Instance" then
+		return tostring(instance)
+	end
+
+	local ok, debugId = pcall(function()
+		return instance:GetDebugId(0)
+	end)
+	if ok and type(debugId) == "string" and debugId ~= "" then
+		return debugId
+	end
+
+	return instance:GetFullName()
+end
+
 local function collectRemoteBrowserRoots()
 	local roots = {}
 	local seen = {}
@@ -1400,6 +1415,7 @@ local function makeState(config)
 		remoteLogs = {},
 		remoteList = {},
 		selectedRemotePath = nil,
+		selectedRemoteKey = nil,
 		remoteWatcherEnabled = false,
 		remoteHookInstalled = false,
 		remoteHookError = nil,
@@ -6717,12 +6733,12 @@ function BytecodeViewer.start(config)
 	end
 
 	local function getSelectedRemote()
-		if state.selectedRemotePath == nil then
+		if state.selectedRemotePath == nil and state.selectedRemoteKey == nil then
 			return nil
 		end
 
 		for _, remote in ipairs(state.remoteList) do
-			if getRemotePath(remote) == state.selectedRemotePath then
+			if getRemoteKey(remote) == state.selectedRemoteKey or getRemotePath(remote) == state.selectedRemotePath then
 				return remote
 			end
 		end
@@ -6731,7 +6747,16 @@ function BytecodeViewer.start(config)
 	end
 
 	local function remoteLogMatches(entry, remotePath, remote)
-		return entry ~= nil and (entry.remote == remote or entry.remotePath == remotePath)
+		if entry == nil then
+			return false
+		end
+		if remote ~= nil and (entry.remote == remote or entry.remoteKey == getRemoteKey(remote)) then
+			return true
+		end
+		if remotePath ~= nil and entry.remotePath == remotePath then
+			return true
+		end
+		return remote ~= nil and entry.remoteName == remote.Name and entry.className == remote.ClassName
 	end
 
 	local function getRemoteLogStats(remotePath, remote)
@@ -6829,10 +6854,12 @@ function BytecodeViewer.start(config)
 	local function appendRemoteLog(direction, remote, method, args, hookName)
 		args = args or {}
 		local path = getRemotePath(remote)
+		local remoteKey = getRemoteKey(remote)
 		local listChanged = ensureRemoteTracked(remote)
 		local selectionChanged = false
 		if state.selectedRemotePath == nil then
 			state.selectedRemotePath = path
+			state.selectedRemoteKey = remoteKey
 			selectionChanged = true
 		end
 		local argsText = formatRemoteArgs(args)
@@ -6844,6 +6871,8 @@ function BytecodeViewer.start(config)
 			remote = remote,
 			direction = direction or "?",
 			remotePath = path,
+			remoteKey = remoteKey,
+			remoteName = typeof(remote) == "Instance" and remote.Name or tostring(remote),
 			className = typeof(remote) == "Instance" and remote.ClassName or "?",
 			method = tostring(method or "?"),
 			argCount = getPackedArgCount(args),
@@ -7346,9 +7375,10 @@ function BytecodeViewer.start(config)
 					TextSize = 11,
 					TextXAlignment = Enum.TextXAlignment.Left,
 				})
-				NativeUi.setButtonSelected(button, state.selectedRemotePath == path)
+				NativeUi.setButtonSelected(button, state.selectedRemoteKey == getRemoteKey(remote) or state.selectedRemotePath == path)
 				button.MouseButton1Click:Connect(function()
 					state.selectedRemotePath = path
+					state.selectedRemoteKey = getRemoteKey(remote)
 					renderRemoteList()
 					renderRemoteLog()
 					syncControlState()
