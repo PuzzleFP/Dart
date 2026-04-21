@@ -1195,10 +1195,14 @@ local function buildRemoteBrowserList()
 end
 
 local function packRemoteArgs(...)
-	return {
-		n = select("#", ...),
-		...,
+	local count = select("#", ...)
+	local packed = {
+		n = count,
 	}
+	for index = 1, count do
+		packed[index] = select(index, ...)
+	end
+	return packed
 end
 
 local function getPackedArgCount(args)
