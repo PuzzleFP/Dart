@@ -1130,7 +1130,13 @@ end
 
 local function isRemoteLike(instance)
 	return typeof(instance) == "Instance"
-		and (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance.ClassName == "UnreliableRemoteEvent")
+		and (
+			instance:IsA("RemoteEvent")
+			or instance:IsA("RemoteFunction")
+			or instance:IsA("BindableEvent")
+			or instance:IsA("BindableFunction")
+			or instance.ClassName == "UnreliableRemoteEvent"
+		)
 end
 
 local function getRemotePath(instance)
@@ -1218,6 +1224,30 @@ local function packRemoteArgs(...)
 		packed[index] = select(index, ...)
 	end
 	return packed
+end
+
+local function packRemoteArgsAfterFirst(...)
+	local count = select("#", ...)
+	local packed = {
+		n = math.max(count - 1, 0),
+	}
+	for index = 2, count do
+		packed[index - 1] = select(index, ...)
+	end
+	return packed
+end
+
+local function normalizeRemoteMethod(method)
+	if method == "fireServer" then
+		return "FireServer"
+	elseif method == "invokeServer" then
+		return "InvokeServer"
+	elseif method == "fire" then
+		return "Fire"
+	elseif method == "invoke" then
+		return "Invoke"
+	end
+	return method
 end
 
 local function getPackedArgCount(args)
@@ -6829,6 +6859,7 @@ function BytecodeViewer.start(config)
 	end
 
 	local function getWatchedRemoteMethod(remote, key)
+		key = normalizeRemoteMethod(key)
 		if type(key) ~= "string" or not isRemoteLike(remote) then
 			return nil
 		end
@@ -6836,6 +6867,12 @@ function BytecodeViewer.start(config)
 			return key
 		end
 		if key == "InvokeServer" and remote:IsA("RemoteFunction") then
+			return key
+		end
+		if key == "Fire" and remote:IsA("BindableEvent") then
+			return key
+		end
+		if key == "Invoke" and remote:IsA("BindableFunction") then
 			return key
 		end
 		return nil
@@ -6978,12 +7015,13 @@ function BytecodeViewer.start(config)
 
 			local hookedOriginal
 			local okHook = pcall(function()
-				hookedOriginal = hookfunction(originalMethod, makeHookClosure(function(self, ...)
+				hookedOriginal = hookfunction(originalMethod, makeHookClosure(function(...)
+					local self = ...
 					local bridge = getGlobalScope().__DartRemoteHookBridge
 					if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) then
-						bridge.callback(self, methodName, packRemoteArgs(...), "direct")
+						bridge.callback(self, methodName, packRemoteArgsAfterFirst(...), "direct")
 					end
-					return hookedOriginal(self, ...)
+					return hookedOriginal(...)
 				end))
 			end)
 
@@ -7000,6 +7038,8 @@ function BytecodeViewer.start(config)
 		hookClassMethod("RemoteEvent", "FireServer")
 		hookClassMethod("UnreliableRemoteEvent", "FireServer")
 		hookClassMethod("RemoteFunction", "InvokeServer")
+		hookClassMethod("BindableEvent", "Fire")
+		hookClassMethod("BindableFunction", "Invoke")
 		remoteHookBridge.directHooksInstalled = installedAny
 		return installedAny
 	end
@@ -7101,10 +7141,14 @@ function BytecodeViewer.start(config)
 		local remoteEventSample = createHookSample("RemoteEvent")
 		local unreliableSample = createHookSample("UnreliableRemoteEvent")
 		local remoteFunctionSample = createHookSample("RemoteFunction")
+		local bindableEventSample = createHookSample("BindableEvent")
+		local bindableFunctionSample = createHookSample("BindableFunction")
 
 		installedAny = installIndexHookTarget(remoteEventSample, "RemoteEvent", makeHookClosure) or installedAny
 		installedAny = installIndexHookTarget(unreliableSample, "UnreliableRemoteEvent", makeHookClosure) or installedAny
 		installedAny = installIndexHookTarget(remoteFunctionSample, "RemoteFunction", makeHookClosure) or installedAny
+		installedAny = installIndexHookTarget(bindableEventSample, "BindableEvent", makeHookClosure) or installedAny
+		installedAny = installIndexHookTarget(bindableFunctionSample, "BindableFunction", makeHookClosure) or installedAny
 
 		remoteHookBridge.indexInstalled = installedAny
 		if installedAny then
@@ -7153,9 +7197,9 @@ function BytecodeViewer.start(config)
 		local originalNamecall
 		local ok = pcall(function()
 			originalNamecall = hookmetamethod(target, "__namecall", makeHookClosure(function(self, ...)
-				local method = getnamecallmethod()
+				local method = normalizeRemoteMethod(getnamecallmethod())
 				local bridge = getGlobalScope().__DartRemoteHookBridge
-				if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
+				if bridge ~= nil and bridge.enabled == true and type(bridge.callback) == "function" and getWatchedRemoteMethod(self, method) ~= nil then
 					bridge.callback(self, method, packRemoteArgs(...), "namecall:" .. label)
 				end
 				return originalNamecall(self, ...)
@@ -7232,10 +7276,14 @@ function BytecodeViewer.start(config)
 			local remoteEventSample = createHookSample("RemoteEvent")
 			local unreliableSample = createHookSample("UnreliableRemoteEvent")
 			local remoteFunctionSample = createHookSample("RemoteFunction")
+			local bindableEventSample = createHookSample("BindableEvent")
+			local bindableFunctionSample = createHookSample("BindableFunction")
 
 			namecallInstalled = installNamecallHookTarget(remoteEventSample, "RemoteEvent", makeHookClosure) or namecallInstalled
 			namecallInstalled = installNamecallHookTarget(unreliableSample, "UnreliableRemoteEvent", makeHookClosure) or namecallInstalled
 			namecallInstalled = installNamecallHookTarget(remoteFunctionSample, "RemoteFunction", makeHookClosure) or namecallInstalled
+			namecallInstalled = installNamecallHookTarget(bindableEventSample, "BindableEvent", makeHookClosure) or namecallInstalled
+			namecallInstalled = installNamecallHookTarget(bindableFunctionSample, "BindableFunction", makeHookClosure) or namecallInstalled
 
 			if namecallInstalled then
 				remoteHookBridge.namecallInstalled = true
@@ -7269,8 +7317,8 @@ function BytecodeViewer.start(config)
 				rawIndexInstalled = installRawIndexRemoteMethodHook(metatable, makeHookClosure)
 			end
 			metatable.__namecall = makeHookClosure(function(self, ...)
-				local method = getnamecallmethod()
-				if state.remoteWatcherEnabled and isRemoteLike(self) and (method == "FireServer" or method == "InvokeServer") then
+				local method = normalizeRemoteMethod(getnamecallmethod())
+				if state.remoteWatcherEnabled and getWatchedRemoteMethod(self, method) ~= nil then
 					appendRemoteLog("OUT", self, method, packRemoteArgs(...), "raw-namecall")
 				end
 				return originalNamecall(self, ...)
@@ -7309,7 +7357,7 @@ function BytecodeViewer.start(config)
 	end
 
 	connectRemoteEvent = function(remote)
-		if not remote:IsA("RemoteEvent") and remote.ClassName ~= "UnreliableRemoteEvent" then
+		if not remote:IsA("RemoteEvent") and remote.ClassName ~= "UnreliableRemoteEvent" and not remote:IsA("BindableEvent") then
 			return
 		end
 
@@ -7317,9 +7365,12 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		remoteEventConnections[remote] = trackConnection(remote.OnClientEvent:Connect(function(...)
+		local signal = remote:IsA("BindableEvent") and remote.Event or remote.OnClientEvent
+		local method = remote:IsA("BindableEvent") and "Event" or "OnClientEvent"
+		local direction = remote:IsA("BindableEvent") and "LOCAL" or "IN"
+		remoteEventConnections[remote] = trackConnection(signal:Connect(function(...)
 			if state.remoteWatcherEnabled then
-				appendRemoteLog("IN", remote, "OnClientEvent", packRemoteArgs(...))
+				appendRemoteLog(direction, remote, method, packRemoteArgs(...))
 			end
 		end))
 	end
