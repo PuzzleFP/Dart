@@ -5706,16 +5706,25 @@ function BytecodeViewer.start(config)
 			card.timerTrack.BackgroundTransparency = 1
 			card.timerFill.BackgroundTransparency = 1
 			refs.setAlertCardTextTransparency(card, 1)
+			card.currentRowY = rowY
+			SuiteMotion.tween(card.frame, {
+				BackgroundTransparency = 0,
+				Position = UDim2.fromOffset(0, rowY),
+			}, {
+				duration = 0.22,
+				style = "quint",
+			})
+			refs.tweenAlertCardText(card, 0)
+		elseif card.currentRowY ~= rowY then
+			card.currentRowY = rowY
+			SuiteMotion.tween(card.frame, {
+				Position = UDim2.fromOffset(0, rowY),
+			}, {
+				duration = 0.18,
+				style = "quad",
+			})
 		end
 
-		SuiteMotion.tween(card.frame, {
-			BackgroundTransparency = 0,
-			Position = UDim2.fromOffset(0, rowY),
-		}, {
-			duration = 0.22,
-			style = "quint",
-		})
-		refs.tweenAlertCardText(card, 0)
 		refs.updateAlertTimer(card, alert, alertColor)
 	end
 
@@ -5727,6 +5736,7 @@ function BytecodeViewer.start(config)
 
 		local rowY = (index - 1) * 84
 		card.currentAlertId = nil
+		card.currentRowY = nil
 		card.timerAlertId = nil
 		SuiteMotion.tween(card.frame, {
 			BackgroundTransparency = 1,
@@ -5760,31 +5770,50 @@ function BytecodeViewer.start(config)
 		local signal = buildSuiteTelemetry()
 		local color = signal.color or getLevelColor(signal.level)
 		local islandHeight = signal.height or 52
+		local colorKey = ("%0.3f:%0.3f:%0.3f"):format(color.R, color.G, color.B)
+		local islandKey = table.concat({
+			tostring(signal.title),
+			tostring(signal.detail),
+			tostring(signal.badge),
+			tostring(signal.level),
+			tostring(signal.width),
+			tostring(islandHeight),
+			colorKey,
+		}, "\0")
 
-		refs.dynamicIslandTitle.Text = signal.title
-		refs.dynamicIslandDetail.Text = signal.detail
-		refs.dynamicIslandDetail.Visible = tostring(signal.detail or "") ~= ""
-		refs.dynamicIslandTitle.Position = refs.dynamicIslandDetail.Visible and UDim2.fromOffset(48, 10) or UDim2.fromOffset(48, 13)
-		refs.dynamicIslandBadge.Text = signal.badge
-		refs.dynamicIslandDot.BackgroundColor3 = color
-		refs.dynamicIslandDot.Position = UDim2.fromOffset(28, math.floor(islandHeight / 2))
-		refs.dynamicIslandDetail.Size = UDim2.new(1, -92, 0, math.max(18, islandHeight - 36))
-		refs.dynamicIslandBadge.Position = UDim2.new(1, -68, 0, math.floor((islandHeight - 18) / 2))
-		setOverlayStroke(refs.dynamicIsland, color, signal.level == "info" and 0.18 or 0.04)
-		SuiteMotion.tween(refs.dynamicIsland, {
-			Size = UDim2.fromOffset(signal.width, islandHeight),
-		}, {
-			duration = 0.18,
-			style = "quint",
-		})
+		if refs.lastIslandKey ~= islandKey then
+			local sizeChanged = refs.lastIslandWidth ~= signal.width or refs.lastIslandHeight ~= islandHeight
+			refs.lastIslandKey = islandKey
+			refs.lastIslandWidth = signal.width
+			refs.lastIslandHeight = islandHeight
+
+			refs.dynamicIslandTitle.Text = signal.title
+			refs.dynamicIslandDetail.Text = signal.detail
+			refs.dynamicIslandDetail.Visible = tostring(signal.detail or "") ~= ""
+			refs.dynamicIslandTitle.Position = refs.dynamicIslandDetail.Visible and UDim2.fromOffset(48, 10) or UDim2.fromOffset(48, 13)
+			refs.dynamicIslandBadge.Text = signal.badge
+			refs.dynamicIslandDot.BackgroundColor3 = color
+			refs.dynamicIslandDot.Position = UDim2.fromOffset(28, math.floor(islandHeight / 2))
+			refs.dynamicIslandDetail.Size = UDim2.new(1, -92, 0, math.max(18, islandHeight - 36))
+			refs.dynamicIslandBadge.Position = UDim2.new(1, -68, 0, math.floor((islandHeight - 18) / 2))
+			setOverlayStroke(refs.dynamicIsland, color, signal.level == "info" and 0.18 or 0.04)
+			if sizeChanged then
+				SuiteMotion.tween(refs.dynamicIsland, {
+					Size = UDim2.fromOffset(signal.width, islandHeight),
+				}, {
+					duration = 0.18,
+					style = "quint",
+				})
+			else
+				refs.dynamicIsland.Size = UDim2.fromOffset(signal.width, islandHeight)
+			end
+		end
 
 		local alerts = buildAlertStack(signal)
-		SuiteMotion.tween(refs.alertRail, {
-			Position = UDim2.fromOffset(14, 92),
-		}, {
-			duration = 0.18,
-			style = "quint",
-		})
+		if refs.alertRailPositioned ~= true then
+			refs.alertRailPositioned = true
+			refs.alertRail.Position = UDim2.fromOffset(14, 92)
+		end
 
 		for index, card in ipairs(refs.alertCards) do
 			local alert = alerts[index]
@@ -6773,6 +6802,23 @@ function BytecodeViewer.start(config)
 		return false
 	end
 
+	refs.scheduleRemoteLogRender = function()
+		if refs.remoteLogRenderQueued or cleaning then
+			return
+		end
+
+		refs.remoteLogRenderQueued = true
+		task.delay(0.08, function()
+			refs.remoteLogRenderQueued = false
+			if cleaning or refs.main == nil or refs.main.Parent == nil then
+				return
+			end
+			if renderRemoteLog ~= nil then
+				renderRemoteLog()
+			end
+		end)
+	end
+
 	local function appendRemoteLog(direction, remote, method, args, hookName)
 		args = args or {}
 		local path = getRemotePath(remote)
@@ -6809,7 +6855,7 @@ function BytecodeViewer.start(config)
 			renderRemoteList()
 		end
 		if renderRemoteLog ~= nil then
-			renderRemoteLog()
+			refs.scheduleRemoteLogRender()
 		end
 	end
 
@@ -7601,6 +7647,9 @@ function BytecodeViewer.start(config)
 		objectRefreshQueued = false,
 		autoFireHeartbeatAccumulator = 0,
 		macroHeartbeatAccumulator = 0,
+		noClipCharacter = nil,
+		noClipParts = {},
+		noClipRefreshAccumulator = 0,
 	}
 	local espObjectCache = {
 		named = {
@@ -8803,8 +8852,13 @@ function BytecodeViewer.start(config)
 		end
 	end))
 
-	trackConnection(RunService.Stepped:Connect(function()
+	trackConnection(RunService.Stepped:Connect(function(_, deltaTime)
 		if not state.noClip then
+			if runtime.noClipCharacter ~= nil or #runtime.noClipParts > 0 then
+				runtime.noClipCharacter = nil
+				runtime.noClipParts = {}
+				runtime.noClipRefreshAccumulator = 0
+			end
 			return
 		end
 
@@ -8813,9 +8867,24 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		for _, descendant in ipairs(character:GetDescendants()) do
-			if descendant:IsA("BasePart") then
-				descendant.CanCollide = false
+		runtime.noClipRefreshAccumulator = runtime.noClipRefreshAccumulator + (deltaTime or 0)
+		if runtime.noClipCharacter ~= character or runtime.noClipRefreshAccumulator >= 0.5 then
+			runtime.noClipCharacter = character
+			runtime.noClipRefreshAccumulator = 0
+			runtime.noClipParts = {}
+			for _, descendant in ipairs(character:GetDescendants()) do
+				if descendant:IsA("BasePart") then
+					table.insert(runtime.noClipParts, descendant)
+				end
+			end
+		end
+
+		for index = #runtime.noClipParts, 1, -1 do
+			local part = runtime.noClipParts[index]
+			if part == nil or part.Parent == nil then
+				table.remove(runtime.noClipParts, index)
+			elseif part.CanCollide then
+				part.CanCollide = false
 			end
 		end
 	end))
@@ -8866,11 +8935,11 @@ function BytecodeViewer.start(config)
 		updateIntelligenceThreat()
 		local threat = state.intelligenceThreat
 		local nextKey = threat
-			and ("%s:%s:%d"):format(threat.playerName, tostring(threat.weaponName or "unknown"), math.floor(threat.distance / 10))
+			and ("%s:%s:%d"):format(threat.playerName, tostring(threat.weaponName or "unknown"), math.floor(threat.distance / 5))
 			or ""
 		local changed = nextKey ~= state.intelligenceThreatKey
 		state.intelligenceThreatKey = nextKey
-		if changed or threat ~= nil then
+		if changed then
 			updateSuiteOverlays()
 		end
 	end))
