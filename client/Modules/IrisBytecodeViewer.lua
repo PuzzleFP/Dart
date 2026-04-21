@@ -5774,12 +5774,16 @@ function BytecodeViewer.start(config)
 		local islandKey = table.concat({
 			tostring(signal.title),
 			tostring(signal.detail),
-			tostring(signal.badge),
 			tostring(signal.level),
 			tostring(signal.width),
 			tostring(islandHeight),
 			colorKey,
 		}, "\0")
+
+		if refs.lastIslandBadge ~= signal.badge then
+			refs.lastIslandBadge = signal.badge
+			refs.dynamicIslandBadge.Text = signal.badge
+		end
 
 		if refs.lastIslandKey ~= islandKey then
 			local sizeChanged = refs.lastIslandWidth ~= signal.width or refs.lastIslandHeight ~= islandHeight
@@ -5791,7 +5795,6 @@ function BytecodeViewer.start(config)
 			refs.dynamicIslandDetail.Text = signal.detail
 			refs.dynamicIslandDetail.Visible = tostring(signal.detail or "") ~= ""
 			refs.dynamicIslandTitle.Position = refs.dynamicIslandDetail.Visible and UDim2.fromOffset(48, 10) or UDim2.fromOffset(48, 13)
-			refs.dynamicIslandBadge.Text = signal.badge
 			refs.dynamicIslandDot.BackgroundColor3 = color
 			refs.dynamicIslandDot.Position = UDim2.fromOffset(28, math.floor(islandHeight / 2))
 			refs.dynamicIslandDetail.Size = UDim2.new(1, -92, 0, math.max(18, islandHeight - 36))
@@ -8935,7 +8938,7 @@ function BytecodeViewer.start(config)
 		updateIntelligenceThreat()
 		local threat = state.intelligenceThreat
 		local nextKey = threat
-			and ("%s:%s:%d"):format(threat.playerName, tostring(threat.weaponName or "unknown"), math.floor(threat.distance / 5))
+			and ("%s:%s:%d"):format(threat.playerName, tostring(threat.weaponName or "unknown"), math.floor(threat.distance + 0.5))
 			or ""
 		local changed = nextKey ~= state.intelligenceThreatKey
 		state.intelligenceThreatKey = nextKey
