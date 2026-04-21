@@ -1618,6 +1618,11 @@ local function makeState(config)
 		fullBright = false,
 		noFallDamage = false,
 		noOceanDamage = false,
+		phantomStepEnabled = false,
+		phantomCharacter = nil,
+		phantomRealCharacter = nil,
+		phantomRadius = tonumber(config.PhantomStepRadius) or 5,
+		phantomSpeed = tonumber(config.PhantomStepSpeed) or 28,
 		localProtectionHookInstalled = false,
 		localProtectionHookError = nil,
 		aimbotEnabled = false,
@@ -2884,6 +2889,8 @@ local function createGui(state)
 	local fullBrightToggle = makeToggleRow(automationSection, 132, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
 	local noFallDamageToggle = makeToggleRow(automationSection, 178, "No Fall Damage", "Spoofs local fall-state checks and blocks local fall damage writes when available.")
 	local noOceanDamageToggle = makeToggleRow(automationSection, 224, "No Ocean Damage", "Spoofs local swim/ocean checks and blocks local ocean damage writes when available.")
+	local phantomStepToggle = makeToggleRow(automationSection, 270, "Phantom Step", "Control a local fake body while the real body jitters around it.")
+	automationSection.Size = UDim2.new(1, 0, 0, 316)
 
 	local worldSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -4005,6 +4012,7 @@ local function createGui(state)
 	refs.fullBrightToggle = fullBrightToggle
 	refs.noFallDamageToggle = noFallDamageToggle
 	refs.noOceanDamageToggle = noOceanDamageToggle
+	refs.phantomStepToggle = phantomStepToggle
 	refs.inspectorInfoLabel = inspectorInfoLabel
 
 	return refs
@@ -5009,6 +5017,131 @@ function BytecodeViewer.start(config)
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 			humanoid.Jump = true
 		end
+	end
+
+	refs.destroyPhantomCharacter = function()
+		if state.phantomCharacter ~= nil then
+			pcall(function()
+				state.phantomCharacter:Destroy()
+			end)
+		end
+		state.phantomCharacter = nil
+	end
+
+	refs.setPhantomStepEnabled = function(enabled)
+		enabled = enabled == true
+		if enabled == state.phantomStepEnabled then
+			return
+		end
+
+		local player = Players.LocalPlayer
+		if player == nil then
+			emitNotification("critical", "Phantom Step", "LocalPlayer is unavailable.", { duration = 3 })
+			return
+		end
+
+		if enabled then
+			local realCharacter = getLocalCharacter()
+			local realRoot = getCharacterRootPart(realCharacter)
+			if realCharacter == nil or realRoot == nil then
+				emitNotification("critical", "Phantom Step", "Real character root was not found.", { duration = 3 })
+				return
+			end
+
+			state.phantomRealCharacter = realCharacter
+			local fakeCharacter = createGhostCharacter("Phantom Step")
+			if fakeCharacter == nil then
+				state.phantomRealCharacter = nil
+				emitNotification("critical", "Phantom Step", "Could not create the fake local body.", { duration = 3 })
+				return
+			end
+
+			state.phantomCharacter = fakeCharacter
+			local ok = pcall(function()
+				player.Character = fakeCharacter
+			end)
+			if not ok then
+				refs.destroyPhantomCharacter()
+				state.phantomRealCharacter = nil
+				emitNotification("critical", "Phantom Step", "Could not swap control to the fake body.", { duration = 3 })
+				return
+			end
+
+			setCameraSubjectToCharacter(fakeCharacter)
+			state.phantomStepEnabled = true
+			setMainStatus("Phantom Step enabled", NativeUi.Theme.Success)
+			emitNotification("success", "Phantom Step", "Fake body active. Real body remains visible for testing.", { duration = 2.5 })
+			return
+		end
+
+		state.phantomStepEnabled = false
+		local fakeCharacter = state.phantomCharacter
+		local fakeRoot = getCharacterRootPart(fakeCharacter)
+		local realCharacter = state.phantomRealCharacter
+		if realCharacter ~= nil and realCharacter.Parent ~= nil then
+			if fakeRoot ~= nil then
+				pcall(function()
+					realCharacter:PivotTo(fakeRoot.CFrame)
+				end)
+			end
+			pcall(function()
+				player.Character = realCharacter
+			end)
+			setCameraSubjectToCharacter(realCharacter)
+		end
+
+		refs.destroyPhantomCharacter()
+		state.phantomRealCharacter = nil
+		setMainStatus("Phantom Step disabled", NativeUi.Theme.TextMuted)
+	end
+
+	refs.updatePhantomStep = function(deltaTime)
+		if not state.phantomStepEnabled then
+			return
+		end
+
+		local fakeCharacter = state.phantomCharacter
+		local realCharacter = state.phantomRealCharacter
+		if fakeCharacter == nil or fakeCharacter.Parent == nil or realCharacter == nil or realCharacter.Parent == nil then
+			refs.setPhantomStepEnabled(false)
+			return
+		end
+
+		if not state.freeCameraEnabled and UserInputService:GetFocusedTextBox() == nil then
+			local humanoid = fakeCharacter:FindFirstChildOfClass("Humanoid")
+			if humanoid ~= nil then
+				humanoid.PlatformStand = false
+				humanoid:Move(getOperatorMoveVector(true), false)
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+					humanoid.Jump = true
+				end
+			end
+		end
+
+		local fakeRoot = getCharacterRootPart(fakeCharacter)
+		local realRoot = getCharacterRootPart(realCharacter)
+		if fakeRoot == nil or realRoot == nil then
+			return
+		end
+
+		local t = os.clock() * state.phantomSpeed
+		local radius = state.phantomRadius
+		local offset = Vector3.new(
+			math.cos(t * 1.11) * radius,
+			math.sin(t * 1.73) * math.min(1.25, radius * 0.25),
+			math.sin(t * 0.97) * radius
+		)
+		local targetPosition = fakeRoot.Position + offset
+		local look = fakeRoot.CFrame.LookVector
+		if look.Magnitude < 0.01 then
+			look = Vector3.new(0, 0, -1)
+		end
+
+		pcall(function()
+			realRoot.AssemblyLinearVelocity = Vector3.zero
+			realRoot.AssemblyAngularVelocity = Vector3.zero
+			realCharacter:PivotTo(CFrame.lookAt(targetPosition, targetPosition + look.Unit))
+		end)
 	end
 
 	local function updateFreeCamera(deltaTime)
@@ -9044,6 +9177,7 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.fullBrightToggle, state.fullBright)
 		syncToggleButton(refs.noFallDamageToggle, state.noFallDamage)
 		syncToggleButton(refs.noOceanDamageToggle, state.noOceanDamage)
+		syncToggleButton(refs.phantomStepToggle, state.phantomStepEnabled)
 		syncToggleButton(refs.aimbotToggle, state.aimbotEnabled)
 		syncToggleButton(refs.autoFireToggle, state.autoFireEnabled)
 		syncToggleButton(refs.spawnPointToggle, state.espObjectToggles.spawnPoint)
@@ -9216,6 +9350,11 @@ function BytecodeViewer.start(config)
 	end
 
 	trackCleanup(function()
+		if state.phantomStepEnabled then
+			refs.setPhantomStepEnabled(false)
+		else
+			refs.destroyPhantomCharacter()
+		end
 		if state.freeCameraEnabled then
 			setFreeCameraEnabled(false)
 		else
@@ -9307,6 +9446,7 @@ function BytecodeViewer.start(config)
 	trackConnection(RunService.RenderStepped:Connect(function(deltaTime)
 		updateFreeCamera(deltaTime)
 		updateGhostMovement(deltaTime)
+		refs.updatePhantomStep(deltaTime)
 		if state.freeCameraEnabled then
 			return
 		end
@@ -9403,6 +9543,13 @@ function BytecodeViewer.start(config)
 
 	if Players.LocalPlayer ~= nil then
 		trackConnection(Players.LocalPlayer.CharacterAdded:Connect(function(character)
+			if character == state.phantomCharacter then
+				return
+			end
+			if state.phantomStepEnabled then
+				state.phantomRealCharacter = character
+				return
+			end
 			if character == state.ghostCharacter then
 				return
 			end
@@ -9836,6 +9983,10 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.noOceanDamageToggle.toggle.MouseButton1Click:Connect(function()
 		runtime.toggleFeature("noOceanDamage")
+	end))
+	trackConnection(refs.phantomStepToggle.toggle.MouseButton1Click:Connect(function()
+		refs.setPhantomStepEnabled(not state.phantomStepEnabled)
+		syncControlState()
 	end))
 	trackConnection(refs.spawnPointToggle.toggle.MouseButton1Click:Connect(function()
 		runtime.toggleEspObject("spawnPoint")
