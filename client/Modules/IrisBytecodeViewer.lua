@@ -1445,6 +1445,8 @@ local function makeState(config)
 		remoteLogs = {},
 		remoteLogSerial = 0,
 		remoteCallCounts = {},
+		remoteRecords = {},
+		remoteRecordOrder = {},
 		remoteList = {},
 		selectedRemotePath = nil,
 		selectedRemoteKey = nil,
@@ -6765,7 +6767,59 @@ function BytecodeViewer.start(config)
 		scope.__DartRemoteHookBridge = remoteHookBridge
 	end
 
+	refs.getRemoteRecord = function(remote, create)
+		if not isRemoteLike(remote) then
+			return nil
+		end
+
+		local remoteKey = getRemoteKey(remote)
+		local record = state.remoteRecords[remoteKey]
+		if record == nil and create then
+			record = {
+				remote = remote,
+				remoteKey = remoteKey,
+				path = getRemotePath(remote),
+				name = remote.Name,
+				className = remote.ClassName,
+				calls = 0,
+				logs = {},
+			}
+			state.remoteRecords[remoteKey] = record
+			table.insert(state.remoteRecordOrder, record)
+		elseif record ~= nil then
+			record.remote = remote
+			record.path = getRemotePath(remote)
+			record.name = remote.Name
+			record.className = remote.ClassName
+		end
+		return record
+	end
+
+	refs.getSelectedRemoteRecord = function()
+		if state.selectedRemoteKey ~= nil then
+			local record = state.remoteRecords[state.selectedRemoteKey]
+			if record ~= nil then
+				return record
+			end
+		end
+
+		if state.selectedRemotePath ~= nil then
+			for _, record in ipairs(state.remoteRecordOrder) do
+				if record.path == state.selectedRemotePath then
+					return record
+				end
+			end
+		end
+
+		return nil
+	end
+
 	local function getSelectedRemote()
+		local record = refs.getSelectedRemoteRecord()
+		if record ~= nil then
+			return record.remote
+		end
+
 		if state.selectedRemotePath == nil and state.selectedRemoteKey == nil then
 			return nil
 		end
@@ -6805,6 +6859,11 @@ function BytecodeViewer.start(config)
 	end
 
 	refs.getRemoteCallCount = function(remote)
+		local record = refs.getRemoteRecord(remote, false)
+		if record ~= nil then
+			return record.calls
+		end
+
 		if remote == nil then
 			return 0
 		end
@@ -6831,6 +6890,7 @@ function BytecodeViewer.start(config)
 		end
 
 		table.insert(state.remoteList, remote)
+		refs.getRemoteRecord(remote, true)
 		table.sort(state.remoteList, function(left, right)
 			return string.lower(getRemotePath(left)) < string.lower(getRemotePath(right))
 		end)
@@ -6931,6 +6991,7 @@ function BytecodeViewer.start(config)
 		args = args or {}
 		local path = getRemotePath(remote)
 		local remoteKey = getRemoteKey(remote)
+		local record = refs.getRemoteRecord(remote, true)
 		local listChanged = ensureRemoteTracked(remote)
 		local selectionChanged = false
 		if state.selectedRemotePath == nil then
@@ -6947,6 +7008,10 @@ function BytecodeViewer.start(config)
 		local callKey = table.concat({ remoteKey, tostring(direction), tostring(method) }, "\0")
 		local remoteCallCount = (state.remoteCallCounts[callKey] or 0) + 1
 		state.remoteCallCounts[callKey] = remoteCallCount
+		if record ~= nil then
+			record.calls = record.calls + 1
+			remoteCallCount = record.calls
+		end
 
 		local entry = {
 			id = state.remoteLogSerial,
@@ -6966,6 +7031,12 @@ function BytecodeViewer.start(config)
 		}
 
 		table.insert(state.remoteLogs, 1, entry)
+		if record ~= nil then
+			table.insert(record.logs, 1, entry)
+			while #record.logs > 120 do
+				table.remove(record.logs)
+			end
+		end
 		while #state.remoteLogs > 180 do
 			table.remove(state.remoteLogs)
 		end
@@ -7231,6 +7302,7 @@ function BytecodeViewer.start(config)
 	local function scanRemoteList()
 		state.remoteList = buildRemoteBrowserList()
 		for _, remote in ipairs(state.remoteList) do
+			refs.getRemoteRecord(remote, true)
 			if remoteEventConnections[remote] == nil then
 				connectRemoteEvent(remote)
 			end
@@ -7395,6 +7467,7 @@ function BytecodeViewer.start(config)
 
 	renderRemoteLog = function()
 		local selectedPath = state.selectedRemotePath
+		local selectedRecord = refs.getSelectedRemoteRecord()
 		local selectedRemote = getSelectedRemote()
 		local status = state.remoteWatcherEnabled and "Watcher active" or "Watcher idle"
 		if state.remoteHookError ~= nil then
@@ -7426,14 +7499,23 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		local count, lastEntry = getRemoteLogStats(selectedPath, selectedRemote)
-		local className = selectedRemote and selectedRemote.ClassName or "Missing"
+		local count
+		local lastEntry
+		if selectedRecord ~= nil then
+			count = selectedRecord.calls
+			lastEntry = selectedRecord.logs[1]
+		else
+			count, lastEntry = getRemoteLogStats(selectedPath, selectedRemote)
+		end
+		local className = selectedRecord and selectedRecord.className or (selectedRemote and selectedRemote.ClassName or "Missing")
+		local remoteName = selectedRecord and selectedRecord.name or (selectedRemote and selectedRemote.Name or "<missing>")
+		local remotePath = selectedRecord and selectedRecord.path or selectedPath
 		local lines = {
 			"REMOTE",
-			("Name: %s"):format(selectedRemote and selectedRemote.Name or "<missing>"),
+			("Name: %s"):format(remoteName),
 			("Watcher: %s"):format(status),
 			("Class: %s"):format(className),
-			("Path: %s"):format(selectedPath),
+			("Path: %s"):format(remotePath),
 			("Observed calls: %d"):format(count),
 			"",
 			"RECENT PAYLOADS",
@@ -7441,6 +7523,14 @@ function BytecodeViewer.start(config)
 
 		if count == 0 then
 			table.insert(lines, "No traffic captured for this remote yet.")
+		elseif selectedRecord ~= nil then
+			for index, entry in ipairs(selectedRecord.logs) do
+				appendRemoteEntryLines(lines, entry)
+				if index >= 40 then
+					table.insert(lines, "...older calls hidden")
+					break
+				end
+			end
 		else
 			local added = 0
 			for _, entry in ipairs(state.remoteLogs) do
@@ -7456,13 +7546,13 @@ function BytecodeViewer.start(config)
 		end
 
 		refs.remoteLogLabel.Text = withLineNumbers(table.concat(lines, "\n"))
-		refs.remoteLogStatusLabel.Text = ("Focused: %s"):format(selectedRemote and selectedRemote.Name or selectedPath)
-		refs.remoteInspectorTitleLabel.Text = selectedRemote and selectedRemote.Name or selectedPath
+		refs.remoteLogStatusLabel.Text = ("Focused: %s"):format(remoteName ~= "" and remoteName or remotePath)
+		refs.remoteInspectorTitleLabel.Text = remoteName ~= "" and remoteName or remotePath
 		refs.remoteInspectorMetaLabel.Text = ("Class: %s    Calls: %d    Last: %s\nPath: %s"):format(
 			className,
 			count,
 			lastEntry and (lastEntry.timestamp .. " " .. lastEntry.direction .. " " .. lastEntry.method) or "-",
-			selectedPath
+			remotePath
 		)
 		refs.syncRemoteLogCanvas()
 	end
@@ -7474,10 +7564,10 @@ function BytecodeViewer.start(config)
 
 		for _, remote in ipairs(state.remoteList) do
 			local path = getRemotePath(remote)
-			if filterText == "" or containsFilter(path, filterText) or containsFilter(remote.ClassName, filterText) then
+			if filterText == "" or containsFilter(path, filterText) or containsFilter(remote.Name, filterText) or containsFilter(remote.ClassName, filterText) then
 				shown = shown + 1
 				local callCount = refs.getRemoteCallCount(remote)
-				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]  calls:%d"):format(UI_ICON.remote, path, remote.ClassName, callCount), {
+				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]  %d calls"):format(UI_ICON.remote, remote.Name, remote.ClassName, callCount), {
 					Font = Enum.Font.Code,
 					Size = UDim2.new(1, 0, 0, 26),
 					TextSize = 11,
@@ -7494,7 +7584,7 @@ function BytecodeViewer.start(config)
 			end
 		end
 
-		refs.remoteCountLabel.Text = ("Remotes: %d visible / %d total"):format(shown, #state.remoteList)
+		refs.remoteCountLabel.Text = ("Visible: %d / Known: %d / Captured: %d"):format(shown, #state.remoteList, #state.remoteLogs)
 		if shown == 0 then
 			NativeUi.makeLabel(refs.remoteListContent, "No remotes match the current filter.", {
 				TextColor3 = NativeUi.Theme.TextMuted,
@@ -7518,6 +7608,7 @@ function BytecodeViewer.start(config)
 		end
 
 		table.insert(state.remoteList, remote)
+		refs.getRemoteRecord(remote, true)
 		table.sort(state.remoteList, function(left, right)
 			return string.lower(getRemotePath(left)) < string.lower(getRemotePath(right))
 		end)
@@ -9354,6 +9445,10 @@ function BytecodeViewer.start(config)
 		state.remoteLogs = {}
 		state.remoteLogSerial = 0
 		state.remoteCallCounts = {}
+		for _, record in ipairs(state.remoteRecordOrder) do
+			record.calls = 0
+			record.logs = {}
+		end
 		renderRemoteList()
 		renderRemoteLog()
 	end))
