@@ -2321,72 +2321,15 @@ local function createSpyWorkspace(spyWorkspace, refs)
 end
 
 local function createRemoteWorkspace(remoteWorkspace, refs)
-	refs.remoteListPanel = NativeUi.makePanel(remoteWorkspace, {
-		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.fromOffset(280, 100),
-	})
-	SuiteComponents.stylePanel(refs.remoteListPanel, SuiteTheme, SuiteTheme.Variants.Card)
-
-	local listTitle = makeSectionTitle(refs.remoteListPanel, UI_ICON.remote .. " RemoteSpy")
-	listTitle.Position = UDim2.fromOffset(12, 12)
-
-	refs.remoteWatcherToggle = makeToggleRow(refs.remoteListPanel, 38, "Capture", "Hydroxide-style hook logging.")
-	refs.remoteWatcherToggle.row.Size = UDim2.new(1, -24, 0, 34)
-
-	refs.remoteCountLabel = NativeUi.makeLabel(refs.remoteListPanel, "Idle", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 11,
-		Position = UDim2.fromOffset(12, 78),
-		Size = UDim2.new(1, -24, 0, 16),
-	})
-
-	refs.remoteSearchBox = NativeUi.makeTextBox(refs.remoteListPanel, "", {
-		PlaceholderText = "Filter remotes",
-		Position = UDim2.fromOffset(12, 102),
-		Size = UDim2.new(1, -24, 0, 30),
-		TextSize = 12,
-	})
-
-	refs.scanRemotesButton = NativeUi.makeButton(refs.remoteListPanel, UI_ICON.refresh .. " Scan", {
-		Position = UDim2.fromOffset(12, 142),
-		Size = UDim2.new(0.5, -16, 0, 30),
-		TextSize = 12,
-	})
-
-	refs.clearRemoteLogButton = NativeUi.makeButton(refs.remoteListPanel, UI_ICON.clear .. " Clear", {
-		Position = UDim2.new(0.5, 4, 0, 142),
-		Size = UDim2.new(0.5, -16, 0, 30),
-		TextSize = 12,
-	})
-
-	refs.remoteListScroll, refs.remoteListContent = NativeUi.makeScrollList(refs.remoteListPanel, {
-		Position = UDim2.fromOffset(12, 184),
-		Size = UDim2.new(1, -24, 1, -196),
-		Padding = 5,
-		ContentPadding = 8,
-		BackgroundColor3 = NativeUi.Theme.Surface,
-	})
-	SuiteComponents.decorateScroll(refs.remoteListScroll, SuiteTheme, SuiteTheme.Variants.Control)
-
 	refs.remoteLogPanel = NativeUi.makePanel(remoteWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(296, 0),
-		Size = UDim2.fromOffset(320, 100),
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(640, 100),
 	})
 	SuiteComponents.stylePanel(refs.remoteLogPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
 	local callsTitle = makeSectionTitle(refs.remoteLogPanel, UI_ICON.watch .. " Calls")
 	callsTitle.Position = UDim2.fromOffset(12, 12)
-
-	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Select a remote to inspect class, path and payloads.", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		Position = UDim2.fromOffset(12, 40),
-		Size = UDim2.new(1, -24, 0, 18),
-	})
 
 	refs.remoteInspectorTitleLabel = NativeUi.makeLabel(refs.remoteLogPanel, "No remote selected", {
 		Font = Enum.Font.GothamBold,
@@ -2394,8 +2337,8 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 		TextSize = 14,
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 66),
-		Size = UDim2.new(1, -24, 0, 24),
+		Position = UDim2.fromOffset(12, 40),
+		Size = UDim2.new(1, -336, 0, 24),
 	})
 
 	refs.remoteInspectorMetaLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Class: -    Calls: 0    Last: -", {
@@ -2404,67 +2347,106 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 		TextSize = 12,
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 92),
-		Size = UDim2.new(1, -24, 0, 28),
+		Position = UDim2.fromOffset(12, 66),
+		Size = UDim2.new(1, -336, 0, 38),
+	})
+
+	refs.remoteWatcherToggle = makeToggleRow(refs.remoteLogPanel, 30, "Capture", "Log remote calls.")
+	refs.remoteWatcherToggle.row.Size = UDim2.fromOffset(150, 34)
+	refs.remoteWatcherToggle.row.Position = UDim2.new(1, -468, 0, 30)
+
+	refs.scanRemotesButton = NativeUi.makeButton(refs.remoteLogPanel, UI_ICON.refresh .. " Scan", {
+		Position = UDim2.new(1, -310, 0, 32),
+		Size = UDim2.fromOffset(92, 30),
+		TextSize = 12,
+	})
+
+	refs.copyRemotePayloadButton = NativeUi.makeButton(refs.remoteLogPanel, UI_ICON.copy .. " Payload", {
+		Position = UDim2.new(1, -210, 0, 32),
+		Size = UDim2.fromOffset(102, 30),
+		TextSize = 12,
+	})
+
+	refs.copyRemoteReplayButton = NativeUi.makeButton(refs.remoteLogPanel, UI_ICON.copy .. " Replay", {
+		Position = UDim2.new(1, -100, 0, 32),
+		Size = UDim2.fromOffset(88, 30),
+		TextSize = 12,
+	})
+
+	refs.remoteDiagnosticsLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Diagnostics loading.", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 11,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(12, 108),
+		Size = UDim2.new(1, -24, 0, 34),
+	})
+
+	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Status: Remote Spy", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.TextMuted,
+		TextSize = 12,
+		Position = UDim2.fromOffset(12, 146),
+		Size = UDim2.new(1, -24, 0, 18),
 	})
 
 	refs.remoteCallsScroll, refs.remoteCallsContent = NativeUi.makeScrollList(refs.remoteLogPanel, {
-		Position = UDim2.fromOffset(12, 132),
-		Size = UDim2.new(1, -24, 1, -144),
+		Position = UDim2.fromOffset(12, 172),
+		Size = UDim2.new(1, -24, 1, -184),
 		Padding = 5,
 		ContentPadding = 8,
 		BackgroundColor3 = NativeUi.Theme.Surface,
 	})
 	SuiteComponents.decorateScroll(refs.remoteCallsScroll, SuiteTheme, SuiteTheme.Variants.Control)
 
-	refs.remotePayloadPanel = NativeUi.makePanel(remoteWorkspace, {
+	refs.remoteListPanel = NativeUi.makePanel(remoteWorkspace, {
 		BackgroundColor3 = NativeUi.Theme.Panel,
-		Position = UDim2.fromOffset(632, 0),
-		Size = UDim2.fromOffset(520, 100),
+		Position = UDim2.fromOffset(656, 0),
+		Size = UDim2.fromOffset(280, 100),
 	})
-	SuiteComponents.stylePanel(refs.remotePayloadPanel, SuiteTheme, SuiteTheme.Variants.Card)
+	SuiteComponents.stylePanel(refs.remoteListPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
-	local payloadTitle = makeSectionTitle(refs.remotePayloadPanel, UI_ICON.code .. " Payload")
-	payloadTitle.Position = UDim2.fromOffset(12, 12)
+	local listTitle = makeSectionTitle(refs.remoteListPanel, UI_ICON.remote .. " Fired Remotes")
+	listTitle.Position = UDim2.fromOffset(12, 12)
 
-	refs.copyRemotePayloadButton = NativeUi.makeButton(refs.remotePayloadPanel, UI_ICON.copy .. " Payload", {
-		Position = UDim2.new(1, -220, 0, 32),
-		Size = UDim2.fromOffset(102, 30),
-		TextSize = 12,
-	})
-
-	refs.copyRemoteReplayButton = NativeUi.makeButton(refs.remotePayloadPanel, UI_ICON.copy .. " Replay", {
-		Position = UDim2.new(1, -110, 0, 32),
-		Size = UDim2.fromOffset(98, 30),
-		TextSize = 12,
-	})
-
-	refs.remotePayloadMetaLabel = NativeUi.makeLabel(refs.remotePayloadPanel, "No call selected.", {
-		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 42),
-		Size = UDim2.new(1, -246, 0, 42),
-	})
-
-	refs.remoteDiagnosticsLabel = NativeUi.makeLabel(refs.remotePayloadPanel, "Diagnostics loading.", {
+	refs.remoteCountLabel = NativeUi.makeLabel(refs.remoteListPanel, "Idle", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 11,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(12, 82),
-		Size = UDim2.new(1, -24, 0, 42),
+		Position = UDim2.fromOffset(12, 42),
+		Size = UDim2.new(1, -24, 0, 16),
 	})
 
+	refs.remoteSearchBox = NativeUi.makeTextBox(refs.remoteListPanel, "", {
+		PlaceholderText = "Filter explorer ..",
+		Position = UDim2.fromOffset(12, 68),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	refs.clearRemoteLogButton = NativeUi.makeButton(refs.remoteListPanel, UI_ICON.clear .. " Clear", {
+		Position = UDim2.fromOffset(12, 108),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = 12,
+	})
+
+	refs.remoteListScroll, refs.remoteListContent = NativeUi.makeScrollList(refs.remoteListPanel, {
+		Position = UDim2.fromOffset(12, 150),
+		Size = UDim2.new(1, -24, 1, -162),
+		Padding = 5,
+		ContentPadding = 8,
+		BackgroundColor3 = NativeUi.Theme.Surface,
+	})
+	SuiteComponents.decorateScroll(refs.remoteListScroll, SuiteTheme, SuiteTheme.Variants.Control)
+
 	refs.remoteLogHost = NativeUi.create("Frame", {
+		Visible = false,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 132),
-		Size = UDim2.new(1, -24, 1, -144),
-		Parent = refs.remotePayloadPanel,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(1, 1),
+		Parent = refs.remoteLogPanel,
 	})
 	refs.remoteLogScroll, refs.remoteLogLabel, refs.syncRemoteLogCanvas = makeOutputViewer(refs.remoteLogHost)
 end
@@ -3844,24 +3826,19 @@ local function createGui(state)
 		refs.spySupportPanel.Size = UDim2.fromOffset(spySupportWidth, workspaceHeight)
 		refs.spyOperatorScroll.Size = UDim2.new(1, -24, 1, -254)
 
-		local remoteListWidth = workspaceWidth < 980 and 250 or 280
-		local remoteCallsWidth = workspaceWidth < 980 and 280 or 330
-		local remotePayloadWidth = workspaceWidth - remoteListWidth - remoteCallsWidth - panelGap * 2
-		if remotePayloadWidth < 340 then
-			local deficit = 340 - remotePayloadWidth
-			remoteCallsWidth = math.max(250, remoteCallsWidth - deficit)
-			remotePayloadWidth = workspaceWidth - remoteListWidth - remoteCallsWidth - panelGap * 2
-		end
+		local remoteListWidth = workspaceWidth < 980 and 250 or 300
+		local remoteCallsWidth = workspaceWidth - remoteListWidth - panelGap
 		refs.remoteListPanel.Size = UDim2.fromOffset(remoteListWidth, workspaceHeight)
-		refs.remoteListScroll.Size = UDim2.new(1, -24, 1, -196)
-		refs.remoteLogPanel.Position = UDim2.fromOffset(remoteListWidth + panelGap, 0)
+		refs.remoteListPanel.Position = UDim2.fromOffset(remoteCallsWidth + panelGap, 0)
+		refs.remoteListScroll.Size = UDim2.new(1, -24, 1, -162)
+		refs.remoteLogPanel.Position = UDim2.fromOffset(0, 0)
 		refs.remoteLogPanel.Size = UDim2.fromOffset(remoteCallsWidth, workspaceHeight)
-		refs.remoteCallsScroll.Size = UDim2.new(1, -24, 1, -144)
-		refs.remotePayloadPanel.Position = UDim2.fromOffset(remoteListWidth + remoteCallsWidth + panelGap * 2, 0)
-		refs.remotePayloadPanel.Size = UDim2.fromOffset(remotePayloadWidth, workspaceHeight)
-		refs.remotePayloadMetaLabel.Size = UDim2.new(1, -246, 0, 42)
-		refs.remoteDiagnosticsLabel.Size = UDim2.new(1, -24, 0, 42)
-		refs.remoteLogHost.Size = UDim2.new(1, -24, 1, -144)
+		refs.remoteInspectorTitleLabel.Size = UDim2.new(1, -336, 0, 24)
+		refs.remoteInspectorMetaLabel.Size = UDim2.new(1, -336, 0, 38)
+		refs.remoteDiagnosticsLabel.Size = UDim2.new(1, -24, 0, 34)
+		refs.remoteLogStatusLabel.Size = UDim2.new(1, -24, 0, 18)
+		refs.remoteCallsScroll.Size = UDim2.new(1, -24, 1, -184)
+		refs.remoteLogHost.Size = UDim2.fromOffset(1, 1)
 		refs.remoteLogScroll.Size = UDim2.new(1, 0, 1, 0)
 
 		local maxSidebar = math.max(240, workspaceWidth - state.bytecodeInspectorWidth - 420)
@@ -3889,7 +3866,6 @@ local function createGui(state)
 		treeScroll.Size = UDim2.new(1, -24, 1, -120)
 		outputViewerHost.Size = UDim2.new(1, -24, 1, -88)
 		outputScroll.Size = UDim2.new(1, 0, 1, 0)
-		refs.syncRemoteLogCanvas()
 		inspectorScroll.Size = UDim2.new(1, -24, 1, -24)
 		gunsScroll.Size = UDim2.new(1, -24, 1, -24)
 		buildingScroll.Size = UDim2.new(1, -24, 1, -24)
@@ -7656,11 +7632,8 @@ function BytecodeViewer.start(config)
 			refs.remoteLogStatusLabel.Text = state.remoteWatcherEnabled and "Capture active" or "Capture idle"
 			refs.remoteInspectorTitleLabel.Text = "No remote selected"
 			refs.remoteInspectorMetaLabel.Text = ("Known: %d    Captured: %d"):format(#refs.remoteSpy.records, #refs.remoteSpy.logs)
-			refs.remotePayloadMetaLabel.Text = "Select a remote to inspect captured calls."
-			refs.remoteLogLabel.Text = withLineNumbers(formatRemoteCallPayload(nil))
 			NativeUi.setButtonDisabled(refs.copyRemotePayloadButton, true)
 			NativeUi.setButtonDisabled(refs.copyRemoteReplayButton, true)
-			refs.syncRemoteLogCanvas()
 			return
 		end
 
@@ -7668,7 +7641,9 @@ function BytecodeViewer.start(config)
 			state.selectedRemoteCallId = call.Id
 		end
 
-		refs.remoteLogStatusLabel.Text = state.remoteWatcherEnabled and "Capture active" or "Capture idle"
+		refs.remoteLogStatusLabel.Text = call ~= nil
+			and ("Selected #%d    %s %s    %d args"):format(call.Id, call.Direction, call.Method, call.ArgCount or 0)
+			or (state.remoteWatcherEnabled and "Capture active" or "Capture idle")
 		refs.remoteInspectorTitleLabel.Text = record.Name
 		refs.remoteInspectorMetaLabel.Text = ("Class: %s    Calls: %d\nPath: %s"):format(record.ClassName, record.Calls, record.Path)
 
@@ -7682,17 +7657,20 @@ function BytecodeViewer.start(config)
 			})
 		else
 			for _, item in ipairs(record.Logs) do
-				local button = NativeUi.makeButton(refs.remoteCallsContent, ("#%d  %s  %s  %s  args:%d"):format(
+				local button = NativeUi.makeButton(refs.remoteCallsContent, ("%d  %s  %s  %s  args:%d\n%s"):format(
 					item.Id,
 					item.Timestamp,
 					item.Direction,
 					item.Method,
-					item.ArgCount or 0
+					item.ArgCount or 0,
+					formatRemoteArgLines(item.Args or {})
 				), {
 					Font = Enum.Font.Code,
-					Size = UDim2.new(1, 0, 0, 28),
+					Size = UDim2.new(1, 0, 0, math.max(58, 34 + (item.ArgCount or 0) * 18)),
 					TextSize = 11,
 					TextXAlignment = Enum.TextXAlignment.Left,
+					TextYAlignment = Enum.TextYAlignment.Top,
+					TextWrapped = true,
 				})
 				NativeUi.setButtonSelected(button, call ~= nil and item.Id == call.Id)
 				button.MouseButton1Click:Connect(function()
@@ -7702,13 +7680,8 @@ function BytecodeViewer.start(config)
 			end
 		end
 
-		refs.remotePayloadMetaLabel.Text = call ~= nil
-			and ("Call #%d    %s %s    %d args"):format(call.Id, call.Direction, call.Method, call.ArgCount or 0)
-			or "No call selected."
-		refs.remoteLogLabel.Text = withLineNumbers(formatRemoteCallPayload(call))
 		NativeUi.setButtonDisabled(refs.copyRemotePayloadButton, call == nil)
 		NativeUi.setButtonDisabled(refs.copyRemoteReplayButton, call == nil)
-		refs.syncRemoteLogCanvas()
 	end
 
 	renderRemoteList = function()
