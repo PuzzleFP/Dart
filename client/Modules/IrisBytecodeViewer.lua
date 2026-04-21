@@ -1432,16 +1432,36 @@ local function formatRemoteDiagnostics(diagnostics)
 		)
 	end
 
-	return table.concat({
-		("hooks: meta=%s direct=%s namecallApi=%s callingScript=%s"):format(
+	local lines = {
+		("executor: %s %s"):format(tostring(diagnostics.executorName or "unknown"), tostring(diagnostics.executorVersion or "")),
+		("hooks: meta=%s direct=%s namecallApi=%s cclosure=%s checkcaller=%s"):format(
 			diagnostics.hookmetamethod and "yes" or "no",
 			diagnostics.hookfunction and "yes" or "no",
 			diagnostics.getnamecallmethod and "yes" or "no",
-			diagnostics.getcallingscript and "yes" or "no"
+			diagnostics.newcclosure and "yes" or "no",
+			diagnostics.checkcaller and "yes" or "no"
+		),
+		("inspect: callingScript=%s debugInfo=%s instances=%s nilInstances=%s"):format(
+			diagnostics.getcallingscript and "yes" or "no",
+			diagnostics.debug_getinfo and "yes" or "no",
+			diagnostics.getinstances and "yes" or "no",
+			diagnostics.getnilinstances and "yes" or "no"
 		),
 		("installed: %s"):format(#methods > 0 and table.concat(methods, ", ") or "none"),
 		("last: %s"):format(lastText),
-	}, "\n")
+	}
+
+	if diagnostics.directError ~= nil then
+		table.insert(lines, "direct error: " .. tostring(diagnostics.directError))
+	end
+	if diagnostics.namecallError ~= nil then
+		table.insert(lines, "namecall error: " .. tostring(diagnostics.namecallError))
+	end
+	if diagnostics.lastScanError ~= nil then
+		table.insert(lines, "scan error: " .. tostring(diagnostics.lastScanError))
+	end
+
+	return table.concat(lines, "\n")
 end
 
 local function formatCodeView(chunk, showRawOpcodes)
@@ -2380,20 +2400,20 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Position = UDim2.fromOffset(12, 108),
-		Size = UDim2.new(1, -24, 0, 34),
+		Size = UDim2.new(1, -24, 0, 56),
 	})
 
 	refs.remoteLogStatusLabel = NativeUi.makeLabel(refs.remoteLogPanel, "Status: Remote Spy", {
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 146),
+		Position = UDim2.fromOffset(12, 168),
 		Size = UDim2.new(1, -24, 0, 18),
 	})
 
 	refs.remoteCallsScroll, refs.remoteCallsContent = NativeUi.makeScrollList(refs.remoteLogPanel, {
-		Position = UDim2.fromOffset(12, 172),
-		Size = UDim2.new(1, -24, 1, -184),
+		Position = UDim2.fromOffset(12, 194),
+		Size = UDim2.new(1, -24, 1, -206),
 		Padding = 5,
 		ContentPadding = 8,
 		BackgroundColor3 = NativeUi.Theme.Surface,
@@ -3835,9 +3855,9 @@ local function createGui(state)
 		refs.remoteLogPanel.Size = UDim2.fromOffset(remoteCallsWidth, workspaceHeight)
 		refs.remoteInspectorTitleLabel.Size = UDim2.new(1, -336, 0, 24)
 		refs.remoteInspectorMetaLabel.Size = UDim2.new(1, -336, 0, 38)
-		refs.remoteDiagnosticsLabel.Size = UDim2.new(1, -24, 0, 34)
+		refs.remoteDiagnosticsLabel.Size = UDim2.new(1, -24, 0, 56)
 		refs.remoteLogStatusLabel.Size = UDim2.new(1, -24, 0, 18)
-		refs.remoteCallsScroll.Size = UDim2.new(1, -24, 1, -184)
+		refs.remoteCallsScroll.Size = UDim2.new(1, -24, 1, -206)
 		refs.remoteLogHost.Size = UDim2.fromOffset(1, 1)
 		refs.remoteLogScroll.Size = UDim2.new(1, 0, 1, 0)
 

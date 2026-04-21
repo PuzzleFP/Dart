@@ -16,6 +16,38 @@ local function getGlobalScope()
 	return _G
 end
 
+local function getGlobalValue(name)
+	local scope = getGlobalScope()
+	if type(scope) == "table" and scope[name] ~= nil then
+		return scope[name]
+	end
+
+	if _G[name] ~= nil then
+		return _G[name]
+	end
+
+	return nil
+end
+
+local function getPotassiumApi()
+	local debugLibrary = getGlobalValue("debug") or debug
+	return {
+		checkcaller = getGlobalValue("checkcaller"),
+		getcallingscript = getGlobalValue("getcallingscript"),
+		getinstances = getGlobalValue("getinstances"),
+		getnamecallmethod = getGlobalValue("getnamecallmethod"),
+		getnilinstances = getGlobalValue("getnilinstances"),
+		getrawmetatable = getGlobalValue("getrawmetatable"),
+		hookfunction = getGlobalValue("hookfunction"),
+		hookmetamethod = getGlobalValue("hookmetamethod"),
+		identifyexecutor = getGlobalValue("identifyexecutor"),
+		isreadonly = getGlobalValue("isreadonly"),
+		newcclosure = getGlobalValue("newcclosure"),
+		setreadonly = getGlobalValue("setreadonly"),
+		debug_getinfo = type(debugLibrary) == "table" and debugLibrary.getinfo or nil,
+	}
+end
+
 local function getBridge()
 	local scope = getGlobalScope()
 	local bridge = scope[BRIDGE_KEY]
@@ -118,7 +150,7 @@ local function getRemoteKey(instance)
 end
 
 local function getCallingScriptPath()
-	local getter = getcallingscript or get_calling_script
+	local getter = getPotassiumApi().getcallingscript
 	if type(getter) ~= "function" then
 		return nil
 	end
@@ -132,7 +164,7 @@ local function getCallingScriptPath()
 end
 
 local function getDebugFunction()
-	local getter = debug and debug.getinfo or getinfo
+	local getter = getPotassiumApi().debug_getinfo
 	if type(getter) ~= "function" then
 		return nil
 	end
@@ -156,8 +188,9 @@ local function classMethodPairs()
 end
 
 local function createHookClosure(fn)
-	if type(newcclosure) == "function" then
-		return newcclosure(fn)
+	local newCClosure = getPotassiumApi().newcclosure
+	if type(newCClosure) == "function" then
+		return newCClosure(fn)
 	end
 	return fn
 end
@@ -200,20 +233,42 @@ function RemoteSpyEngine.new(config)
 end
 
 function RemoteSpyEngine:_refreshDiagnostics()
+	local api = getPotassiumApi()
+	local executorName = nil
+	local executorVersion = nil
+	if type(api.identifyexecutor) == "function" then
+		local ok, name, version = pcall(api.identifyexecutor)
+		if ok then
+			executorName = tostring(name)
+			executorVersion = tostring(version)
+		end
+	end
+
 	self.diagnostics = {
-		hookmetamethod = type(hookmetamethod) == "function",
-		hookfunction = type(hookfunction) == "function" or type(detour_function) == "function",
-		getnamecallmethod = type(getnamecallmethod) == "function" or type(get_namecall_method) == "function",
-		getcallingscript = type(getcallingscript) == "function" or type(get_calling_script) == "function",
-		getrawmetatable = type(getrawmetatable) == "function",
-		setreadonly = type(setreadonly) == "function",
+		checkcaller = type(api.checkcaller) == "function",
+		debug_getinfo = type(api.debug_getinfo) == "function",
+		executorName = executorName,
+		executorVersion = executorVersion,
+		getcallingscript = type(api.getcallingscript) == "function",
+		getinstances = type(api.getinstances) == "function",
+		getnamecallmethod = type(api.getnamecallmethod) == "function",
+		getnilinstances = type(api.getnilinstances) == "function",
+		getrawmetatable = type(api.getrawmetatable) == "function",
+		hookfunction = type(api.hookfunction) == "function",
+		hookmetamethod = type(api.hookmetamethod) == "function",
+		isreadonly = type(api.isreadonly) == "function",
+		newcclosure = type(api.newcclosure) == "function",
+		setreadonly = type(api.setreadonly) == "function",
 	}
 end
 
 function RemoteSpyEngine:GetDiagnostics()
 	self:_refreshDiagnostics()
+	self.diagnostics.directError = self.bridge.directError
 	self.diagnostics.enabled = self.enabled
+	self.diagnostics.lastScanError = self.lastScanError
 	self.diagnostics.methods = self.bridge.methods or {}
+	self.diagnostics.namecallError = self.bridge.namecallError
 	self.diagnostics.lastCapture = self.lastCapture
 	return self.diagnostics
 end
@@ -384,6 +439,31 @@ end
 
 function RemoteSpyEngine:Scan()
 	local changed = false
+
+	local api = getPotassiumApi()
+	local function scanInstanceList(scanner, label)
+		if type(scanner) ~= "function" then
+			return
+		end
+
+		local ok, instances = pcall(scanner)
+		if not ok or type(instances) ~= "table" then
+			self.lastScanError = ("%s failed: %s"):format(label, tostring(instances))
+			return
+		end
+
+		for _, instance in ipairs(instances) do
+			if isRemoteLike(instance) then
+				local _, created = self:_ensureRecord(instance)
+				changed = changed or created
+				self:_connectInbound(instance)
+			end
+		end
+	end
+
+	scanInstanceList(api.getinstances, "getinstances")
+	scanInstanceList(api.getnilinstances, "getnilinstances")
+
 	for _, root in ipairs(self:_collectRoots()) do
 		if isRemoteLike(root) then
 			local _, created = self:_ensureRecord(root)
@@ -439,8 +519,9 @@ function RemoteSpyEngine:_installDirectHooks()
 		return true
 	end
 
-	local hookFunction = hookfunction or detour_function
+	local hookFunction = getPotassiumApi().hookfunction
 	if type(hookFunction) ~= "function" then
+		self.bridge.directError = "hookfunction unavailable"
 		return false
 	end
 
@@ -462,7 +543,7 @@ function RemoteSpyEngine:_installDirectHooks()
 				sample:Destroy()
 				if type(originalMethod) == "function" then
 					local original
-					local okHook = pcall(function()
+					local okHook, hookError = pcall(function()
 						original = hookFunction(originalMethod, createHookClosure(function(...)
 							local remote = ...
 							local bridge = getBridge()
@@ -476,6 +557,8 @@ function RemoteSpyEngine:_installDirectHooks()
 					if okHook then
 						self.bridge.directOriginals[hookKey] = original
 						installed = true
+					else
+						self.bridge.directError = tostring(hookError)
 					end
 				end
 			end
@@ -495,18 +578,21 @@ function RemoteSpyEngine:_installNamecallHook()
 		return true
 	end
 
-	local getNamecallMethod = getnamecallmethod or get_namecall_method
+	local api = getPotassiumApi()
+	local getNamecallMethod = api.getnamecallmethod
 	if type(getNamecallMethod) ~= "function" then
+		self.bridge.namecallError = "getnamecallmethod unavailable"
 		return false
 	end
 
-	local hookMetaMethod = hookmetamethod
+	local hookMetaMethod = api.hookmetamethod
 	if type(hookMetaMethod) ~= "function" then
+		self.bridge.namecallError = "hookmetamethod unavailable"
 		return false
 	end
 
 	local originalNamecall
-	local ok = pcall(function()
+	local ok, hookError = pcall(function()
 		originalNamecall = hookMetaMethod(game, "__namecall", createHookClosure(function(self, ...)
 			local method = normalizeMethod(getNamecallMethod())
 			local bridge = getBridge()
@@ -524,6 +610,7 @@ function RemoteSpyEngine:_installNamecallHook()
 		return true
 	end
 
+	self.bridge.namecallError = tostring(hookError)
 	return false
 end
 
