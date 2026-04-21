@@ -1422,6 +1422,7 @@ local function makeState(config)
 		remoteHookMethods = {},
 		lastRemoteCaptureKey = nil,
 		lastRemoteCaptureAt = 0,
+		remoteDedupeWindow = tonumber(config.RemoteDedupeWindow) or 0,
 		notifications = {},
 		nextNotificationId = 0,
 		intelligenceThreat = nil,
@@ -6824,9 +6825,13 @@ function BytecodeViewer.start(config)
 	end
 
 	local function shouldSkipRemoteDuplicate(direction, path, method, argsText)
+		if state.remoteDedupeWindow <= 0 then
+			return false
+		end
+
 		local now = os.clock()
 		local key = table.concat({ tostring(direction), path, tostring(method), argsText }, "\0")
-		if state.lastRemoteCaptureKey == key and now - state.lastRemoteCaptureAt < 0.08 then
+		if state.lastRemoteCaptureKey == key and now - state.lastRemoteCaptureAt < state.remoteDedupeWindow then
 			return true
 		end
 		state.lastRemoteCaptureKey = key
