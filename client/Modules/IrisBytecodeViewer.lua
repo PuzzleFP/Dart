@@ -1413,6 +1413,8 @@ local function makeState(config)
 		expandedNodes = {},
 		remoteFilterText = "",
 		remoteLogs = {},
+		remoteLogSerial = 0,
+		remoteCallCounts = {},
 		remoteList = {},
 		selectedRemotePath = nil,
 		selectedRemoteKey = nil,
@@ -6772,6 +6774,21 @@ function BytecodeViewer.start(config)
 		return count, lastEntry
 	end
 
+	refs.getRemoteCallCount = function(remote)
+		if remote == nil then
+			return 0
+		end
+
+		local remoteKey = getRemoteKey(remote)
+		local count = 0
+		for callKey, callCount in pairs(state.remoteCallCounts) do
+			if string.sub(callKey, 1, #remoteKey + 1) == remoteKey .. "\0" then
+				count = count + callCount
+			end
+		end
+		return count
+	end
+
 	local function ensureRemoteTracked(remote)
 		if not isRemoteLike(remote) then
 			return false
@@ -6856,6 +6873,23 @@ function BytecodeViewer.start(config)
 		end)
 	end
 
+	refs.scheduleRemoteListRender = function()
+		if refs.remoteListRenderQueued or cleaning then
+			return
+		end
+
+		refs.remoteListRenderQueued = true
+		task.delay(0.15, function()
+			refs.remoteListRenderQueued = false
+			if cleaning or refs.main == nil or refs.main.Parent == nil then
+				return
+			end
+			if renderRemoteList ~= nil then
+				renderRemoteList()
+			end
+		end)
+	end
+
 	local function appendRemoteLog(direction, remote, method, args, hookName)
 		args = args or {}
 		local path = getRemotePath(remote)
@@ -6872,7 +6906,14 @@ function BytecodeViewer.start(config)
 			return
 		end
 
+		state.remoteLogSerial = state.remoteLogSerial + 1
+		local callKey = table.concat({ remoteKey, tostring(direction), tostring(method) }, "\0")
+		local remoteCallCount = (state.remoteCallCounts[callKey] or 0) + 1
+		state.remoteCallCounts[callKey] = remoteCallCount
+
 		local entry = {
+			id = state.remoteLogSerial,
+			remoteCallCount = remoteCallCount,
 			remote = remote,
 			direction = direction or "?",
 			remotePath = path,
@@ -6892,8 +6933,12 @@ function BytecodeViewer.start(config)
 			table.remove(state.remoteLogs)
 		end
 
-		if renderRemoteList ~= nil and (listChanged or selectionChanged) then
-			renderRemoteList()
+		if renderRemoteList ~= nil then
+			if listChanged or selectionChanged then
+				renderRemoteList()
+			else
+				refs.scheduleRemoteListRender()
+			end
 		end
 		if renderRemoteLog ~= nil then
 			refs.scheduleRemoteLogRender()
@@ -7281,7 +7326,13 @@ function BytecodeViewer.start(config)
 
 	local function appendRemoteEntryLines(lines, entry)
 		local preview = entry.argsText ~= "" and entry.argsText or "<no args>"
-		table.insert(lines, ("[%s] %s  %s"):format(entry.timestamp, entry.direction, entry.method))
+		table.insert(lines, ("#%d [%s] %s  %s  call:%d"):format(
+			entry.id or 0,
+			entry.timestamp,
+			entry.direction,
+			entry.method,
+			entry.remoteCallCount or 0
+		))
 		table.insert(lines, ("  Class   : %s"):format(entry.className))
 		table.insert(lines, ("  Path    : %s"):format(entry.remotePath))
 		table.insert(lines, ("  Args    : %d"):format(entry.argCount))
@@ -7374,7 +7425,8 @@ function BytecodeViewer.start(config)
 			local path = getRemotePath(remote)
 			if filterText == "" or containsFilter(path, filterText) or containsFilter(remote.ClassName, filterText) then
 				shown = shown + 1
-				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]"):format(UI_ICON.remote, path, remote.ClassName), {
+				local callCount = refs.getRemoteCallCount(remote)
+				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]  calls:%d"):format(UI_ICON.remote, path, remote.ClassName, callCount), {
 					Font = Enum.Font.Code,
 					Size = UDim2.new(1, 0, 0, 26),
 					TextSize = 11,
@@ -9249,6 +9301,9 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.clearRemoteLogButton.MouseButton1Click:Connect(function()
 		state.remoteLogs = {}
+		state.remoteLogSerial = 0
+		state.remoteCallCounts = {}
+		renderRemoteList()
 		renderRemoteLog()
 	end))
 	trackConnection(refs.spyClearButton.MouseButton1Click:Connect(function()
