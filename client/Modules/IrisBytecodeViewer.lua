@@ -7715,39 +7715,51 @@ function BytecodeViewer.start(config)
 		NativeUi.clear(refs.remoteListContent)
 		local records = refs.remoteSpy:GetRecords(state.remoteFilterText)
 
-		for _, record in ipairs(records) do
-			local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]  %d calls"):format(
-				UI_ICON.remote,
-				record.Name,
-				record.ClassName,
-				record.Calls
-			), {
-				Font = Enum.Font.Code,
-				Size = UDim2.new(1, 0, 0, 28),
-				TextSize = 11,
-				TextXAlignment = Enum.TextXAlignment.Left,
-			})
-			NativeUi.setButtonSelected(button, state.selectedRemoteKey == record.Key)
-			button.MouseButton1Click:Connect(function()
-				state.selectedRemotePath = record.Path
-				state.selectedRemoteKey = record.Key
-				state.selectedRemoteCallId = record.Logs[1] and record.Logs[1].Id or nil
-				renderRemoteList()
-				renderRemoteLog()
-				syncControlState()
-			end)
+		for index = #records, 1, -1 do
+			if records[index].Calls <= 0 then
+				table.remove(records, index)
+			end
 		end
 
-		refs.remoteCountLabel.Text = ("Visible: %d / Known: %d / Captured: %d"):format(#records, #refs.remoteSpy.records, #refs.remoteSpy.logs)
 		if #records == 0 then
-			NativeUi.makeLabel(refs.remoteListContent, "No remotes match the current filter.", {
+			if #refs.remoteSpy.logs == 0 then
+				state.selectedRemoteKey = nil
+				state.selectedRemotePath = nil
+				state.selectedRemoteCallId = nil
+			end
+			NativeUi.makeLabel(refs.remoteListContent, #refs.remoteSpy.logs == 0 and "No fired remotes captured yet." or "No fired remotes match the current filter.", {
 				TextColor3 = NativeUi.Theme.TextMuted,
 				TextWrapped = true,
 				TextYAlignment = Enum.TextYAlignment.Top,
 				AutomaticSize = Enum.AutomaticSize.Y,
 				Size = UDim2.new(1, 0, 0, 0),
 			})
+		else
+			for _, record in ipairs(records) do
+				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]  %d calls"):format(
+					UI_ICON.remote,
+					record.Name,
+					record.ClassName,
+					record.Calls
+				), {
+					Font = Enum.Font.Code,
+					Size = UDim2.new(1, 0, 0, 28),
+					TextSize = 11,
+					TextXAlignment = Enum.TextXAlignment.Left,
+				})
+				NativeUi.setButtonSelected(button, state.selectedRemoteKey == record.Key)
+				button.MouseButton1Click:Connect(function()
+					state.selectedRemotePath = record.Path
+					state.selectedRemoteKey = record.Key
+					state.selectedRemoteCallId = record.Logs[1] and record.Logs[1].Id or nil
+					renderRemoteList()
+					renderRemoteLog()
+					syncControlState()
+				end)
+			end
 		end
+
+		refs.remoteCountLabel.Text = ("Fired: %d / Known: %d / Captured: %d"):format(#records, #refs.remoteSpy.records, #refs.remoteSpy.logs)
 	end
 
 	refs.remoteSpy:SetCaptureCallback(function(record, call)
