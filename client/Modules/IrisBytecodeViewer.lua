@@ -1905,6 +1905,10 @@ local function makeState(config)
 		noClip = false,
 		fullBright = false,
 		noFallDamage = false,
+		antiFall = false,
+		antiFallDrop = tonumber(config.AntiFallDrop) or 8,
+		antiFallBacktrack = tonumber(config.AntiFallBacktrack) or 0.35,
+		antiFallCooldown = tonumber(config.AntiFallCooldown) or 0.45,
 		noOceanDamage = false,
 		phantomStepEnabled = false,
 		phantomCharacter = nil,
@@ -3178,9 +3182,10 @@ local function createGui(state)
 	local noClipToggle = makeToggleRow(automationSection, 86, "NoClip", "Suppresses part collisions on the local character during stepped updates.")
 	local fullBrightToggle = makeToggleRow(automationSection, 132, "FullBright", "Pins lighting into a bright analysis state and restores it when disabled.")
 	local noFallDamageToggle = makeToggleRow(automationSection, 178, "No Fall Damage", "Spoofs local fall-state checks and blocks local fall damage writes when available.")
-	local noOceanDamageToggle = makeToggleRow(automationSection, 224, "No Ocean Damage", "Spoofs local swim/ocean checks and blocks local ocean damage writes when available.")
-	local phantomStepToggle = makeToggleRow(automationSection, 270, "Phantom Step", "Control a local fake body while the real body jitters around it.")
-	automationSection.Size = UDim2.new(1, 0, 0, 316)
+	local antiFallToggle = makeToggleRow(automationSection, 224, "Anti Fall", "Snaps back to a recent grounded step if you drop off an edge.")
+	local noOceanDamageToggle = makeToggleRow(automationSection, 270, "No Ocean Damage", "Spoofs local swim/ocean checks and blocks local ocean damage writes when available.")
+	local phantomStepToggle = makeToggleRow(automationSection, 316, "Phantom Step", "Control a local fake body while the real body jitters around it.")
+	automationSection.Size = UDim2.new(1, 0, 0, 362)
 
 	local worldSection = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,
@@ -4301,6 +4306,7 @@ local function createGui(state)
 	refs.noClipToggle = noClipToggle
 	refs.fullBrightToggle = fullBrightToggle
 	refs.noFallDamageToggle = noFallDamageToggle
+	refs.antiFallToggle = antiFallToggle
 	refs.noOceanDamageToggle = noOceanDamageToggle
 	refs.phantomStepToggle = phantomStepToggle
 	refs.inspectorInfoLabel = inspectorInfoLabel
@@ -7101,6 +7107,7 @@ function BytecodeViewer.start(config)
 			noClip = "toggleNoClip",
 			fullBright = "toggleFullBright",
 			noFallDamage = "toggleNoFallDamage",
+			antiFall = "toggleAntiFall",
 			noOceanDamage = "toggleNoOceanDamage",
 		})[toggleName]
 
@@ -8517,7 +8524,139 @@ function BytecodeViewer.start(config)
 		noClipCharacter = nil,
 		noClipParts = {},
 		noClipRefreshAccumulator = 0,
+		antiFallCharacter = nil,
+		antiFallSamples = {},
+		antiFallLastSampleAt = 0,
+		antiFallLastSnapAt = 0,
 	}
+	runtime.antiFallRaycastParams = RaycastParams.new()
+	runtime.antiFallRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	runtime.antiFallRaycastParams.IgnoreWater = true
+
+	function runtime.resetAntiFall()
+		runtime.antiFallCharacter = nil
+		runtime.antiFallSamples = {}
+		runtime.antiFallLastSampleAt = 0
+	end
+
+	function runtime.hasAntiFallGround(character, root, humanoid)
+		if humanoid ~= nil and humanoid.FloorMaterial ~= Enum.Material.Air then
+			return true
+		end
+
+		if root == nil then
+			return false
+		end
+
+		runtime.antiFallRaycastParams.FilterDescendantsInstances = { character }
+		return Workspace:Raycast(root.Position, Vector3.new(0, -7, 0), runtime.antiFallRaycastParams) ~= nil
+	end
+
+	function runtime.pushAntiFallSample(root, now)
+		if root == nil then
+			return
+		end
+
+		if now - runtime.antiFallLastSampleAt < 0.08 then
+			return
+		end
+
+		runtime.antiFallLastSampleAt = now
+		table.insert(runtime.antiFallSamples, {
+			t = now,
+			cframe = root.CFrame,
+			position = root.Position,
+		})
+
+		for index = #runtime.antiFallSamples, 1, -1 do
+			if now - runtime.antiFallSamples[index].t > 1.6 then
+				table.remove(runtime.antiFallSamples, index)
+			end
+		end
+	end
+
+	function runtime.getAntiFallRestoreSample(now)
+		local fallback = runtime.antiFallSamples[#runtime.antiFallSamples]
+		for index = #runtime.antiFallSamples, 1, -1 do
+			local sample = runtime.antiFallSamples[index]
+			local age = now - sample.t
+			if age >= state.antiFallBacktrack and age <= 1.6 then
+				return sample
+			end
+		end
+
+		return fallback
+	end
+
+	function runtime.snapAntiFallCharacter(character, sample)
+		if character == nil or sample == nil then
+			return
+		end
+
+		local restoreCFrame = sample.cframe + Vector3.new(0, 2, 0)
+		pcall(function()
+			character:PivotTo(restoreCFrame)
+		end)
+
+		for _, part in ipairs(getCharacterBaseParts(character)) do
+			part.AssemblyLinearVelocity = Vector3.zero
+			part.AssemblyAngularVelocity = Vector3.zero
+		end
+	end
+
+	function runtime.updateAntiFall(deltaTime)
+		if not state.antiFall then
+			if runtime.antiFallCharacter ~= nil or #runtime.antiFallSamples > 0 then
+				runtime.resetAntiFall()
+			end
+			return
+		end
+
+		local character = getLocalCharacter()
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid") or nil
+		local root = getCharacterRootPart(character)
+		if character == nil or humanoid == nil or root == nil or humanoid.Health <= 0 then
+			runtime.resetAntiFall()
+			return
+		end
+
+		if runtime.antiFallCharacter ~= character then
+			runtime.resetAntiFall()
+			runtime.antiFallCharacter = character
+		end
+
+		local humanoidState = humanoid:GetState()
+		if humanoidState == Enum.HumanoidStateType.Dead
+			or humanoidState == Enum.HumanoidStateType.Seated
+			or humanoidState == Enum.HumanoidStateType.Swimming
+			or humanoidState == Enum.HumanoidStateType.Climbing
+		then
+			return
+		end
+
+		local now = os.clock()
+		local hasGround = runtime.hasAntiFallGround(character, root, humanoid)
+		if hasGround and root.AssemblyLinearVelocity.Y > -10 then
+			runtime.pushAntiFallSample(root, now)
+			return
+		end
+
+		local sample = runtime.getAntiFallRestoreSample(now)
+		if sample == nil then
+			return
+		end
+
+		local drop = sample.position.Y - root.Position.Y
+		if drop < state.antiFallDrop or now - runtime.antiFallLastSnapAt < state.antiFallCooldown then
+			return
+		end
+
+		runtime.antiFallLastSnapAt = now
+		runtime.snapAntiFallCharacter(character, sample)
+		runtime.antiFallSamples = {}
+		runtime.pushAntiFallSample(root, now)
+		setMainStatus("Anti Fall restored position", NativeUi.Theme.Success)
+	end
 	local espObjectCache = {
 		named = {
 			spawnPoint = {
@@ -9497,6 +9636,7 @@ function BytecodeViewer.start(config)
 		syncToggleButton(refs.noClipToggle, state.noClip)
 		syncToggleButton(refs.fullBrightToggle, state.fullBright)
 		syncToggleButton(refs.noFallDamageToggle, state.noFallDamage)
+		syncToggleButton(refs.antiFallToggle, state.antiFall)
 		syncToggleButton(refs.noOceanDamageToggle, state.noOceanDamage)
 		syncToggleButton(refs.phantomStepToggle, state.phantomStepEnabled)
 		syncToggleButton(refs.aimbotToggle, state.aimbotEnabled)
@@ -9582,6 +9722,9 @@ function BytecodeViewer.start(config)
 		local nextValue = not state[toggleName]
 		local ok, result = setToggleState(toggleName, nextValue)
 		if ok then
+			if toggleName == "antiFall" then
+				runtime.resetAntiFall()
+			end
 			setMainStatus(tostring(result), NativeUi.Theme.Success)
 		else
 			setMainStatus(tostring(result), NativeUi.Theme.Error)
@@ -9728,6 +9871,8 @@ function BytecodeViewer.start(config)
 	end))
 
 	trackConnection(RunService.Stepped:Connect(function(_, deltaTime)
+		runtime.updateAntiFall(deltaTime)
+
 		if not state.noClip then
 			if runtime.noClipCharacter ~= nil or #runtime.noClipParts > 0 then
 				runtime.noClipCharacter = nil
@@ -10301,6 +10446,9 @@ function BytecodeViewer.start(config)
 	end))
 	trackConnection(refs.noFallDamageToggle.toggle.MouseButton1Click:Connect(function()
 		runtime.toggleFeature("noFallDamage")
+	end))
+	trackConnection(refs.antiFallToggle.toggle.MouseButton1Click:Connect(function()
+		runtime.toggleFeature("antiFall")
 	end))
 	trackConnection(refs.noOceanDamageToggle.toggle.MouseButton1Click:Connect(function()
 		runtime.toggleFeature("noOceanDamage")
