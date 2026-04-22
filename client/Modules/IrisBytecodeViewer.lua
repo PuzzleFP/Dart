@@ -671,6 +671,25 @@ local function updateLocalCharacterAnimation(character, moveVector)
 	end
 end
 
+local function resolveAntiFallDisableKeyCode(config)
+	local configured = type(config) == "table" and config.AntiFallDisableKeyCode or nil
+	if type(configured) == "string" then
+		local ok, keyCode = pcall(function()
+			return Enum.KeyCode[configured]
+		end)
+		if ok and keyCode ~= nil then
+			return keyCode
+		end
+	elseif typeof(configured) == "EnumItem" then
+		return configured
+	end
+
+	local ok, keyCode = pcall(function()
+		return Enum.KeyCode.Backquote
+	end)
+	return ok and keyCode or nil
+end
+
 local function getPlayerRootPart(player)
 	return getCharacterRootPart(player and player.Character or nil)
 end
@@ -4326,6 +4345,7 @@ function BytecodeViewer.start(config)
 	local refs = createGui(state)
 	local LuauDecompiler = loadRemoteModule("LuauDecompiler")
 	local LuauControlFlow = loadRemoteModule("LuauControlFlow")
+	state.antiFallDisableKeyCode = resolveAntiFallDisableKeyCode(config)
 	local scope = getGlobalScope()
 	local cleanupTasks = {}
 	local cleaning = false
@@ -9868,6 +9888,20 @@ function BytecodeViewer.start(config)
 		if humanoid ~= nil then
 			humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 		end
+	end))
+
+	trackConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or UserInputService:GetFocusedTextBox() ~= nil then
+			return
+		end
+
+		if state.antiFallDisableKeyCode == nil or input.KeyCode ~= state.antiFallDisableKeyCode or not state.antiFall then
+			return
+		end
+
+		runtime.toggleFeature("antiFall")
+		runtime.resetAntiFall()
+		setMainStatus("Anti Fall disabled by keybind", NativeUi.Theme.Warning)
 	end))
 
 	trackConnection(RunService.Stepped:Connect(function(_, deltaTime)
