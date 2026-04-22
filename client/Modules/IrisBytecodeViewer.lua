@@ -383,6 +383,294 @@ local function getCharacterCameraSubject(character)
 	return character:FindFirstChildOfClass("Humanoid") or getCharacterRootPart(character)
 end
 
+local LOCAL_CHARACTER_ANIMATIONS = {
+	R6 = {
+		idle = "180435571",
+		walk = "180426354",
+	},
+	R15 = {
+		idle = "507766666",
+		walk = "507777826",
+	},
+}
+
+local LOCAL_CHARACTER_ANIMATION_CONTROLLERS = setmetatable({}, { __mode = "k" })
+local CHARACTER_NO_COLLISION_FOLDER_NAME = "__DartNoCollision"
+
+local function getCharacterBaseParts(character)
+	local parts = {}
+	if typeof(character) ~= "Instance" then
+		return parts
+	end
+
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			table.insert(parts, descendant)
+		end
+	end
+
+	return parts
+end
+
+local function countCharacterBaseParts(character)
+	if typeof(character) ~= "Instance" then
+		return 0
+	end
+
+	local count = 0
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			count = count + 1
+		end
+	end
+
+	return count
+end
+
+local function clearCharacterNoCollisionLinks(character)
+	if typeof(character) ~= "Instance" then
+		return
+	end
+
+	local folder = character:FindFirstChild(CHARACTER_NO_COLLISION_FOLDER_NAME)
+	if folder ~= nil then
+		folder:Destroy()
+	end
+end
+
+local function preventCharacterPairCollision(primaryCharacter, otherCharacter)
+	if typeof(primaryCharacter) ~= "Instance" or typeof(otherCharacter) ~= "Instance" then
+		return
+	end
+
+	clearCharacterNoCollisionLinks(primaryCharacter)
+
+	local primaryParts = getCharacterBaseParts(primaryCharacter)
+	local otherParts = getCharacterBaseParts(otherCharacter)
+	if #primaryParts == 0 or #otherParts == 0 then
+		return
+	end
+
+	local folder = Instance.new("Folder")
+	folder.Name = CHARACTER_NO_COLLISION_FOLDER_NAME
+	folder.Parent = primaryCharacter
+
+	for _, primaryPart in ipairs(primaryParts) do
+		for _, otherPart in ipairs(otherParts) do
+			if primaryPart ~= otherPart then
+				local constraint = Instance.new("NoCollisionConstraint")
+				constraint.Part0 = primaryPart
+				constraint.Part1 = otherPart
+				constraint.Parent = folder
+			end
+		end
+	end
+end
+
+local function getCharacterCollisionSignature(primaryCharacter, otherCharacter)
+	return ("%s:%d|%s:%d"):format(
+		tostring(primaryCharacter),
+		countCharacterBaseParts(primaryCharacter),
+		tostring(otherCharacter),
+		countCharacterBaseParts(otherCharacter)
+	)
+end
+
+local function findCharacterAnimateScript(character)
+	if typeof(character) ~= "Instance" then
+		return nil
+	end
+
+	local direct = character:FindFirstChild("Animate")
+	if direct ~= nil and direct:IsA("LocalScript") then
+		return direct
+	end
+
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("LocalScript") and descendant.Name == "Animate" then
+			return descendant
+		end
+	end
+
+	return nil
+end
+
+local function getRigAnimationSet(humanoid)
+	if humanoid ~= nil and humanoid.RigType == Enum.HumanoidRigType.R6 then
+		return LOCAL_CHARACTER_ANIMATIONS.R6
+	end
+
+	return LOCAL_CHARACTER_ANIMATIONS.R15
+end
+
+local function ensureCharacterAnimator(humanoid)
+	if humanoid == nil then
+		return nil
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if animator == nil then
+		animator = Instance.new("Animator")
+		animator.Parent = humanoid
+	end
+
+	return animator
+end
+
+local function loadLocalCharacterTrack(animator, animationId, priority)
+	if animator == nil or animationId == nil then
+		return nil
+	end
+
+	local animation = Instance.new("Animation")
+	animation.AnimationId = "rbxassetid://" .. tostring(animationId)
+
+	local ok, track = pcall(function()
+		return animator:LoadAnimation(animation)
+	end)
+	animation:Destroy()
+
+	if not ok or track == nil then
+		return nil
+	end
+
+	pcall(function()
+		track.Priority = priority
+		track.Looped = true
+	end)
+
+	return track
+end
+
+local function stopLocalCharacterAnimationController(controller)
+	if type(controller) ~= "table" or type(controller.tracks) ~= "table" then
+		return
+	end
+
+	for _, track in pairs(controller.tracks) do
+		pcall(function()
+			track:Stop(0.1)
+			track:Destroy()
+		end)
+	end
+end
+
+local function clearLocalCharacterAnimation(character)
+	local controller = LOCAL_CHARACTER_ANIMATION_CONTROLLERS[character]
+	if controller ~= nil then
+		stopLocalCharacterAnimationController(controller)
+		LOCAL_CHARACTER_ANIMATION_CONTROLLERS[character] = nil
+	end
+end
+
+local function prepareLocalCharacterAnimation(character)
+	if typeof(character) ~= "Instance" then
+		return
+	end
+
+	clearLocalCharacterAnimation(character)
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid == nil then
+		return
+	end
+
+	local animateScript = findCharacterAnimateScript(character)
+	if animateScript ~= nil then
+		pcall(function()
+			animateScript.Enabled = true
+		end)
+		pcall(function()
+			animateScript.Disabled = false
+		end)
+	end
+
+	local animator = ensureCharacterAnimator(humanoid)
+	if animator == nil then
+		return
+	end
+
+	local animationSet = getRigAnimationSet(humanoid)
+	local tracks = {
+		idle = loadLocalCharacterTrack(animator, animationSet.idle, Enum.AnimationPriority.Idle),
+		walk = loadLocalCharacterTrack(animator, animationSet.walk, Enum.AnimationPriority.Movement),
+	}
+
+	LOCAL_CHARACTER_ANIMATION_CONTROLLERS[character] = {
+		humanoid = humanoid,
+		animator = animator,
+		defaultAnimate = animateScript,
+		manualAfter = os.clock() + 0.75,
+		active = nil,
+		tracks = tracks,
+	}
+end
+
+local function defaultAnimateIsRunning(controller)
+	if controller.defaultAnimate == nil or os.clock() < controller.manualAfter then
+		return controller.defaultAnimate ~= nil
+	end
+
+	local ok, tracks = pcall(function()
+		return controller.animator:GetPlayingAnimationTracks()
+	end)
+	if ok and type(tracks) == "table" and #tracks > 0 then
+		return true
+	end
+
+	controller.defaultAnimate = nil
+	return false
+end
+
+local function updateLocalCharacterAnimation(character, moveVector)
+	local controller = LOCAL_CHARACTER_ANIMATION_CONTROLLERS[character]
+	if controller == nil then
+		return
+	end
+
+	if typeof(character) ~= "Instance" or character.Parent == nil or controller.humanoid.Parent == nil then
+		clearLocalCharacterAnimation(character)
+		return
+	end
+
+	if defaultAnimateIsRunning(controller) then
+		return
+	end
+
+	local moving = typeof(moveVector) == "Vector3" and moveVector.Magnitude > 0.05
+	local desiredName = moving and "walk" or "idle"
+	local desiredTrack = controller.tracks[desiredName]
+	if desiredTrack == nil then
+		return
+	end
+
+	if controller.active ~= desiredName then
+		for name, track in pairs(controller.tracks) do
+			if name ~= desiredName and track ~= nil then
+				pcall(function()
+					track:Stop(0.12)
+				end)
+			end
+		end
+
+		pcall(function()
+			desiredTrack:Play(0.12)
+		end)
+		controller.active = desiredName
+	end
+
+	if moving then
+		local speedScale = math.max(0.75, math.min(2.25, controller.humanoid.WalkSpeed / 16))
+		pcall(function()
+			desiredTrack:AdjustSpeed(speedScale)
+		end)
+	else
+		pcall(function()
+			desiredTrack:AdjustSpeed(1)
+		end)
+	end
+end
+
 local function getPlayerRootPart(player)
 	return getCharacterRootPart(player and player.Character or nil)
 end
@@ -1623,6 +1911,8 @@ local function makeState(config)
 		phantomRealCharacter = nil,
 		phantomRadius = tonumber(config.PhantomStepRadius) or 5,
 		phantomSpeed = tonumber(config.PhantomStepSpeed) or 28,
+		phantomCollisionSignature = nil,
+		phantomCollisionRefreshAt = 0,
 		localProtectionHookInstalled = false,
 		localProtectionHookError = nil,
 		aimbotEnabled = false,
@@ -4458,6 +4748,7 @@ function BytecodeViewer.start(config)
 			humanoid.UseJumpPower = sourceHumanoid.UseJumpPower
 		end
 
+		prepareLocalCharacterAnimation(ghost)
 		return ghost
 	end
 
@@ -4550,6 +4841,10 @@ function BytecodeViewer.start(config)
 		end
 
 		state.ghostCharacter = slot.character
+		prepareLocalCharacterAnimation(slot.character)
+		if state.realCharacterBeforeGhost ~= nil then
+			preventCharacterPairCollision(slot.character, state.realCharacterBeforeGhost)
+		end
 		if Players.LocalPlayer ~= nil then
 			local ok = pcall(function()
 				Players.LocalPlayer.Character = slot.character
@@ -4657,6 +4952,8 @@ function BytecodeViewer.start(config)
 		local character = slot.character
 		table.remove(state.ghostCharacters, state.selectedGhostIndex)
 		if typeof(character) == "Instance" then
+			clearLocalCharacterAnimation(character)
+			clearCharacterNoCollisionLinks(character)
 			character:Destroy()
 		end
 
@@ -4682,6 +4979,8 @@ function BytecodeViewer.start(config)
 	local function destroyAllGhostCharacters()
 		for _, slot in ipairs(state.ghostCharacters) do
 			if type(slot) == "table" and typeof(slot.character) == "Instance" then
+				clearLocalCharacterAnimation(slot.character)
+				clearCharacterNoCollisionLinks(slot.character)
 				slot.character:Destroy()
 			end
 		end
@@ -4989,6 +5288,7 @@ function BytecodeViewer.start(config)
 			look = Vector3.new(0, 0, -1)
 		end
 		ghost:PivotTo(CFrame.lookAt(nextPosition, nextPosition + look.Unit))
+		updateLocalCharacterAnimation(ghost, Vector3.zero)
 	end
 
 	local function updateGhostMovement(deltaTime)
@@ -5014,6 +5314,7 @@ function BytecodeViewer.start(config)
 		humanoid.PlatformStand = false
 		local move = getOperatorMoveVector(true)
 		humanoid:Move(move, false)
+		updateLocalCharacterAnimation(ghost, move)
 		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 			humanoid.Jump = true
 		end
@@ -5021,11 +5322,15 @@ function BytecodeViewer.start(config)
 
 	refs.destroyPhantomCharacter = function()
 		if state.phantomCharacter ~= nil then
+			clearLocalCharacterAnimation(state.phantomCharacter)
+			clearCharacterNoCollisionLinks(state.phantomCharacter)
 			pcall(function()
 				state.phantomCharacter:Destroy()
 			end)
 		end
 		state.phantomCharacter = nil
+		state.phantomCollisionSignature = nil
+		state.phantomCollisionRefreshAt = 0
 	end
 
 	refs.setPhantomStepEnabled = function(enabled)
@@ -5057,6 +5362,10 @@ function BytecodeViewer.start(config)
 			end
 
 			state.phantomCharacter = fakeCharacter
+			prepareLocalCharacterAnimation(fakeCharacter)
+			preventCharacterPairCollision(fakeCharacter, realCharacter)
+			state.phantomCollisionSignature = getCharacterCollisionSignature(fakeCharacter, realCharacter)
+			state.phantomCollisionRefreshAt = os.clock() + 1
 			local ok = pcall(function()
 				player.Character = fakeCharacter
 			end)
@@ -5111,7 +5420,9 @@ function BytecodeViewer.start(config)
 			local humanoid = fakeCharacter:FindFirstChildOfClass("Humanoid")
 			if humanoid ~= nil then
 				humanoid.PlatformStand = false
-				humanoid:Move(getOperatorMoveVector(true), false)
+				local move = getOperatorMoveVector(true)
+				humanoid:Move(move, false)
+				updateLocalCharacterAnimation(fakeCharacter, move)
 				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 					humanoid.Jump = true
 				end
@@ -5124,7 +5435,17 @@ function BytecodeViewer.start(config)
 			return
 		end
 
-		local t = os.clock() * state.phantomSpeed
+		local now = os.clock()
+		if now >= state.phantomCollisionRefreshAt then
+			local signature = getCharacterCollisionSignature(fakeCharacter, realCharacter)
+			if signature ~= state.phantomCollisionSignature then
+				preventCharacterPairCollision(fakeCharacter, realCharacter)
+				state.phantomCollisionSignature = signature
+			end
+			state.phantomCollisionRefreshAt = now + 1
+		end
+
+		local t = now * state.phantomSpeed
 		local radius = state.phantomRadius
 		local offset = Vector3.new(
 			math.cos(t * 1.11) * radius,
