@@ -120,18 +120,18 @@ local nilScriptRegistry = setmetatable({}, { __mode = "v" })
 local nilScriptBrowserRoot = nil
 local dynamicWorkspaceScripts = setmetatable({}, { __mode = "k" })
 local UI_ICON = {
-	main = "[+]",
-	esp = "[E]",
-	spy = "[S]",
-	guns = "[G]",
-	build = "[B]",
-	remote = "[R]",
-	code = "[C]",
-	refresh = "[~]",
-	copy = "[#]",
-	load = "[>]",
-	clear = "[x]",
-	watch = "[!]",
+	main = "01",
+	esp = "02",
+	spy = "03",
+	guns = "04",
+	build = "05",
+	remote = "06",
+	code = "07",
+	refresh = "R",
+	copy = "C",
+	load = ">",
+	clear = "X",
+	watch = "!",
 }
 local WORKSPACE_COPY = {
 	main = {
@@ -906,6 +906,11 @@ local function classifyIntelligenceStructure(structure)
 		return "Artillery", "info"
 	elseif string.find(normalized, "bore", 1, true) ~= nil then
 		return "Bore", "info"
+	elseif string.find(normalized, "turret", 1, true) ~= nil
+		or string.find(normalized, "tower", 1, true) ~= nil
+		or string.find(normalized, "cannon", 1, true) ~= nil
+		or string.find(normalized, "defense", 1, true) ~= nil then
+		return "Turret", "warning"
 	end
 
 	return nil
@@ -948,7 +953,7 @@ local PRODUCTION_ATTRIBUTES = {
 	"Output",
 }
 
-local MACRO_STRUCTURE_KINDS = { "Arsenal", "S.S.I.M", "Artillery", "Bore" }
+local MACRO_STRUCTURE_KINDS = { "Arsenal", "S.S.I.M", "Artillery", "Bore", "Turret" }
 
 local function readStructureProduction(structure)
 	for _, attributeName in ipairs(PRODUCTION_ATTRIBUTES) do
@@ -1896,8 +1901,19 @@ local function makeState(config)
 		remoteDedupeWindow = tonumber(config.RemoteDedupeWindow) or 0,
 		notifications = {},
 		nextNotificationId = 0,
+		intelligenceActiveSignal = nil,
+		intelligenceRemoteSignal = nil,
+		intelligenceStructureSignal = nil,
+		intelligenceMacroSignal = nil,
+		intelligenceTurretSignal = nil,
 		intelligenceThreat = nil,
 		intelligenceThreatRange = tonumber(config.IntelligenceThreatRange) or 350,
+		intelligenceThreatInterval = math.max(0.1, tonumber(config.IntelligenceThreatInterval) or 0.35),
+		intelligenceCriticalRange = math.max(1, tonumber(config.IntelligenceCriticalRange) or 60),
+		intelligenceTurretRange = math.max(1, tonumber(config.IntelligenceTurretRange) or 160),
+		intelligenceTurretNearMultiplier = math.max(1, tonumber(config.IntelligenceTurretNearMultiplier) or 1.25),
+		intelligenceTurretLineOfSightDegrees = math.max(1, tonumber(config.IntelligenceTurretLineOfSightDegrees) or 42),
+		intelligenceLowHealthPercent = math.max(0.05, math.min(0.95, tonumber(config.IntelligenceLowHealthPercent) or 0.35)),
 		intelligenceThreatKey = nil,
 		macroEnabled = false,
 		macroTargetKind = "Arsenal",
@@ -1915,7 +1931,7 @@ local function makeState(config)
 		mainControlsWidth = 500,
 		bytecodeSidebarWidth = 280,
 		bytecodeInspectorWidth = 320,
-		windowMinSize = Vector2.new(1100, 700),
+		windowMinSize = Vector2.new(1100, 560),
 		windowMaxSize = nil,
 		isMinimized = false,
 		restoredSize = nil,
@@ -2008,7 +2024,7 @@ local function makeSectionTitle(parent, text, accentColor)
 		Font = Enum.Font.GothamSemibold,
 		Text = text,
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextSize = 12,
+		TextSize = 11,
 		Size = UDim2.new(1, 0, 0, 18),
 	})
 end
@@ -2044,8 +2060,9 @@ local function makeOutputViewer(parent)
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
 		Position = UDim2.fromOffset(0, 0),
-		ScrollBarImageColor3 = NativeUi.Theme.TextDim,
-		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = NativeUi.Theme.Border,
+		ScrollBarImageTransparency = 0.22,
+		ScrollBarThickness = 2,
 		ScrollingDirection = Enum.ScrollingDirection.XY,
 		Size = UDim2.new(1, 0, 1, 0),
 		Parent = parent,
@@ -2097,45 +2114,59 @@ end
 local function makeSliderRow(parent, y, labelText)
 	local row = NativeUi.makePanel(parent, {
 		Position = UDim2.new(0, 12, 0, y),
-		Size = UDim2.new(1, -24, 0, 54),
+		Size = UDim2.new(1, -24, 0, 60),
 		BackgroundColor3 = NativeUi.Theme.Surface,
-		CornerRadius = 8,
+		CornerRadius = 12,
+	})
+	SuiteComponents.stylePanel(row, SuiteTheme, {
+		background = SuiteTheme.Colors.Surface,
+		transparency = 0,
+		radius = SuiteTheme.Radius.Control,
+		stroke = SuiteTheme.Colors.Stroke,
+		strokeTransparency = 0.88,
+		gradient = false,
 	})
 
 	local label = NativeUi.makeLabel(row, labelText, {
 		Font = Enum.Font.GothamSemibold,
-		TextSize = 12,
-		Position = UDim2.fromOffset(12, 8),
+		TextSize = 13,
+		Position = UDim2.fromOffset(14, 8),
 		Size = UDim2.new(1, -144, 0, 18),
 	})
 
 	local valueLabel = NativeUi.makeLabel(row, "0", {
+		BackgroundColor3 = SuiteTheme.Colors.Background,
+		BackgroundTransparency = 0.08,
 		Font = Enum.Font.Code,
 		TextSize = 11,
 		TextColor3 = NativeUi.Theme.TextMuted,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		Position = UDim2.new(1, -112, 0, 8),
-		Size = UDim2.fromOffset(42, 18),
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Position = UDim2.new(1, -122, 0, 7),
+		Size = UDim2.fromOffset(54, 24),
 	})
+	NativeUi.corner(valueLabel, 8)
+	NativeUi.stroke(valueLabel, NativeUi.Theme.Border, 1, 0.42)
 
 	local applyButton = NativeUi.makeButton(row, "Set", {
-		Position = UDim2.new(1, -56, 0, 6),
-		Size = UDim2.fromOffset(44, 22),
+		Position = UDim2.new(1, -62, 0, 7),
+		Size = UDim2.fromOffset(48, 24),
 		TextSize = 11,
+		CornerRadius = 8,
 	})
 
 	local track = NativeUi.create("Frame", {
-		BackgroundColor3 = NativeUi.Theme.Surface,
+		BackgroundColor3 = SuiteTheme.Colors.Background,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(12, 34),
-		Size = UDim2.new(1, -24, 0, 6),
+		Position = UDim2.fromOffset(14, 42),
+		Size = UDim2.new(1, -28, 0, 5),
 		Parent = row,
 	})
 	NativeUi.corner(track, 999)
-	NativeUi.stroke(track, NativeUi.Theme.Border, 1, 0.35)
+	NativeUi.stroke(track, NativeUi.Theme.Border, 1, 0.6)
 
 	local fill = NativeUi.create("Frame", {
 		BackgroundColor3 = NativeUi.Theme.Accent,
+		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
 		Size = UDim2.new(0, 0, 1, 0),
 		Parent = track,
@@ -2146,8 +2177,8 @@ local function makeSliderRow(parent, y, labelText)
 		AutoButtonColor = false,
 		BackgroundColor3 = NativeUi.Theme.Text,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, -6, 0.5, -6),
-		Size = UDim2.fromOffset(12, 12),
+		Position = UDim2.new(0, -7, 0.5, -7),
+		Size = UDim2.fromOffset(14, 14),
 		Text = "",
 		ZIndex = 3,
 		Parent = track,
@@ -2169,8 +2200,9 @@ end
 local function makeToggleRow(parent, y, labelText, description)
 	local row = NativeUi.makeButton(parent, "", {
 		Position = UDim2.new(0, 12, 0, y),
-		Size = UDim2.new(1, -24, 0, 40),
+		Size = UDim2.new(1, -24, 0, 42),
 		TextSize = 1,
+		CornerRadius = 12,
 		Palette = {
 			Base = NativeUi.Theme.Surface,
 			Hover = NativeUi.Theme.SurfaceHover,
@@ -2187,25 +2219,47 @@ local function makeToggleRow(parent, y, labelText, description)
 	local title = NativeUi.makeLabel(row, labelText, {
 		Font = Enum.Font.GothamSemibold,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 0),
-		Size = UDim2.new(1, -48, 1, 0),
+		Position = UDim2.fromOffset(12, 5),
+		Size = UDim2.new(1, -58, 0, 16),
 	})
+
+	local detail = NativeUi.makeLabel(row, description or "", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 10,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Position = UDim2.fromOffset(12, 22),
+		Size = UDim2.new(1, -58, 0, 14),
+	})
+
+	local switchTrack = NativeUi.create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = SuiteTheme.Colors.Background,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Position = UDim2.new(1, -31, 0.5, 0),
+		Size = UDim2.fromOffset(42, 22),
+		Parent = row,
+	})
+	NativeUi.corner(switchTrack, 999)
+	NativeUi.stroke(switchTrack, NativeUi.Theme.Border, 1, 0.42)
 
 	local indicator = NativeUi.create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = Color3.fromRGB(245, 248, 252),
-		BackgroundTransparency = 1,
+		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
-		Position = UDim2.new(1, -21, 0.5, 0),
-		Size = UDim2.fromOffset(8, 8),
-		Parent = row,
+		Position = UDim2.fromOffset(12, 11),
+		Size = UDim2.fromOffset(16, 16),
+		Parent = switchTrack,
 	})
-	NativeUi.corner(indicator, 3)
+	NativeUi.corner(indicator, 999)
 
 	return {
 		row = row,
 		title = title,
+		detail = detail,
 		toggle = row,
+		switchTrack = switchTrack,
 		indicator = indicator,
 		description = description,
 	}
@@ -2812,12 +2866,16 @@ local function createGui(state)
 
 	createOverlayLayers(screenGui, refs)
 
+	local viewportSize = Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1440, 810)
+	local initialWidth = clamp(viewportSize.X - 48, state.windowMinSize.X, 1360)
+	local initialHeight = clamp(viewportSize.Y - 64, state.windowMinSize.Y, 650)
+
 	local main = NativeUi.makePanel(screenGui, {
 		Name = "Main",
 		BackgroundColor3 = NativeUi.Theme.Background,
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0.5, -680, 0.5, -325),
-		Size = UDim2.fromOffset(1360, 650),
+		Position = UDim2.new(0.5, -math.floor(initialWidth / 2), 0.5, -math.floor(initialHeight / 2)),
+		Size = UDim2.fromOffset(initialWidth, initialHeight),
 		ClipsDescendants = true,
 	})
 	if main:FindFirstChildOfClass("UIStroke") ~= nil then
@@ -2841,7 +2899,7 @@ local function createGui(state)
 	local contentX = 204
 	local shellY = 16
 	local shellPadding = 12
-	local shellHeaderHeight = 48
+	local shellHeaderHeight = 68
 	local workspaceTopInset = shellPadding + shellHeaderHeight + 12
 	local navButtonPalette = {
 		Base = NativeUi.Theme.Panel,
@@ -2869,6 +2927,7 @@ local function createGui(state)
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(contentX, shellY),
 		Size = UDim2.new(1, -(contentX + 12), 0, 40),
+		ZIndex = 24,
 		Parent = main,
 	})
 
@@ -2981,6 +3040,7 @@ local function createGui(state)
 		Position = UDim2.new(1, -66, 0, 6),
 		Size = UDim2.fromOffset(26, 26),
 		TextSize = 14,
+		ZIndex = 25,
 		Palette = navButtonPalette,
 	})
 
@@ -2988,6 +3048,7 @@ local function createGui(state)
 		Position = UDim2.new(1, -34, 0, 6),
 		Size = UDim2.fromOffset(26, 26),
 		TextSize = 12,
+		ZIndex = 25,
 		Palette = {
 			Base = NativeUi.Theme.Panel,
 			Hover = Color3.fromRGB(44, 24, 28),
@@ -3039,19 +3100,19 @@ local function createGui(state)
 		Font = Enum.Font.GothamBold,
 		TextSize = 16,
 		Position = UDim2.fromOffset(16, 13),
-		Size = UDim2.new(1, -32, 0, 22),
+		Size = UDim2.new(0.56, 0, 0, 22),
 	})
 
 	local workspaceSubtitleLabel = NativeUi.makeLabel(workspaceHeader, "Three-pane bytecode, decompile, and control-flow analysis.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
-		Position = UDim2.fromOffset(16, 49),
+		Position = UDim2.fromOffset(16, 38),
 		Size = UDim2.new(0.56, 0, 0, 16),
-		Visible = false,
+		Visible = true,
 	})
 
 	local workspaceSearchButton = NativeUi.makeButton(workspaceHeader, "Search scripts, commands or output", {
-		Position = UDim2.new(1, -314, 0, 18),
+		Position = UDim2.new(1, -314, 0, 17),
 		Size = UDim2.fromOffset(254, 34),
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 12,
@@ -3066,15 +3127,15 @@ local function createGui(state)
 			SelectedText = NativeUi.Theme.Text,
 			DisabledText = NativeUi.Theme.TextDim,
 		},
-		Visible = false,
+		Visible = true,
 	})
 
 	local workspacePulseButton = NativeUi.makeButton(workspaceHeader, "!", {
-		Position = UDim2.new(1, -52, 0, 20),
+		Position = UDim2.new(1, -52, 0, 19),
 		Size = UDim2.fromOffset(32, 30),
 		TextSize = 12,
 		Palette = navButtonPalette,
-		Visible = false,
+		Visible = true,
 	})
 
 	local mainWorkspace = NativeUi.create("Frame", {
@@ -4115,8 +4176,8 @@ local function createGui(state)
 		workspaceShell.Size = UDim2.fromOffset(shellWidth, shellHeight)
 		workspaceHeader.Position = UDim2.fromOffset(shellPadding, shellPadding)
 		workspaceHeader.Size = UDim2.new(1, -shellPadding * 2, 0, shellHeaderHeight)
-		workspaceSearchButton.Position = UDim2.new(1, -314, 0, 9)
-		workspacePulseButton.Position = UDim2.new(1, -52, 0, 10)
+		workspaceSearchButton.Position = UDim2.new(1, -314, 0, 17)
+		workspacePulseButton.Position = UDim2.new(1, -52, 0, 19)
 
 		mainWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
@@ -5593,8 +5654,11 @@ function BytecodeViewer.start(config)
 
 	local intelligencePlayerConnections = {}
 	local intelligencePlayerWeapons = {}
+	local intelligenceBoundContainers = setmetatable({}, { __mode = "k" })
 	local intelligenceKnownStructures = setmetatable({}, { __mode = "k" })
 	local intelligenceStructureConnections = setmetatable({}, { __mode = "k" })
+	local intelligenceTurrets = setmetatable({}, { __mode = "k" })
+	local intelligenceSignalProviders = {}
 	local intelligenceNotificationTimes = {}
 	local intelligenceFirstStructureSeen = {}
 	local intelligenceHeartbeatAccumulator = 0
@@ -5740,7 +5804,22 @@ function BytecodeViewer.start(config)
 		return false
 	end
 
-	local function rememberPlayerWeapon(player, tool, silent)
+	local function playerCharacterHasWeaponNamed(player, weaponName)
+		local character = player and player.Character or nil
+		if character == nil then
+			return false
+		end
+
+		for _, child in ipairs(character:GetChildren()) do
+			if getWeaponName(child) == weaponName then
+				return true
+			end
+		end
+
+		return false
+	end
+
+	local function rememberPlayerWeapon(player, tool, silent, equipped)
 		if not isWeaponTool(tool) then
 			return
 		end
@@ -5750,6 +5829,9 @@ function BytecodeViewer.start(config)
 		local alreadyKnown = inventory[weaponName] == true
 		inventory[weaponName] = true
 		inventory.lastWeapon = weaponName
+		if equipped then
+			inventory.equippedWeapon = weaponName
+		end
 
 		if silent or alreadyKnown or not isEnemyPlayer(player) then
 			return
@@ -5768,10 +5850,18 @@ function BytecodeViewer.start(config)
 		)
 	end
 
-	local function forgetPlayerWeaponIfGone(player, weaponName)
+	local function forgetPlayerWeaponIfGone(player, weaponName, equipped)
 		task.defer(function()
 			local inventory = intelligencePlayerWeapons[player]
-			if inventory == nil or playerHasWeaponNamed(player, weaponName) then
+			if inventory == nil then
+				return
+			end
+
+			if equipped and inventory.equippedWeapon == weaponName and not playerCharacterHasWeaponNamed(player, weaponName) then
+				inventory.equippedWeapon = nil
+			end
+
+			if playerHasWeaponNamed(player, weaponName) then
 				return
 			end
 
@@ -5779,23 +5869,20 @@ function BytecodeViewer.start(config)
 			if inventory.lastWeapon == weaponName then
 				inventory.lastWeapon = nil
 			end
+			if inventory.equippedWeapon == weaponName then
+				inventory.equippedWeapon = nil
+			end
 		end)
 	end
 
 	local function getKnownPlayerWeapon(player)
-		local character = player and player.Character or nil
-		if character ~= nil then
-			for _, child in ipairs(character:GetChildren()) do
-				local weaponName = getWeaponName(child)
-				if weaponName ~= nil then
-					return weaponName
-				end
-			end
-		end
-
 		local inventory = intelligencePlayerWeapons[player]
 		if inventory == nil then
 			return nil
+		end
+
+		if inventory.equippedWeapon ~= nil and inventory[inventory.equippedWeapon] == true then
+			return inventory.equippedWeapon
 		end
 
 		if inventory.lastWeapon ~= nil and inventory[inventory.lastWeapon] == true then
@@ -5803,7 +5890,7 @@ function BytecodeViewer.start(config)
 		end
 
 		for weaponName, owned in pairs(inventory) do
-			if owned == true and weaponName ~= "lastWeapon" then
+			if owned == true and weaponName ~= "lastWeapon" and weaponName ~= "equippedWeapon" then
 				return weaponName
 			end
 		end
@@ -5811,10 +5898,31 @@ function BytecodeViewer.start(config)
 		return nil
 	end
 
+	local function makeIntelligenceSignal(id, priority, level, title, detail, badge, color, width, height, duration)
+		return {
+			id = tostring(id or title or level or "signal"),
+			priority = tonumber(priority) or notificationPriority(level),
+			level = normalizeNotificationLevel(level),
+			title = tostring(title or "Intel"),
+			detail = tostring(detail or ""),
+			badge = tostring(badge or string.upper(tostring(level or "info"))),
+			color = color,
+			width = width or 360,
+			height = height or 56,
+			expiresAt = type(duration) == "number" and (os.clock() + duration) or nil,
+		}
+	end
+
 	local function bindIntelligenceContainer(player, container, silent)
 		if typeof(container) ~= "Instance" then
 			return
 		end
+		if intelligenceBoundContainers[container] == player then
+			return
+		end
+		intelligenceBoundContainers[container] = player
+
+		local isEquippedContainer = player ~= nil and container == player.Character
 
 		local connectionList = intelligencePlayerConnections[player]
 		if connectionList == nil then
@@ -5823,11 +5931,11 @@ function BytecodeViewer.start(config)
 		end
 
 		for _, child in ipairs(container:GetChildren()) do
-			rememberPlayerWeapon(player, child, silent)
+			rememberPlayerWeapon(player, child, silent, isEquippedContainer)
 		end
 
 		table.insert(connectionList, container.ChildAdded:Connect(function(child)
-			rememberPlayerWeapon(player, child, false)
+			rememberPlayerWeapon(player, child, false, isEquippedContainer)
 			if updateSuiteOverlays ~= nil then
 				updateSuiteOverlays()
 			end
@@ -5835,7 +5943,7 @@ function BytecodeViewer.start(config)
 		table.insert(connectionList, container.ChildRemoved:Connect(function(child)
 			local weaponName = getWeaponName(child)
 			if weaponName ~= nil then
-				forgetPlayerWeaponIfGone(player, weaponName)
+				forgetPlayerWeaponIfGone(player, weaponName, isEquippedContainer)
 			end
 		end))
 	end
@@ -5844,6 +5952,11 @@ function BytecodeViewer.start(config)
 		disconnectConnectionList(intelligencePlayerConnections[player])
 		intelligencePlayerConnections[player] = nil
 		intelligencePlayerWeapons[player] = nil
+		for container, owner in pairs(intelligenceBoundContainers) do
+			if owner == player then
+				intelligenceBoundContainers[container] = nil
+			end
+		end
 	end
 
 	local function bindIntelligencePlayer(player)
@@ -5875,20 +5988,24 @@ function BytecodeViewer.start(config)
 		end
 
 		local nearestThreat = nil
+		local nearestThreatDistanceSq = math.huge
+		local rangeSq = state.intelligenceThreatRange * state.intelligenceThreatRange
 		for _, player in ipairs(Players:GetPlayers()) do
 			if isEnemyPlayer(player) then
 				local weaponName = getKnownPlayerWeapon(player)
 				local targetPosition = getPlayerPosition(player)
 				if targetPosition ~= nil then
-					local distance = (targetPosition - localPosition).Magnitude
-					if distance <= state.intelligenceThreatRange and (nearestThreat == nil or distance < nearestThreat.distance) then
+					local delta = targetPosition - localPosition
+					local distanceSq = delta:Dot(delta)
+					if distanceSq <= rangeSq and distanceSq < nearestThreatDistanceSq then
+						nearestThreatDistanceSq = distanceSq
 						nearestThreat = {
 							player = player,
 							playerName = player.Name,
 							playerUserId = player.UserId,
 							weaponName = weaponName,
 							weaponKnown = weaponName ~= nil,
-							distance = distance,
+							distance = 0,
 							teamText = getPlayerTeamText(player),
 							teamColor = getPlayerTeamColor(player),
 						}
@@ -5897,10 +6014,14 @@ function BytecodeViewer.start(config)
 			end
 		end
 
+		if nearestThreat ~= nil then
+			nearestThreat.distance = math.sqrt(nearestThreatDistanceSq)
+		end
+
 		state.intelligenceThreat = nearestThreat
 		if nearestThreat ~= nil then
 			local distance = math.floor(nearestThreat.distance + 0.5)
-			local isCritical = distance <= 60
+			local isCritical = distance <= state.intelligenceCriticalRange
 			local proximityBand = isCritical and "critical" or "near"
 			local weaponText = nearestThreat.weaponKnown and (" with " .. nearestThreat.weaponName) or ""
 			local detail = ("%s is %dm away%s."):format(nearestThreat.playerName, distance, weaponText)
@@ -5926,16 +6047,319 @@ function BytecodeViewer.start(config)
 		local detail = threat.weaponKnown
 			and ("%s with %s - %s"):format(threat.playerName, threat.weaponName, threat.teamText)
 			or ("%s - %s"):format(threat.playerName, threat.teamText)
-		return {
-			title = "Enemy Close",
-			detail = detail,
-			badge = ("%dm"):format(distance),
-			level = distance <= 60 and "critical" or "warning",
-			color = threat.teamColor,
-			width = 430,
-			height = 62,
-		}
+		local level = distance <= state.intelligenceCriticalRange and "critical" or "warning"
+		return makeIntelligenceSignal(
+			"threat:" .. tostring(threat.playerUserId or threat.playerName),
+			level == "critical" and 90 or 70,
+			level,
+			"Enemy Close",
+			detail,
+			("%dm"):format(distance),
+			threat.teamColor,
+			430,
+			62
+		)
 	end
+
+	local function getStructureForwardVector(structure)
+		if typeof(structure) ~= "Instance" then
+			return nil
+		end
+
+		local ok, pivot = pcall(function()
+			return structure:GetPivot()
+		end)
+		if ok and pivot ~= nil then
+			return pivot.LookVector
+		end
+
+		if structure:IsA("BasePart") then
+			return structure.CFrame.LookVector
+		end
+
+		local part = structure:FindFirstChildWhichIsA("BasePart", true)
+		return part and part.CFrame.LookVector or nil
+	end
+
+	local function getStructureNumericAttribute(structure, names)
+		if typeof(structure) ~= "Instance" then
+			return nil
+		end
+
+		local current = structure
+		while typeof(current) == "Instance" and current ~= nil and current ~= Workspace do
+			for _, name in ipairs(names) do
+				local value = tonumber(current:GetAttribute(name))
+				if value ~= nil then
+					return value
+				end
+			end
+			current = current.Parent
+		end
+
+		return nil
+	end
+
+	local function getTurretRange(structure)
+		return getStructureNumericAttribute(structure, {
+			"TurretRange",
+			"AttackRange",
+			"DetectionRange",
+			"Range",
+			"Radius",
+		}) or state.intelligenceTurretRange
+	end
+
+	local function isTurretStructure(structure)
+		local kind = classifyIntelligenceStructure(structure)
+		if kind == "Turret" then
+			return true
+		end
+
+		return typeof(structure) == "Instance"
+			and (
+				structure:GetAttribute("IsTurret") == true
+				or structure:GetAttribute("Turret") == true
+				or structure:GetAttribute("Defense") == true
+			)
+	end
+
+	local function hasClearTurretLineOfSight(turret, turretPosition, targetRoot)
+		if typeof(targetRoot) ~= "Instance" or turretPosition == nil then
+			return false
+		end
+
+		local targetPosition = targetRoot.Position
+		local direction = targetPosition - turretPosition
+		if direction.Magnitude <= 0 then
+			return true
+		end
+
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local ignore = {}
+		local localCharacter = getLocalCharacter()
+		if localCharacter ~= nil then
+			table.insert(ignore, localCharacter)
+		end
+		if typeof(turret) == "Instance" then
+			table.insert(ignore, turret)
+		end
+		params.FilterDescendantsInstances = ignore
+
+		local result = Workspace:Raycast(turretPosition, direction, params)
+		return result == nil
+	end
+
+	local function updateTurretExposureSignal()
+		local localRoot = getPlayerRootPart(Players.LocalPlayer)
+		if localRoot == nil then
+			state.intelligenceTurretSignal = nil
+			return
+		end
+
+		local structuresRoot = getStructuresRoot()
+		if structuresRoot == nil then
+			state.intelligenceTurretSignal = nil
+			return
+		end
+
+		local bestSignal = nil
+		local bestScore = -math.huge
+		for _, structure in ipairs(structuresRoot:GetChildren()) do
+			if isTurretStructure(structure) and isEnemyStructure(structure) then
+				intelligenceTurrets[structure] = true
+				local turretPosition = getInstancePosition(structure)
+				if turretPosition ~= nil then
+					local delta = localRoot.Position - turretPosition
+					local distance = delta.Magnitude
+					local range = getTurretRange(structure)
+					local nearRange = range * state.intelligenceTurretNearMultiplier
+					if distance <= nearRange then
+						local forward = getStructureForwardVector(structure)
+						local inCone = true
+						if forward ~= nil and delta.Magnitude > 0 then
+							local dot = math.clamp(forward.Unit:Dot(delta.Unit), -1, 1)
+							local angle = math.deg(math.acos(dot))
+							inCone = angle <= state.intelligenceTurretLineOfSightDegrees
+						end
+
+						local clearLine = inCone and hasClearTurretLineOfSight(structure, turretPosition, localRoot)
+						local level = (distance <= range and clearLine) and "critical" or (distance <= range and "warning" or "info")
+						local priority = (level == "critical" and 96) or (level == "warning" and 74) or 42
+						if inCone then
+							priority = priority + 6
+						end
+						if clearLine then
+							priority = priority + 8
+						end
+						local score = priority - (distance / math.max(range, 1))
+						if score > bestScore then
+							bestScore = score
+							local distanceText = ("%dm"):format(math.floor(distance + 0.5))
+							local teamText = getStructureTeamText(structure)
+							local exposure = clearLine and "line clear" or (inCone and "near sightline" or "in range")
+							bestSignal = makeIntelligenceSignal(
+								"turret:" .. getInstanceKey(structure),
+								priority,
+								level,
+								level == "critical" and "Turret Exposure" or "Turret Nearby",
+								("%s %s - %s"):format(structure.Name, exposure, teamText),
+								distanceText,
+								getStructureTeamColor(structure) or NativeUi.Theme.Warning,
+								430,
+								62
+							)
+						end
+					end
+				end
+			end
+		end
+
+		state.intelligenceTurretSignal = bestSignal
+	end
+
+	local function getLocalRiskSignal()
+		local humanoid = getLocalHumanoid()
+		if humanoid == nil then
+			return makeIntelligenceSignal("local:no-humanoid", 48, "warning", "Local State", "Character humanoid unavailable", "CHECK", NativeUi.Theme.Warning, 360, 56)
+		end
+
+		local healthRatio = humanoid.MaxHealth > 0 and humanoid.Health / humanoid.MaxHealth or 1
+		if healthRatio <= state.intelligenceLowHealthPercent then
+			return makeIntelligenceSignal(
+				"local:low-health",
+				82,
+				"critical",
+				"Low Health",
+				("%d/%d health remaining"):format(math.floor(humanoid.Health + 0.5), math.floor(humanoid.MaxHealth + 0.5)),
+				("%d%%"):format(math.floor(healthRatio * 100 + 0.5)),
+				NativeUi.Theme.Critical,
+				360,
+				56
+			)
+		end
+
+		if state.aimbotEnabled and getKnownPlayerWeapon(Players.LocalPlayer) == nil then
+			return makeIntelligenceSignal("local:no-weapon", 46, "info", "Combat Read", "No local weapon detected for combat helpers", "INFO", NativeUi.Theme.Info, 400, 56)
+		end
+
+		return nil
+	end
+
+	local function getMacroSignal()
+		if not state.macroEnabled then
+			return nil
+		end
+
+		local targetKey = tostring(state.macroLastTargetKey or "")
+		if targetKey == "" then
+			return makeIntelligenceSignal("macro:search", 38, "info", "Macro Armed", ("Searching for %s"):format(state.macroTargetKind), "ARMED", NativeUi.Theme.Info, 360, 56)
+		end
+
+		return makeIntelligenceSignal("macro:target", 52, "success", "Macro Target", state.macroStatus, "READY", NativeUi.Theme.Success, 380, 56)
+	end
+
+	local function getRemoteSignal()
+		if state.intelligenceRemoteSignal ~= nil then
+			return state.intelligenceRemoteSignal
+		end
+
+		local remoteSpy = refs.remoteSpy
+		if remoteSpy == nil then
+			return nil
+		end
+
+		local diagnostics = remoteSpy:GetDiagnostics()
+		if state.remoteWatcherEnabled and diagnostics.enabled ~= true then
+			return makeIntelligenceSignal("remote:not-enabled", 54, "warning", "Remote Capture", "Capture requested but spy engine is idle", "CHECK", NativeUi.Theme.Warning, 410, 56)
+		end
+
+		if diagnostics.lastCapture ~= nil then
+			local last = diagnostics.lastCapture
+			return makeIntelligenceSignal(
+				"remote:last:" .. tostring(last.id),
+				40,
+				"info",
+				"Remote Activity",
+				("%s args=%s"):format(tostring(last.method or "?"), tostring(last.argCount or 0)),
+				"#" .. tostring(last.id or "?"),
+				NativeUi.Theme.Info,
+				360,
+				56
+			)
+		end
+
+		return nil
+	end
+
+	local function registerIntelligenceProvider(name, provider)
+		if type(provider) ~= "function" then
+			return
+		end
+
+		table.insert(intelligenceSignalProviders, {
+			name = tostring(name or "provider"),
+			provider = provider,
+		})
+	end
+
+	dartApi.RegisterIntelligenceProvider = registerIntelligenceProvider
+	trackCleanup(function()
+		if dartApi.RegisterIntelligenceProvider == registerIntelligenceProvider then
+			dartApi.RegisterIntelligenceProvider = nil
+		end
+	end)
+
+	local function chooseIntelligenceSignal()
+		local best = nil
+		for _, item in ipairs(intelligenceSignalProviders) do
+			local ok, signal = pcall(item.provider)
+			if ok and type(signal) == "table" and signal.expiresAt ~= nil and signal.expiresAt <= os.clock() then
+				signal = nil
+			end
+			if ok and type(signal) == "table" then
+				signal.id = tostring(signal.id or item.name)
+				signal.level = normalizeNotificationLevel(signal.level)
+				signal.priority = tonumber(signal.priority) or notificationPriority(signal.level)
+				signal.title = tostring(signal.title or "Intel")
+				signal.detail = tostring(signal.detail or "")
+				signal.badge = tostring(signal.badge or string.upper(signal.level))
+				signal.width = signal.width or 360
+				signal.height = signal.height or 56
+			end
+			if ok and type(signal) == "table" and (best == nil or signal.priority > best.priority) then
+				best = signal
+			end
+			if not ok then
+				emitIntelligenceNotification(
+					"provider:" .. item.name,
+					10,
+					"warning",
+					"Intel provider failed",
+					item.name,
+					NativeUi.Theme.Warning,
+					{ priority = 18, duration = 3 }
+				)
+			end
+		end
+
+		state.intelligenceActiveSignal = best
+		return best
+	end
+
+	registerIntelligenceProvider("turret", function()
+		return state.intelligenceTurretSignal
+	end)
+	registerIntelligenceProvider("threat", function()
+		return refs.getIntelligenceThreatSignal and refs.getIntelligenceThreatSignal() or nil
+	end)
+	registerIntelligenceProvider("local", getLocalRiskSignal)
+	registerIntelligenceProvider("structure", function()
+		return state.intelligenceStructureSignal
+	end)
+	registerIntelligenceProvider("macro", getMacroSignal)
+	registerIntelligenceProvider("remote", getRemoteSignal)
 
 	local localProtectionBridge = scope.__DartLocalProtectionBridge
 	if type(localProtectionBridge) ~= "table" then
@@ -6275,9 +6699,9 @@ function BytecodeViewer.start(config)
 			signal.width = 244
 		end
 
-		local threatSignal = refs.getIntelligenceThreatSignal and refs.getIntelligenceThreatSignal() or nil
-		if threatSignal ~= nil then
-			signal = threatSignal
+		local activeSignal = state.intelligenceActiveSignal
+		if activeSignal ~= nil then
+			signal = activeSignal
 		end
 
 		local detailLength = #tostring(signal.detail or "")
@@ -7030,10 +7454,16 @@ function BytecodeViewer.start(config)
 
 	local function syncToggleButton(toggleRow, enabled)
 		NativeUi.setButtonSelected(toggleRow.toggle, enabled)
+		if toggleRow.switchTrack ~= nil then
+			NativeUi.tween(toggleRow.switchTrack, 0.14, {
+				BackgroundColor3 = enabled and NativeUi.Theme.SurfaceActive or SuiteTheme.Colors.Background,
+			})
+		end
 		if toggleRow.indicator ~= nil then
 			NativeUi.tween(toggleRow.indicator, 0.12, {
-				BackgroundTransparency = enabled and 0 or 1,
-				Size = enabled and UDim2.fromOffset(8, 8) or UDim2.fromOffset(6, 6),
+				BackgroundColor3 = enabled and NativeUi.Theme.Text or NativeUi.Theme.TextMuted,
+				Position = enabled and UDim2.fromOffset(30, 11) or UDim2.fromOffset(12, 11),
+				Size = UDim2.fromOffset(16, 16),
 			})
 		end
 	end
@@ -8237,6 +8667,18 @@ function BytecodeViewer.start(config)
 	end
 
 	refs.remoteSpy:SetCaptureCallback(function(record, call)
+		state.intelligenceRemoteSignal = makeIntelligenceSignal(
+			"remote:" .. tostring(call.Id),
+			42,
+			"info",
+			"Remote Activity",
+			("%s %s args=%s"):format(tostring(call.Direction or "OUT"), tostring(call.Method or "?"), tostring(call.ArgCount or 0)),
+			"#" .. tostring(call.Id or "?"),
+			NativeUi.Theme.Info,
+			380,
+			56,
+			4
+		)
 		if state.selectedRemoteKey == nil then
 			state.selectedRemoteKey = record.Key
 			state.selectedRemotePath = record.Path
@@ -8247,6 +8689,8 @@ function BytecodeViewer.start(config)
 
 		refs.scheduleRemoteListRender()
 		refs.scheduleRemoteLogRender()
+		chooseIntelligenceSignal()
+		updateSuiteOverlays()
 	end)
 
 	refs.remoteSpy:SetRecordsChangedCallback(function()
@@ -8929,6 +9373,19 @@ function BytecodeViewer.start(config)
 
 		local teamText = getStructureTeamText(structure)
 		local teamColor = getStructureTeamColor(structure) or NativeUi.Theme.Warning
+		state.intelligenceStructureSignal = makeIntelligenceSignal(
+			"production:" .. getInstanceKey(structure),
+			56,
+			"info",
+			("%s Production"):format(structureKind),
+			("%s for %s"):format(productName, teamText),
+			"BUILD",
+			teamColor,
+			390,
+			56,
+			8
+		)
+		chooseIntelligenceSignal()
 		emitIntelligenceNotification(
 			("production:%s:%s:%s"):format(getInstanceKey(structure), structureKind, productName),
 			5,
@@ -8990,6 +9447,20 @@ function BytecodeViewer.start(config)
 		local firstKey = ("%s:%s"):format(structureKind, tostring(teamIndex or teamText))
 		local isFirst = intelligenceFirstStructureSeen[firstKey] ~= true
 		intelligenceFirstStructureSeen[firstKey] = true
+		local teamColor = getStructureTeamColor(structure) or NativeUi.Theme.Warning
+		state.intelligenceStructureSignal = makeIntelligenceSignal(
+			"structure:" .. getInstanceKey(structure),
+			structureLevel == "info" and 42 or (isFirst and 64 or 52),
+			structureLevel or "warning",
+			isFirst and ("First %s Built"):format(structureKind) or ("%s Built"):format(structureKind),
+			("%s for %s"):format(getStructureBuilderText(structure), teamText),
+			"BUILD",
+			teamColor,
+			410,
+			56,
+			8
+		)
+		chooseIntelligenceSignal()
 
 		emitIntelligenceNotification(
 			("structure:%s"):format(getInstanceKey(structure)),
@@ -8999,7 +9470,7 @@ function BytecodeViewer.start(config)
 				and ("Enemy %s built"):format(structureKind)
 				or (isFirst and ("First enemy %s built"):format(structureKind) or ("Enemy %s built"):format(structureKind)),
 			("%s built %s for %s."):format(getStructureBuilderText(structure), structureKind, teamText),
-			getStructureTeamColor(structure) or NativeUi.Theme.Warning,
+			teamColor,
 			{ priority = structureLevel == "info" and 24 or (isFirst and 46 or 38), duration = 6 }
 		)
 	end
@@ -9818,6 +10289,8 @@ function BytecodeViewer.start(config)
 		end
 		bindStructuresRootWatcher()
 		updateIntelligenceThreat()
+		updateTurretExposureSignal()
+		chooseIntelligenceSignal()
 		runtime.refreshPlayersList()
 		runtime.refreshEspPlayersList()
 		refreshScriptBrowser(false)
@@ -9982,15 +10455,17 @@ function BytecodeViewer.start(config)
 			runtime.updateStructureMacro()
 		end
 
-		if intelligenceHeartbeatAccumulator < 0.35 then
+		if intelligenceHeartbeatAccumulator < state.intelligenceThreatInterval then
 			return
 		end
 
 		intelligenceHeartbeatAccumulator = 0
 		updateIntelligenceThreat()
-		local threat = state.intelligenceThreat
-		local nextKey = threat
-			and ("%s:%s:%d"):format(threat.playerName, tostring(threat.weaponName or "unknown"), math.floor(threat.distance + 0.5))
+		updateTurretExposureSignal()
+		chooseIntelligenceSignal()
+		local activeSignal = state.intelligenceActiveSignal
+		local nextKey = activeSignal
+			and ("%s:%s:%s"):format(activeSignal.id, activeSignal.badge, activeSignal.detail)
 			or ""
 		local changed = nextKey ~= state.intelligenceThreatKey
 		state.intelligenceThreatKey = nextKey

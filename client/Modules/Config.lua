@@ -17,6 +17,13 @@ local Config = {
 	DefaultBytecodeFilePath = "C:\\Users\\Marin\\Downloads\\Test.txt",
 	DefaultBytecodeInputFormat = "binary",
 	ShowRawOpcodes = true,
+	IntelligenceThreatRange = 350,
+	IntelligenceThreatInterval = 0.35,
+	IntelligenceCriticalRange = 60,
+	IntelligenceTurretRange = 160,
+	IntelligenceTurretNearMultiplier = 1.25,
+	IntelligenceTurretLineOfSightDegrees = 42,
+	IntelligenceLowHealthPercent = 0.35,
 	ActionHandlers = {},
 }
 

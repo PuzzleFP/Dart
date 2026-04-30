@@ -4,27 +4,27 @@ local UserInputService = game:GetService("UserInputService")
 local NativeUi = {}
 
 NativeUi.Theme = {
-	Background = Color3.fromRGB(5, 6, 7),
-	Panel = Color3.fromRGB(10, 11, 13),
-	PanelAlt = Color3.fromRGB(14, 15, 17),
-	Surface = Color3.fromRGB(19, 20, 22),
-	SurfaceHover = Color3.fromRGB(25, 26, 29),
-	SurfaceActive = Color3.fromRGB(32, 34, 37),
-	Shell = Color3.fromRGB(8, 9, 11),
-	Overlay = Color3.fromRGB(6, 7, 8),
-	Accent = Color3.fromRGB(110, 177, 135),
-	AccentHover = Color3.fromRGB(124, 191, 148),
-	AccentActive = Color3.fromRGB(95, 158, 117),
-	Text = Color3.fromRGB(237, 240, 244),
-	TextMuted = Color3.fromRGB(171, 177, 186),
-	TextDim = Color3.fromRGB(113, 120, 129),
-	Border = Color3.fromRGB(35, 38, 43),
-	Success = Color3.fromRGB(132, 203, 156),
-	Info = Color3.fromRGB(149, 183, 229),
-	Warning = Color3.fromRGB(224, 189, 91),
-	Critical = Color3.fromRGB(226, 92, 108),
-	Error = Color3.fromRGB(223, 101, 101),
-	Shadow = Color3.fromRGB(2, 3, 6),
+	Background = Color3.fromRGB(4, 4, 5),
+	Panel = Color3.fromRGB(15, 15, 16),
+	PanelAlt = Color3.fromRGB(19, 19, 21),
+	Surface = Color3.fromRGB(26, 26, 28),
+	SurfaceHover = Color3.fromRGB(34, 34, 37),
+	SurfaceActive = Color3.fromRGB(43, 43, 47),
+	Shell = Color3.fromRGB(9, 9, 10),
+	Overlay = Color3.fromRGB(9, 9, 10),
+	Accent = Color3.fromRGB(224, 184, 48),
+	AccentHover = Color3.fromRGB(238, 205, 78),
+	AccentActive = Color3.fromRGB(183, 143, 28),
+	Text = Color3.fromRGB(242, 242, 244),
+	TextMuted = Color3.fromRGB(194, 194, 199),
+	TextDim = Color3.fromRGB(142, 142, 150),
+	Border = Color3.fromRGB(42, 42, 45),
+	Success = Color3.fromRGB(51, 175, 120),
+	Info = Color3.fromRGB(142, 157, 182),
+	Warning = Color3.fromRGB(224, 184, 48),
+	Critical = Color3.fromRGB(221, 78, 92),
+	Error = Color3.fromRGB(221, 78, 92),
+	Shadow = Color3.fromRGB(0, 0, 0),
 }
 
 local buttonRefreshers = setmetatable({}, { __mode = "k" })
@@ -240,11 +240,17 @@ function NativeUi.bindButtonStyle(button, palette)
 
 	button.MouseButton1Down:Connect(function()
 		button:SetAttribute("Pressed", true)
+		NativeUi.tween(button, 0.08, {
+			BackgroundTransparency = math.max(0, button.BackgroundTransparency - 0.06),
+		})
 		refreshButtonVisual(button)
 	end)
 
 	button.MouseButton1Up:Connect(function()
 		button:SetAttribute("Pressed", false)
+		NativeUi.tween(button, 0.12, {
+			BackgroundTransparency = 0,
+		})
 		refreshButtonVisual(button)
 	end)
 
@@ -284,7 +290,7 @@ function NativeUi.makeButton(parent, text, properties)
 	end
 
 	NativeUi.corner(button, properties and properties.CornerRadius or 10)
-	NativeUi.stroke(button, NativeUi.Theme.Border, 1, 0.18)
+	NativeUi.stroke(button, NativeUi.Theme.Border, 1, 0.32)
 	NativeUi.bindButtonStyle(button, properties and properties.Palette or nil)
 	return button
 end
@@ -313,7 +319,7 @@ function NativeUi.makeTextBox(parent, text, properties)
 	end
 
 	NativeUi.corner(box, properties and properties.CornerRadius or 10)
-	NativeUi.stroke(box, NativeUi.Theme.Border, 1, 0.18)
+	NativeUi.stroke(box, NativeUi.Theme.Border, 1, 0.26)
 	NativeUi.padding(box, 10, 8)
 	return box
 end
@@ -351,8 +357,9 @@ function NativeUi.makeScrollList(parent, properties)
 		BackgroundColor3 = properties.BackgroundColor3 or NativeUi.Theme.PanelAlt,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.fromOffset(0, 0),
-		ScrollBarImageColor3 = NativeUi.Theme.TextDim,
-		ScrollBarThickness = properties.ScrollBarThickness or 4,
+		ScrollBarImageColor3 = NativeUi.Theme.Border,
+		ScrollBarImageTransparency = properties.ScrollBarImageTransparency or 0.2,
+		ScrollBarThickness = properties.ScrollBarThickness or 2,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Size = properties.Size or UDim2.new(1, 0, 1, 0),
 		TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
@@ -367,7 +374,7 @@ function NativeUi.makeScrollList(parent, properties)
 	end
 
 	NativeUi.corner(scroll, properties.CornerRadius or 10)
-	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0.18)
+	NativeUi.stroke(scroll, NativeUi.Theme.Border, 1, 0.34)
 
 	local content = NativeUi.create("Frame", {
 		BackgroundTransparency = 1,

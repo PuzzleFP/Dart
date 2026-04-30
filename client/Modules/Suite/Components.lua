@@ -194,8 +194,9 @@ function Components.decorateScroll(scroll, theme, options)
 	scroll.BackgroundColor3 = options.background or theme.Colors.Background
 	scroll.BackgroundTransparency = options.transparency == nil and 0.08 or options.transparency
 	scroll.BorderSizePixel = 0
-	scroll.ScrollBarImageColor3 = theme.Colors.TextFaint
-	scroll.ScrollBarThickness = options.thickness or scroll.ScrollBarThickness or 4
+	scroll.ScrollBarImageColor3 = options.scrollColor or theme.Colors.StrokeSoft
+	scroll.ScrollBarImageTransparency = options.scrollTransparency == nil and 0.55 or options.scrollTransparency
+	scroll.ScrollBarThickness = options.thickness or scroll.ScrollBarThickness or 2
 	scroll.TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
 	scroll.BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
 	Components.corner(scroll, options.radius or theme.Radius.Control)
