@@ -2296,10 +2296,10 @@ local function createOverlayLayers(screenGui, refs)
 	local dynamicIsland = makeOverlayPanel(screenGui, {
 		Name = "DynamicIsland",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 18),
-		Size = UDim2.fromOffset(220, 52),
+		Position = UDim2.new(0.5, 0, 0, 14),
+		Size = UDim2.fromOffset(260, 58),
 		ZIndex = 40,
-	}, 26, NativeUi.Theme.Border, 0.05)
+	}, 30, NativeUi.Theme.Accent, 0.18)
 	SuiteComponents.stylePanel(dynamicIsland, SuiteTheme, SuiteTheme.Variants.Island)
 
 	refs.dynamicIsland = dynamicIsland
@@ -2307,8 +2307,8 @@ local function createOverlayLayers(screenGui, refs)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = NativeUi.Theme.Success,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(28, 26),
-		Size = UDim2.fromOffset(9, 9),
+		Position = UDim2.fromOffset(30, 29),
+		Size = UDim2.fromOffset(12, 12),
 		ZIndex = 41,
 		Parent = dynamicIsland,
 	})
@@ -2317,7 +2317,7 @@ local function createOverlayLayers(screenGui, refs)
 	refs.dynamicIslandTitle = NativeUi.makeLabel(dynamicIsland, "Assist", {
 		Font = Enum.Font.GothamBold,
 		TextSize = 13,
-		Position = UDim2.fromOffset(48, 10),
+		Position = UDim2.fromOffset(52, 10),
 		Size = UDim2.new(1, -92, 0, 18),
 		ZIndex = 41,
 	})
@@ -2326,7 +2326,7 @@ local function createOverlayLayers(screenGui, refs)
 		Font = Enum.Font.Code,
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 11,
-		Position = UDim2.fromOffset(48, 28),
+		Position = UDim2.fromOffset(52, 30),
 		Size = UDim2.new(1, -92, 0, 14),
 		TextWrapped = true,
 		Visible = false,
@@ -2338,7 +2338,7 @@ local function createOverlayLayers(screenGui, refs)
 		TextColor3 = NativeUi.Theme.TextMuted,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		Position = UDim2.new(1, -68, 0, 17),
+		Position = UDim2.new(1, -74, 0, 20),
 		Size = UDim2.fromOffset(48, 18),
 		ZIndex = 41,
 	})
@@ -2799,7 +2799,7 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 	})
 	SuiteComponents.stylePanel(refs.remoteListPanel, SuiteTheme, SuiteTheme.Variants.Card)
 
-	local listTitle = makeSectionTitle(refs.remoteListPanel, UI_ICON.remote .. " Fired Remotes")
+	local listTitle = makeSectionTitle(refs.remoteListPanel, UI_ICON.remote .. " Remote Explorer")
 	listTitle.Position = UDim2.fromOffset(12, 12)
 
 	refs.remoteCountLabel = NativeUi.makeLabel(refs.remoteListPanel, "Idle", {
@@ -2811,7 +2811,7 @@ local function createRemoteWorkspace(remoteWorkspace, refs)
 	})
 
 	refs.remoteSearchBox = NativeUi.makeTextBox(refs.remoteListPanel, "", {
-		PlaceholderText = "Filter explorer ..",
+		PlaceholderText = "Filter known remotes",
 		Position = UDim2.fromOffset(12, 68),
 		Size = UDim2.new(1, -24, 0, 30),
 		TextSize = 12,
@@ -2902,13 +2902,13 @@ local function createGui(state)
 	local shellHeaderHeight = 68
 	local workspaceTopInset = shellPadding + shellHeaderHeight + 12
 	local navButtonPalette = {
-		Base = NativeUi.Theme.Panel,
-		Hover = NativeUi.Theme.Surface,
-		Pressed = NativeUi.Theme.SurfaceActive,
-		Selected = NativeUi.Theme.SurfaceActive,
+		Base = Color3.fromRGB(10, 16, 21),
+		Hover = Color3.fromRGB(24, 35, 42),
+		Pressed = NativeUi.Theme.AccentActive,
+		Selected = NativeUi.Theme.Accent,
 		Disabled = Color3.fromRGB(17, 20, 26),
 		Text = NativeUi.Theme.TextMuted,
-		SelectedText = NativeUi.Theme.Text,
+		SelectedText = Color3.fromRGB(13, 12, 8),
 		DisabledText = NativeUi.Theme.TextDim,
 	}
 
@@ -2931,11 +2931,29 @@ local function createGui(state)
 		Parent = main,
 	})
 
-	NativeUi.makeLabel(navRail, "Dart", {
+	local navAccent = NativeUi.create("Frame", {
+		BackgroundColor3 = NativeUi.Theme.Accent,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 18),
+		Size = UDim2.fromOffset(4, 42),
+		Parent = navRail,
+	})
+	NativeUi.corner(navAccent, 999)
+
+	NativeUi.makeLabel(navRail, "ECLIPSIS", {
 		Font = Enum.Font.GothamBold,
-		TextSize = 18,
-		Position = UDim2.fromOffset(16, 18),
-		Size = UDim2.new(1, -32, 0, 24),
+		TextSize = 20,
+		TextColor3 = NativeUi.Theme.Text,
+		Position = UDim2.fromOffset(18, 15),
+		Size = UDim2.new(1, -36, 0, 24),
+	})
+
+	NativeUi.makeLabel(navRail, "CONTROL SUITE", {
+		Font = Enum.Font.Code,
+		TextSize = 10,
+		TextColor3 = NativeUi.Theme.Accent,
+		Position = UDim2.fromOffset(18, 42),
+		Size = UDim2.new(1, -36, 0, 14),
 	})
 
 	local mainTabButton = NativeUi.makeButton(navRail, "  " .. UI_ICON.main .. " Main", {
@@ -3071,7 +3089,7 @@ local function createGui(state)
 	workspaceShell.ClipsDescendants = true
 
 	local workspaceHeader = NativeUi.create("Frame", {
-		BackgroundColor3 = NativeUi.Theme.Panel,
+		BackgroundColor3 = Color3.fromRGB(12, 20, 25),
 		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(shellPadding, shellPadding),
@@ -3079,7 +3097,7 @@ local function createGui(state)
 		Parent = workspaceShell,
 	})
 	SuiteComponents.stylePanel(workspaceHeader, SuiteTheme, {
-		background = SuiteTheme.Colors.Panel,
+		background = SuiteTheme.Colors.PanelRaised,
 		transparency = 0,
 		radius = 24,
 		stroke = SuiteTheme.Colors.Stroke,
@@ -3102,6 +3120,15 @@ local function createGui(state)
 		Position = UDim2.fromOffset(16, 13),
 		Size = UDim2.new(0.56, 0, 0, 22),
 	})
+
+	local headerAccent = NativeUi.create("Frame", {
+		BackgroundColor3 = NativeUi.Theme.Accent,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 0, 3),
+		Parent = workspaceHeader,
+	})
+	NativeUi.corner(headerAccent, 999)
 
 	local workspaceSubtitleLabel = NativeUi.makeLabel(workspaceHeader, "Three-pane bytecode, decompile, and control-flow analysis.", {
 		TextColor3 = NativeUi.Theme.TextMuted,
@@ -3193,6 +3220,56 @@ local function createGui(state)
 		Size = UDim2.new(1, 0, 1, 0),
 		Parent = workspaceShell,
 	})
+
+	local commandBar = NativeUi.create("Frame", {
+		BackgroundColor3 = Color3.fromRGB(8, 13, 17),
+		BackgroundTransparency = 0,
+		BorderSizePixel = 0,
+		Parent = workspaceShell,
+	})
+	SuiteComponents.stylePanel(commandBar, SuiteTheme, {
+		background = SuiteTheme.Colors.ShellRaised,
+		transparency = 0,
+		radius = 18,
+		stroke = SuiteTheme.Colors.Stroke,
+		strokeTransparency = 0.84,
+		gradient = true,
+	})
+
+	NativeUi.makeLabel(commandBar, "SUITE CONTROLS", {
+		Font = Enum.Font.Code,
+		TextColor3 = NativeUi.Theme.Accent,
+		TextSize = 10,
+		Position = UDim2.fromOffset(16, 9),
+		Size = UDim2.fromOffset(150, 14),
+	})
+
+	NativeUi.makeLabel(commandBar, "Context-aware actions surface here while the island handles live intelligence.", {
+		TextColor3 = NativeUi.Theme.TextDim,
+		TextSize = 11,
+		Position = UDim2.fromOffset(16, 28),
+		Size = UDim2.new(0.38, -20, 0, 18),
+	})
+
+	local commandLabels = { "ASSIST", "THREAT", "COMBAT", "ROUTE", "INTEL", "AUTO" }
+	for index, label in ipairs(commandLabels) do
+		local pill = SuiteComponents.pill(commandBar, SuiteTheme, label, {
+			Position = UDim2.new(0.40, (index - 1) * 76, 0, 15),
+			Size = UDim2.fromOffset(index == 2 and 74 or 68, 28),
+			BackgroundColor3 = index == 1 and NativeUi.Theme.Accent or NativeUi.Theme.Surface,
+			TextColor3 = index == 1 and Color3.fromRGB(13, 12, 8) or NativeUi.Theme.TextMuted,
+		})
+		pill.Font = Enum.Font.GothamBold
+	end
+
+	local commandStatus = SuiteComponents.pill(commandBar, SuiteTheme, "WARNING", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -16, 0, 15),
+		Size = UDim2.fromOffset(118, 28),
+		BackgroundColor3 = Color3.fromRGB(42, 35, 12),
+		TextColor3 = NativeUi.Theme.Warning,
+	})
+	commandStatus.Font = Enum.Font.Code
 
 	local mainScroll, mainContent = NativeUi.makeScrollList(mainWorkspace, {
 		Position = UDim2.fromOffset(12, 12),
@@ -4155,7 +4232,8 @@ local function createGui(state)
 		local shellWidth = width - (contentX + 12)
 		local shellHeight = math.max(0, height - shellY * 2)
 		local workspaceWidth = math.max(0, shellWidth - shellPadding * 2)
-		local workspaceHeight = math.max(0, shellHeight - workspaceTopInset - shellPadding)
+		local commandBarHeight = 58
+		local workspaceHeight = math.max(0, shellHeight - workspaceTopInset - shellPadding - commandBarHeight - 10)
 		local panelGap = 16
 		local splitterWidth = 6
 
@@ -4178,6 +4256,8 @@ local function createGui(state)
 		workspaceHeader.Size = UDim2.new(1, -shellPadding * 2, 0, shellHeaderHeight)
 		workspaceSearchButton.Position = UDim2.new(1, -314, 0, 17)
 		workspacePulseButton.Position = UDim2.new(1, -52, 0, 19)
+		commandBar.Position = UDim2.fromOffset(shellPadding, workspaceTopInset + workspaceHeight + 10)
+		commandBar.Size = UDim2.fromOffset(workspaceWidth, commandBarHeight)
 
 		mainWorkspace.Position = UDim2.fromOffset(shellPadding, workspaceTopInset)
 		mainWorkspace.Size = UDim2.fromOffset(workspaceWidth, workspaceHeight)
@@ -4299,6 +4379,7 @@ local function createGui(state)
 	refs.gui = screenGui
 	refs.main = main
 	refs.workspaceShell = workspaceShell
+	refs.commandBar = commandBar
 	refs.workspaceKickerLabel = workspaceKickerLabel
 	refs.workspaceTitleLabel = workspaceTitleLabel
 	refs.workspaceSubtitleLabel = workspaceSubtitleLabel
@@ -7846,6 +7927,61 @@ function BytecodeViewer.start(config)
 
 	local renderRemoteList
 	local renderRemoteLog
+
+	local function scheduleRemoteLogRender()
+		if refs.remoteLogRenderQueued or cleaning then
+			return
+		end
+
+		refs.remoteLogRenderQueued = true
+		task.delay(0.08, function()
+			refs.remoteLogRenderQueued = false
+			if cleaning or refs.main == nil or refs.main.Parent == nil then
+				return
+			end
+			if renderRemoteLog ~= nil then
+				renderRemoteLog()
+			end
+		end)
+	end
+
+	local function scheduleRemoteListRender()
+		if refs.remoteListRenderQueued or cleaning then
+			return
+		end
+
+		refs.remoteListRenderQueued = true
+		task.delay(0.15, function()
+			refs.remoteListRenderQueued = false
+			if cleaning or refs.main == nil or refs.main.Parent == nil then
+				return
+			end
+			if renderRemoteList ~= nil then
+				renderRemoteList()
+			end
+		end)
+	end
+
+	refs.scheduleRemoteLogRender = scheduleRemoteLogRender
+	refs.scheduleRemoteListRender = scheduleRemoteListRender
+
+	local function selectFirstRemoteRecord()
+		local records = refs.remoteSpy:GetRecords(state.remoteFilterText)
+		local first = records[1]
+		if first == nil then
+			return false
+		end
+		state.selectedRemotePath = first.Path
+		state.selectedRemoteKey = first.Key
+		state.selectedRemoteCallId = first.Logs[1] and first.Logs[1].Id or nil
+		return true
+	end
+
+	local function installLegacyRemoteDebug()
+--[[
+	Legacy Remote Debug implementation retained only as source history context.
+	The active UI now uses RemoteSpyEngine, and compiling this old inlined hook
+	stack inside BytecodeViewer.start can exhaust Luau's local register limit.
 	local connectRemoteEvent
 	local remoteEventConnections = {}
 	local remoteHookBridge = scope.__DartRemoteHookBridge
@@ -8551,6 +8687,8 @@ function BytecodeViewer.start(config)
 		table.insert(lines, entry.argsLines)
 		table.insert(lines, "")
 	end
+]]
+	end
 
 	renderRemoteLog = function()
 		local diagnostics = refs.remoteSpy:GetDiagnostics()
@@ -8619,19 +8757,11 @@ function BytecodeViewer.start(config)
 		NativeUi.clear(refs.remoteListContent)
 		local records = refs.remoteSpy:GetRecords(state.remoteFilterText)
 
-		for index = #records, 1, -1 do
-			if records[index].Calls <= 0 then
-				table.remove(records, index)
-			end
-		end
-
 		if #records == 0 then
-			if #refs.remoteSpy.logs == 0 then
-				state.selectedRemoteKey = nil
-				state.selectedRemotePath = nil
-				state.selectedRemoteCallId = nil
-			end
-			NativeUi.makeLabel(refs.remoteListContent, #refs.remoteSpy.logs == 0 and "No fired remotes captured yet." or "No fired remotes match the current filter.", {
+			state.selectedRemoteKey = nil
+			state.selectedRemotePath = nil
+			state.selectedRemoteCallId = nil
+			NativeUi.makeLabel(refs.remoteListContent, "No remotes discovered. Press Scan, then enable Capture for live calls.", {
 				TextColor3 = NativeUi.Theme.TextMuted,
 				TextWrapped = true,
 				TextYAlignment = Enum.TextYAlignment.Top,
@@ -8640,16 +8770,18 @@ function BytecodeViewer.start(config)
 			})
 		else
 			for _, record in ipairs(records) do
-				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s  [%s]  %d calls"):format(
+				local button = NativeUi.makeButton(refs.remoteListContent, ("%s %s\n%s  calls:%d"):format(
 					UI_ICON.remote,
 					record.Name,
-					record.ClassName,
+					record.Path,
 					record.Calls
 				), {
 					Font = Enum.Font.Code,
-					Size = UDim2.new(1, 0, 0, 28),
+					Size = UDim2.new(1, 0, 0, 44),
 					TextSize = 11,
 					TextXAlignment = Enum.TextXAlignment.Left,
+					TextYAlignment = Enum.TextYAlignment.Top,
+					TextWrapped = true,
 				})
 				NativeUi.setButtonSelected(button, state.selectedRemoteKey == record.Key)
 				button.MouseButton1Click:Connect(function()
@@ -8663,7 +8795,7 @@ function BytecodeViewer.start(config)
 			end
 		end
 
-		refs.remoteCountLabel.Text = ("Fired: %d / Known: %d / Captured: %d"):format(#records, #refs.remoteSpy.records, #refs.remoteSpy.logs)
+		refs.remoteCountLabel.Text = ("Known: %d / Matched: %d / Captured: %d"):format(#refs.remoteSpy.records, #records, #refs.remoteSpy.logs)
 	end
 
 	refs.remoteSpy:SetCaptureCallback(function(record, call)
@@ -8697,36 +8829,6 @@ function BytecodeViewer.start(config)
 		refs.scheduleRemoteListRender()
 		refs.scheduleRemoteLogRender()
 	end)
-
-	local function addRemoteToList(remote)
-		if not isRemoteLike(remote) then
-			return
-		end
-
-		for _, existing in ipairs(state.remoteList) do
-			if existing == remote then
-				return
-			end
-		end
-
-		table.insert(state.remoteList, remote)
-		refs.getRemoteRecord(remote, true)
-		table.sort(state.remoteList, function(left, right)
-			return string.lower(getRemotePath(left)) < string.lower(getRemotePath(right))
-		end)
-		connectRemoteEvent(remote)
-		renderRemoteList()
-	end
-
-	local function bindRemoteMutationWatchers()
-		local watchedRoots = {}
-		for _, root in ipairs(collectRemoteBrowserRoots()) do
-			if typeof(root) == "Instance" and not watchedRoots[root] then
-				watchedRoots[root] = true
-				trackConnection(root.DescendantAdded:Connect(addRemoteToList))
-			end
-		end
-	end
 
 	local function isNodeExpanded(node)
 		local value = state.expandedNodes[node.path]
@@ -10085,6 +10187,7 @@ function BytecodeViewer.start(config)
 		local bodyVisible = not state.isMinimized
 		local workspaceCopy = WORKSPACE_COPY[state.activeTab] or WORKSPACE_COPY.main
 		refs.workspaceShell.Visible = bodyVisible
+		refs.commandBar.Visible = bodyVisible
 		refs.mainWorkspace.Visible = bodyVisible and state.activeTab == "main"
 		refs.espWorkspace.Visible = bodyVisible and state.activeTab == "esp"
 		refs.spyWorkspace.Visible = bodyVisible and state.activeTab == "spy"
@@ -10296,6 +10399,9 @@ function BytecodeViewer.start(config)
 		refreshScriptBrowser(false)
 		refs.remoteSpy:Scan()
 		refs.remoteSpy:BindMutationWatchers()
+		if state.selectedRemoteKey == nil then
+			selectFirstRemoteRecord()
+		end
 		renderRemoteList()
 		renderRemoteLog()
 		reconcilePlayerHighlights()
@@ -10730,12 +10836,19 @@ function BytecodeViewer.start(config)
 	trackConnection(refs.remoteWatcherToggle.toggle.MouseButton1Click:Connect(function()
 		state.remoteWatcherEnabled = not state.remoteWatcherEnabled
 		refs.remoteSpy:SetEnabled(state.remoteWatcherEnabled)
+		refs.remoteSpy:Scan()
+		if state.selectedRemoteKey == nil then
+			selectFirstRemoteRecord()
+		end
 		renderRemoteList()
 		renderRemoteLog()
 		syncControlState()
 	end))
 	trackConnection(refs.scanRemotesButton.MouseButton1Click:Connect(function()
 		refs.remoteSpy:Scan()
+		if state.selectedRemoteKey == nil then
+			selectFirstRemoteRecord()
+		end
 		renderRemoteList()
 		renderRemoteLog()
 	end))
