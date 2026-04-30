@@ -182,10 +182,10 @@ function Components.styleButton(button, theme, selected)
 	button.AutoButtonColor = false
 	button.BorderSizePixel = 0
 	button.BackgroundColor3 = selected and theme.Colors.SurfaceActive or theme.Colors.Surface
-	button.BackgroundTransparency = selected and 0.02 or 0.16
+	button.BackgroundTransparency = selected and 0.02 or 0.18
 	button.TextColor3 = selected and theme.Colors.Text or theme.Colors.TextMuted
 	Components.corner(button, theme.Radius.Control)
-	Components.stroke(button, theme.Colors.Stroke, 1, selected and 0.84 or 0.92)
+	Components.stroke(button, selected and theme.Colors.Warning or theme.Colors.Stroke, 1, selected and 0.48 or 0.92)
 	return button
 end
 

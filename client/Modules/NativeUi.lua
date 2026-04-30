@@ -7,14 +7,14 @@ NativeUi.Theme = {
 	Background = Color3.fromRGB(2, 5, 8),
 	Panel = Color3.fromRGB(13, 18, 22),
 	PanelAlt = Color3.fromRGB(17, 23, 28),
-	Surface = Color3.fromRGB(25, 32, 38),
-	SurfaceHover = Color3.fromRGB(35, 45, 52),
-	SurfaceActive = Color3.fromRGB(218, 177, 45),
+	Surface = Color3.fromRGB(21, 29, 35),
+	SurfaceHover = Color3.fromRGB(30, 40, 48),
+	SurfaceActive = Color3.fromRGB(33, 45, 54),
 	Shell = Color3.fromRGB(7, 12, 16),
 	Overlay = Color3.fromRGB(7, 12, 16),
-	Accent = Color3.fromRGB(224, 184, 48),
+	Accent = Color3.fromRGB(222, 184, 46),
 	AccentHover = Color3.fromRGB(238, 205, 78),
-	AccentActive = Color3.fromRGB(183, 143, 28),
+	AccentActive = Color3.fromRGB(164, 128, 25),
 	Text = Color3.fromRGB(242, 242, 244),
 	TextMuted = Color3.fromRGB(194, 194, 199),
 	TextDim = Color3.fromRGB(142, 142, 150),
@@ -154,7 +154,7 @@ local function defaultButtonPalette()
 		Selected = NativeUi.Theme.SurfaceActive,
 		Disabled = Color3.fromRGB(17, 20, 26),
 		Text = NativeUi.Theme.Text,
-		SelectedText = Color3.fromRGB(12, 12, 10),
+		SelectedText = NativeUi.Theme.Text,
 		DisabledText = NativeUi.Theme.TextDim,
 	}
 end
@@ -290,7 +290,7 @@ function NativeUi.makeButton(parent, text, properties)
 	end
 
 	NativeUi.corner(button, properties and properties.CornerRadius or 10)
-	NativeUi.stroke(button, NativeUi.Theme.Border, 1, 0.32)
+	NativeUi.stroke(button, NativeUi.Theme.Border, 1, 0.5)
 	NativeUi.bindButtonStyle(button, properties and properties.Palette or nil)
 	return button
 end

@@ -2114,7 +2114,7 @@ end
 local function makeSliderRow(parent, y, labelText)
 	local row = NativeUi.makePanel(parent, {
 		Position = UDim2.new(0, 12, 0, y),
-		Size = UDim2.new(1, -24, 0, 60),
+		Size = UDim2.new(1, -24, 0, 56),
 		BackgroundColor3 = NativeUi.Theme.Surface,
 		CornerRadius = 12,
 	})
@@ -2123,7 +2123,7 @@ local function makeSliderRow(parent, y, labelText)
 		transparency = 0,
 		radius = SuiteTheme.Radius.Control,
 		stroke = SuiteTheme.Colors.Stroke,
-		strokeTransparency = 0.88,
+		strokeTransparency = 0.9,
 		gradient = false,
 	})
 
@@ -2157,8 +2157,8 @@ local function makeSliderRow(parent, y, labelText)
 	local track = NativeUi.create("Frame", {
 		BackgroundColor3 = SuiteTheme.Colors.Background,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(14, 42),
-		Size = UDim2.new(1, -28, 0, 5),
+		Position = UDim2.fromOffset(14, 40),
+		Size = UDim2.new(1, -28, 0, 4),
 		Parent = row,
 	})
 	NativeUi.corner(track, 999)
@@ -2177,8 +2177,8 @@ local function makeSliderRow(parent, y, labelText)
 		AutoButtonColor = false,
 		BackgroundColor3 = NativeUi.Theme.Text,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, -7, 0.5, -7),
-		Size = UDim2.fromOffset(14, 14),
+		Position = UDim2.new(0, -6, 0.5, -6),
+		Size = UDim2.fromOffset(12, 12),
 		Text = "",
 		ZIndex = 3,
 		Parent = track,
@@ -2200,14 +2200,14 @@ end
 local function makeToggleRow(parent, y, labelText, description)
 	local row = NativeUi.makeButton(parent, "", {
 		Position = UDim2.new(0, 12, 0, y),
-		Size = UDim2.new(1, -24, 0, 42),
+		Size = UDim2.new(1, -24, 0, 40),
 		TextSize = 1,
 		CornerRadius = 12,
 		Palette = {
 			Base = NativeUi.Theme.Surface,
 			Hover = NativeUi.Theme.SurfaceHover,
 			Pressed = NativeUi.Theme.SurfaceActive,
-			Selected = NativeUi.Theme.Success,
+			Selected = NativeUi.Theme.SurfaceActive,
 			Disabled = Color3.fromRGB(17, 20, 26),
 			Text = NativeUi.Theme.Text,
 			SelectedText = NativeUi.Theme.Text,
@@ -2219,7 +2219,7 @@ local function makeToggleRow(parent, y, labelText, description)
 	local title = NativeUi.makeLabel(row, labelText, {
 		Font = Enum.Font.GothamSemibold,
 		TextSize = 12,
-		Position = UDim2.fromOffset(12, 5),
+		Position = UDim2.fromOffset(12, 4),
 		Size = UDim2.new(1, -58, 0, 16),
 	})
 
@@ -2227,7 +2227,7 @@ local function makeToggleRow(parent, y, labelText, description)
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 10,
 		TextTruncate = Enum.TextTruncate.AtEnd,
-		Position = UDim2.fromOffset(12, 22),
+		Position = UDim2.fromOffset(12, 21),
 		Size = UDim2.new(1, -58, 0, 14),
 	})
 
@@ -2904,11 +2904,11 @@ local function createGui(state)
 	local navButtonPalette = {
 		Base = Color3.fromRGB(10, 16, 21),
 		Hover = Color3.fromRGB(24, 35, 42),
-		Pressed = NativeUi.Theme.AccentActive,
-		Selected = NativeUi.Theme.Accent,
+		Pressed = Color3.fromRGB(37, 49, 58),
+		Selected = Color3.fromRGB(33, 45, 54),
 		Disabled = Color3.fromRGB(17, 20, 26),
 		Text = NativeUi.Theme.TextMuted,
-		SelectedText = Color3.fromRGB(13, 12, 8),
+		SelectedText = NativeUi.Theme.Text,
 		DisabledText = NativeUi.Theme.TextDim,
 	}
 
@@ -3011,6 +3011,30 @@ local function createGui(state)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Palette = navButtonPalette,
 	})
+
+	local navActiveMarkers = {}
+	local function attachNavActiveMarker(button)
+		local marker = NativeUi.create("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = NativeUi.Theme.Accent,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(0, 16),
+			Size = UDim2.fromOffset(3, 20),
+			Visible = false,
+			ZIndex = button.ZIndex + 1,
+			Parent = button,
+		})
+		NativeUi.corner(marker, 999)
+		navActiveMarkers[button] = marker
+	end
+
+	attachNavActiveMarker(mainTabButton)
+	attachNavActiveMarker(espTabButton)
+	attachNavActiveMarker(spyTabButton)
+	attachNavActiveMarker(gunsTabButton)
+	attachNavActiveMarker(buildTabButton)
+	attachNavActiveMarker(remoteTabButton)
+	attachNavActiveMarker(bytecodeTabButton)
 
 	local navSessionCard = NativeUi.makePanel(navRail, {
 		BackgroundColor3 = NativeUi.Theme.Surface,
@@ -3125,7 +3149,7 @@ local function createGui(state)
 		BackgroundColor3 = NativeUi.Theme.Accent,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(0, 0),
-		Size = UDim2.new(1, 0, 0, 3),
+		Size = UDim2.fromOffset(188, 3),
 		Parent = workspaceHeader,
 	})
 	NativeUi.corner(headerAccent, 999)
@@ -3238,7 +3262,7 @@ local function createGui(state)
 
 	NativeUi.makeLabel(commandBar, "SUITE CONTROLS", {
 		Font = Enum.Font.Code,
-		TextColor3 = NativeUi.Theme.Accent,
+		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 10,
 		Position = UDim2.fromOffset(16, 9),
 		Size = UDim2.fromOffset(150, 14),
@@ -3248,16 +3272,16 @@ local function createGui(state)
 		TextColor3 = NativeUi.Theme.TextDim,
 		TextSize = 11,
 		Position = UDim2.fromOffset(16, 28),
-		Size = UDim2.new(0.38, -20, 0, 18),
+		Size = UDim2.new(0.34, -20, 0, 18),
 	})
 
 	local commandLabels = { "ASSIST", "THREAT", "COMBAT", "ROUTE", "INTEL", "AUTO" }
 	for index, label in ipairs(commandLabels) do
 		local pill = SuiteComponents.pill(commandBar, SuiteTheme, label, {
-			Position = UDim2.new(0.40, (index - 1) * 76, 0, 15),
+			Position = UDim2.new(0.39, (index - 1) * 80, 0, 15),
 			Size = UDim2.fromOffset(index == 2 and 74 or 68, 28),
-			BackgroundColor3 = index == 1 and NativeUi.Theme.Accent or NativeUi.Theme.Surface,
-			TextColor3 = index == 1 and Color3.fromRGB(13, 12, 8) or NativeUi.Theme.TextMuted,
+			BackgroundColor3 = index == 1 and Color3.fromRGB(38, 34, 18) or NativeUi.Theme.Surface,
+			TextColor3 = index == 1 and NativeUi.Theme.Accent or NativeUi.Theme.TextMuted,
 		})
 		pill.Font = Enum.Font.GothamBold
 	end
@@ -4395,6 +4419,7 @@ local function createGui(state)
 	refs.remoteTabButton = remoteTabButton
 	refs.bytecodeTabButton = bytecodeTabButton
 	refs.buildTabButton = buildTabButton
+	refs.navActiveMarkers = navActiveMarkers
 	refs.bytecodeSplitter = bytecodeSplitter
 	refs.inspectorSplitter = inspectorSplitter
 	refs.rightResizeHandle = rightResizeHandle
@@ -6764,16 +6789,16 @@ function BytecodeViewer.start(config)
 
 	local function buildSuiteTelemetry()
 		local signal = {
-			title = "Dart",
-			detail = "",
+			title = "Eclipsis",
+			detail = "Suite online",
 			badge = "READY",
 			level = "success",
-			width = 184,
-			height = 44,
+			width = 220,
+			height = 50,
 		}
 
 		if state.isMinimized then
-			signal.title = "Dart"
+			signal.title = "Eclipsis"
 			signal.detail = "Suite minimized"
 			signal.badge = "LIVE"
 			signal.level = "info"
@@ -7010,11 +7035,11 @@ function BytecodeViewer.start(config)
 			refs.dynamicIslandTitle.Text = signal.title
 			refs.dynamicIslandDetail.Text = signal.detail
 			refs.dynamicIslandDetail.Visible = tostring(signal.detail or "") ~= ""
-			refs.dynamicIslandTitle.Position = refs.dynamicIslandDetail.Visible and UDim2.fromOffset(48, 10) or UDim2.fromOffset(48, 13)
+			refs.dynamicIslandTitle.Position = refs.dynamicIslandDetail.Visible and UDim2.fromOffset(52, 9) or UDim2.fromOffset(52, 15)
 			refs.dynamicIslandDot.BackgroundColor3 = color
-			refs.dynamicIslandDot.Position = UDim2.fromOffset(28, math.floor(islandHeight / 2))
-			refs.dynamicIslandDetail.Size = UDim2.new(1, -92, 0, math.max(18, islandHeight - 36))
-			refs.dynamicIslandBadge.Position = UDim2.new(1, -68, 0, math.floor((islandHeight - 18) / 2))
+			refs.dynamicIslandDot.Position = UDim2.fromOffset(30, math.floor(islandHeight / 2))
+			refs.dynamicIslandDetail.Size = UDim2.new(1, -102, 0, math.max(18, islandHeight - 35))
+			refs.dynamicIslandBadge.Position = UDim2.new(1, -74, 0, math.floor((islandHeight - 18) / 2))
 			setOverlayStroke(refs.dynamicIsland, color, signal.level == "info" and 0.18 or 0.04)
 			if sizeChanged then
 				SuiteMotion.tween(refs.dynamicIsland, {
@@ -10210,6 +10235,9 @@ function BytecodeViewer.start(config)
 		NativeUi.setButtonSelected(refs.bytecodeTabButton, state.activeTab == "bytecode")
 		NativeUi.setButtonSelected(refs.buildTabButton, state.activeTab == "build")
 		NativeUi.setButtonSelected(refs.remoteTabButton, state.activeTab == "remote")
+		for button, marker in pairs(refs.navActiveMarkers or {}) do
+			marker.Visible = button:GetAttribute("Selected") == true
+		end
 		refs.workspaceKickerLabel.Text = workspaceCopy.kicker
 		refs.workspaceTitleLabel.Text = workspaceCopy.title
 		refs.workspaceSubtitleLabel.Text = workspaceCopy.subtitle

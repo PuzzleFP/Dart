@@ -6,9 +6,9 @@ Theme.Colors = {
 	ShellRaised = Color3.fromRGB(11, 18, 23),
 	Panel = Color3.fromRGB(13, 18, 22),
 	PanelRaised = Color3.fromRGB(20, 27, 32),
-	Surface = Color3.fromRGB(25, 32, 38),
-	SurfaceHover = Color3.fromRGB(35, 45, 52),
-	SurfaceActive = Color3.fromRGB(218, 177, 45),
+	Surface = Color3.fromRGB(21, 29, 35),
+	SurfaceHover = Color3.fromRGB(30, 40, 48),
+	SurfaceActive = Color3.fromRGB(33, 45, 54),
 	Stroke = Color3.fromRGB(255, 255, 255),
 	NativeStroke = Color3.fromRGB(45, 56, 64),
 	StrokeSoft = Color3.fromRGB(92, 111, 121),
@@ -24,11 +24,11 @@ Theme.Colors = {
 }
 
 Theme.Radius = {
-	Shell = 24,
-	Sidebar = 22,
-	Card = 12,
-	CardLarge = 16,
-	Control = 12,
+	Shell = 22,
+	Sidebar = 20,
+	Card = 8,
+	CardLarge = 12,
+	Control = 8,
 	Pill = 999,
 	Island = 24,
 }
@@ -135,7 +135,7 @@ function Theme.applyToNativeUi(NativeUi)
 	target.SurfaceActive = colors.SurfaceActive
 	target.Overlay = colors.ShellRaised
 	target.Border = colors.NativeStroke
-	target.Accent = colors.SurfaceActive
+	target.Accent = colors.Warning
 	target.AccentSoft = colors.Surface
 	target.Text = colors.Text
 	target.TextMuted = colors.TextMuted
